@@ -1,0 +1,427 @@
+use std::fmt;
+use std::fs;
+use std::path::Path;
+use std::sync::{Arc, Mutex};
+use std::time::Duration;
+
+use postgres::{Client, Config, NoTls};
+use serde::Deserialize;
+
+pub type SharedDatabase = Arc<Database>;
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct FilterOption {
+    pub id: Option<i32>,
+    pub parent_id: Option<i32>,
+    pub name: String,
+}
+
+impl FilterOption {
+    pub fn all(name: impl Into<String>) -> Self {
+        Self {
+            id: None,
+            parent_id: None,
+            name: name.into(),
+        }
+    }
+
+    pub fn matches_id(&self, id: Option<i32>) -> bool {
+        self.id.is_none() || self.id == id
+    }
+}
+
+impl fmt::Display for FilterOption {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(&self.name)
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct SearchTrack {
+    pub id: i32,
+    pub category_id: Option<i32>,
+    pub subcategory_id: Option<i32>,
+    pub genre_id: Option<i32>,
+    pub artist_name: String,
+    pub title: String,
+    pub path: String,
+    pub duration: Duration,
+    pub intro: Duration,
+    pub fade_out: Duration,
+    pub updated_at: String,
+    pub created_at: String,
+}
+
+#[derive(Debug, Clone)]
+pub struct InstantPage {
+    pub id: i32,
+    pub name: String,
+}
+
+#[derive(Debug, Clone)]
+pub struct InstantSlot {
+    pub slot_index: usize,
+    pub track_id: i32,
+}
+
+#[derive(Debug, Clone)]
+pub struct QueueEntry {
+    pub id: i32,
+    pub track_id: Option<i32>,
+    pub artist_name: String,
+    pub title: String,
+    pub duration: Duration,
+    pub intro: Duration,
+    pub fade_in: Duration,
+    pub fade_out: Duration,
+    pub scheduled_at: Option<String>,
+    pub priority: i16,
+    pub fixed_time: bool,
+}
+
+#[derive(Debug, Deserialize)]
+struct DatabaseConfig {
+    host: String,
+    port: u16,
+    database: String,
+    user: String,
+    password: String,
+}
+
+#[derive(Debug)]
+pub enum DbError {
+    Config(std::io::Error),
+    Json(serde_json::Error),
+    Postgres(postgres::Error),
+    LockPoisoned,
+}
+
+impl fmt::Display for DbError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Config(error) => write!(f, "configuration DB illisible: {error}"),
+            Self::Json(error) => write!(f, "configuration DB invalide: {error}"),
+            Self::Postgres(error) => write!(f, "PostgreSQL: {error}"),
+            Self::LockPoisoned => write!(f, "connexion DB verrouillée dans un état invalide"),
+        }
+    }
+}
+
+impl std::error::Error for DbError {}
+
+impl From<postgres::Error> for DbError {
+    fn from(error: postgres::Error) -> Self {
+        Self::Postgres(error)
+    }
+}
+
+pub struct Database {
+    client: Mutex<Client>,
+}
+
+impl Database {
+    pub fn connect_from_file(path: impl AsRef<Path>) -> Result<SharedDatabase, DbError> {
+        let config = DatabaseConfig::from_file(path)?;
+        let mut pg_config = Config::new();
+        pg_config
+            .host(&config.host)
+            .port(config.port)
+            .dbname(&config.database)
+            .user(&config.user)
+            .password(&config.password);
+
+        let client = pg_config.connect(NoTls)?;
+        Ok(Arc::new(Self {
+            client: Mutex::new(client),
+        }))
+    }
+
+    pub fn search_tracks(&self) -> Result<Vec<SearchTrack>, DbError> {
+        let mut client = self.client.lock().map_err(|_| DbError::LockPoisoned)?;
+        let rows = client.query(
+            "
+            SELECT
+                t.id,
+                s.category_id,
+                t.subcategory_id,
+                t.genre_id,
+                COALESCE(a.name, '') AS artist_name,
+                t.title,
+                t.path,
+                t.duration::double precision AS duration,
+                t.intro::double precision AS intro,
+                COALESCE(t.fade_out, t.duration)::double precision AS fade_out,
+                to_char(t.updated_at, 'FMMM/FMDD/YYYY HH24:MI:SS') AS updated_at,
+                to_char(t.created_at, 'FMMM/FMDD/YYYY HH24:MI:SS') AS created_at
+            FROM tracks t
+            LEFT JOIN artists a ON a.id = t.artist_id
+            LEFT JOIN subcategories s ON s.id = t.subcategory_id
+            WHERE t.active = TRUE
+            ORDER BY a.name NULLS LAST, t.title
+            ",
+            &[],
+        )?;
+
+        Ok(rows
+            .into_iter()
+            .map(|row| {
+                let duration: f64 = row.get("duration");
+                let intro: f64 = row.get("intro");
+                let fade_out: f64 = row.get("fade_out");
+                SearchTrack {
+                    id: row.get("id"),
+                    category_id: row.get("category_id"),
+                    subcategory_id: row.get("subcategory_id"),
+                    genre_id: row.get("genre_id"),
+                    artist_name: row.get("artist_name"),
+                    title: row.get("title"),
+                    path: row.get("path"),
+                    duration: seconds_to_duration(duration),
+                    intro: seconds_to_duration(intro),
+                    fade_out: seconds_to_duration(fade_out),
+                    updated_at: row.get("updated_at"),
+                    created_at: row.get("created_at"),
+                }
+            })
+            .collect())
+    }
+
+    pub fn categories(&self) -> Result<Vec<FilterOption>, DbError> {
+        let mut client = self.client.lock().map_err(|_| DbError::LockPoisoned)?;
+        let rows = client.query("SELECT id, name FROM categories ORDER BY id", &[])?;
+        Ok(rows
+            .into_iter()
+            .map(|row| FilterOption {
+                id: Some(row.get("id")),
+                parent_id: None,
+                name: row.get("name"),
+            })
+            .collect())
+    }
+
+    pub fn subcategories(&self) -> Result<Vec<FilterOption>, DbError> {
+        let mut client = self.client.lock().map_err(|_| DbError::LockPoisoned)?;
+        let rows = client.query(
+            "
+            SELECT id, category_id, name
+            FROM subcategories
+            WHERE hidden = FALSE
+            ORDER BY category_id, id
+            ",
+            &[],
+        )?;
+        Ok(rows
+            .into_iter()
+            .map(|row| FilterOption {
+                id: Some(row.get("id")),
+                parent_id: Some(row.get("category_id")),
+                name: row.get("name"),
+            })
+            .collect())
+    }
+
+    pub fn genres(&self) -> Result<Vec<FilterOption>, DbError> {
+        let mut client = self.client.lock().map_err(|_| DbError::LockPoisoned)?;
+        let rows = client.query("SELECT id, name FROM genres ORDER BY name", &[])?;
+        Ok(rows
+            .into_iter()
+            .map(|row| FilterOption {
+                id: Some(row.get("id")),
+                parent_id: None,
+                name: row.get("name"),
+            })
+            .collect())
+    }
+
+    pub fn queue_entries(&self) -> Result<Vec<QueueEntry>, DbError> {
+        let mut client = self.client.lock().map_err(|_| DbError::LockPoisoned)?;
+        let rows = client.query(
+            "
+            SELECT
+                q.id,
+                q.track_id,
+                q.priority,
+                q.fixed_time,
+                q.intro::double precision AS intro,
+                q.fade_in::double precision AS fade_in,
+                q.fade_out::double precision AS fade_out,
+                COALESCE(a.name, '') AS artist_name,
+                COALESCE(t.title, '') AS title,
+                COALESCE(t.duration, 0)::double precision AS duration,
+                to_char(q.scheduled_at, 'HH24:MI:SS') AS scheduled_at
+            FROM queue q
+            LEFT JOIN tracks t ON t.id = q.track_id
+            LEFT JOIN artists a ON a.id = t.artist_id
+            ORDER BY q.scheduled_at NULLS LAST, q.priority, q.id
+            ",
+            &[],
+        )?;
+
+        Ok(rows
+            .into_iter()
+            .map(|row| {
+                let duration: f64 = row.get("duration");
+                let intro: f64 = row.get("intro");
+                let fade_in: f64 = row.get("fade_in");
+                let fade_out: f64 = row.get("fade_out");
+                QueueEntry {
+                    id: row.get("id"),
+                    track_id: row.get("track_id"),
+                    artist_name: row.get("artist_name"),
+                    title: row.get("title"),
+                    duration: seconds_to_duration(duration),
+                    intro: seconds_to_duration(intro),
+                    fade_in: seconds_to_duration(fade_in),
+                    fade_out: seconds_to_duration(fade_out),
+                    scheduled_at: row.get("scheduled_at"),
+                    priority: row.get("priority"),
+                    fixed_time: row.get("fixed_time"),
+                }
+            })
+            .collect())
+    }
+
+    pub fn instant_pages(&self) -> Result<Vec<InstantPage>, DbError> {
+        let mut client = self.client.lock().map_err(|_| DbError::LockPoisoned)?;
+        let rows = client.query("SELECT id, name FROM instant_pages ORDER BY id", &[])?;
+        Ok(rows
+            .into_iter()
+            .map(|row| InstantPage {
+                id: row.get("id"),
+                name: row.get("name"),
+            })
+            .collect())
+    }
+
+    pub fn instant_slots(&self, page_id: i32) -> Result<Vec<InstantSlot>, DbError> {
+        let mut client = self.client.lock().map_err(|_| DbError::LockPoisoned)?;
+        let rows = client.query(
+            "
+            SELECT slot_index, track_id
+            FROM instant_slots
+            WHERE page_id = $1
+            ORDER BY slot_index
+            ",
+            &[&page_id],
+        )?;
+        Ok(rows
+            .into_iter()
+            .map(|row| {
+                let slot_index: i16 = row.get("slot_index");
+                InstantSlot {
+                    slot_index: slot_index.max(0) as usize,
+                    track_id: row.get("track_id"),
+                }
+            })
+            .collect())
+    }
+
+    pub fn insert_instant_page(&self, name: &str) -> Result<i32, DbError> {
+        let mut client = self.client.lock().map_err(|_| DbError::LockPoisoned)?;
+        let row = client.query_one(
+            "INSERT INTO instant_pages (name) VALUES ($1) RETURNING id",
+            &[&name],
+        )?;
+        Ok(row.get("id"))
+    }
+
+    pub fn update_instant_page_name(&self, page_id: i32, name: &str) -> Result<(), DbError> {
+        let mut client = self.client.lock().map_err(|_| DbError::LockPoisoned)?;
+        client.execute(
+            "UPDATE instant_pages SET name = $1 WHERE id = $2",
+            &[&name, &page_id],
+        )?;
+        Ok(())
+    }
+
+    pub fn delete_instant_page(&self, page_id: i32) -> Result<(), DbError> {
+        let mut client = self.client.lock().map_err(|_| DbError::LockPoisoned)?;
+        client.execute("DELETE FROM instant_pages WHERE id = $1", &[&page_id])?;
+        Ok(())
+    }
+
+    pub fn clear_instant_slots(&self, page_id: i32) -> Result<(), DbError> {
+        let mut client = self.client.lock().map_err(|_| DbError::LockPoisoned)?;
+        client.execute("DELETE FROM instant_slots WHERE page_id = $1", &[&page_id])?;
+        Ok(())
+    }
+
+    pub fn insert_queue_entry(&self, track_id: i32) -> Result<i32, DbError> {
+        let mut client = self.client.lock().map_err(|_| DbError::LockPoisoned)?;
+        let row = client.query_one(
+            "
+            INSERT INTO queue (track_id, sample_rate, bpm, intro, fade_in, fade_out)
+            SELECT id, sample_rate, bpm, intro, fade_in, COALESCE(fade_out, duration)
+            FROM tracks WHERE id = $1
+            RETURNING id
+            ",
+            &[&track_id],
+        )?;
+        Ok(row.get("id"))
+    }
+
+    pub fn replace_queue_entry(&self, queue_id: i32, track_id: i32) -> Result<(), DbError> {
+        let mut client = self.client.lock().map_err(|_| DbError::LockPoisoned)?;
+        client.execute(
+            "
+            UPDATE queue SET
+                track_id = t.id,
+                sample_rate = t.sample_rate,
+                bpm = t.bpm,
+                intro = t.intro,
+                fade_in = t.fade_in,
+                fade_out = COALESCE(t.fade_out, t.duration),
+                updated_at = NOW()
+            FROM tracks t
+            WHERE t.id = $1 AND queue.id = $2
+            ",
+            &[&track_id, &queue_id],
+        )?;
+        Ok(())
+    }
+
+    pub fn clear_queue(&self) -> Result<(), DbError> {
+        let mut client = self.client.lock().map_err(|_| DbError::LockPoisoned)?;
+        client.execute("DELETE FROM queue", &[])?;
+        Ok(())
+    }
+
+    pub fn delete_queue_entry(&self, id: i32) -> Result<(), DbError> {
+        let mut client = self.client.lock().map_err(|_| DbError::LockPoisoned)?;
+        client.execute("DELETE FROM queue WHERE id = $1", &[&id])?;
+        Ok(())
+    }
+
+    pub fn insert_instant_slot(
+        &self,
+        page_id: i32,
+        slot_index: usize,
+        track_id: i32,
+    ) -> Result<(), DbError> {
+        let mut client = self.client.lock().map_err(|_| DbError::LockPoisoned)?;
+        let slot_index = slot_index as i16;
+        client.execute(
+            "
+            INSERT INTO instant_slots (page_id, slot_index, track_id)
+            VALUES ($1, $2, $3)
+            ",
+            &[&page_id, &slot_index, &track_id],
+        )?;
+        Ok(())
+    }
+}
+
+impl DatabaseConfig {
+    fn from_file(path: impl AsRef<Path>) -> Result<Self, DbError> {
+        let raw = fs::read_to_string(path).map_err(DbError::Config)?;
+        serde_json::from_str(&raw).map_err(DbError::Json)
+    }
+}
+
+fn seconds_to_duration(seconds: f64) -> Duration {
+    if seconds.is_finite() {
+        Duration::from_secs_f64(seconds.max(0.0))
+    } else {
+        Duration::ZERO
+    }
+}
