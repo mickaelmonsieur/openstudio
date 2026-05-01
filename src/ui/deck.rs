@@ -69,6 +69,27 @@ impl App {
         ));
         stop_button = stop_button.on_press(Message::Stop);
 
+        let mut restart_button = button(
+            container(
+                text(Bootstrap::SkipStartFill.to_string())
+                    .font(BOOTSTRAP_FONT)
+                    .size(15),
+            )
+            .width(Length::Fill)
+            .height(Length::Fill)
+            .align_x(Horizontal::Center)
+            .align_y(Vertical::Center),
+        )
+        .width(Length::Fixed(30.0))
+        .height(Length::Fixed(30.0))
+        .padding(0)
+        .style(transport_style(
+            rgb(61, 94, 121),
+            rgb(78, 121, 153),
+            rgb(105, 140, 164),
+        ));
+        restart_button = restart_button.on_press(Message::Restart);
+
         let rewind_button = self.transport_seek_button(
             text(Bootstrap::RewindFill.to_string())
                 .font(BOOTSTRAP_FONT)
@@ -123,7 +144,13 @@ impl App {
         .spacing(22)
         .align_y(Alignment::Center);
 
-        let controls = row![play_button, stop_button, rewind_button, forward_button]
+        let controls = row![
+            play_button,
+            stop_button,
+            restart_button,
+            rewind_button,
+            forward_button
+        ]
         .spacing(9)
         .align_y(Alignment::Center);
 

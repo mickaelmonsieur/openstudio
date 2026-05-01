@@ -21,6 +21,7 @@ impl App {
                 selected,
                 previewing,
                 Message::QueueRowSelected(index),
+                Message::QueuePlayNow(index),
                 Message::QueuePreviewToggle(entry.id),
             ));
         }
@@ -114,6 +115,7 @@ impl App {
         selected: bool,
         previewing: bool,
         on_press: Message,
+        play_now_msg: Message,
         preview_msg: Message,
     ) -> Element<'_, Message> {
         let bg = if selected {
@@ -181,17 +183,37 @@ impl App {
         .width(Length::Fixed(46.0))
         .height(Length::Fill);
 
-        let inner = row![
+        let number_button = button(
             container(
                 text(index.to_string())
                     .size(18)
-                    .style(text_color(Color::WHITE))
+                    .style(text_color(Color::WHITE)),
             )
             .width(Length::Fixed(60.0))
             .height(Length::Fill)
             .align_x(Horizontal::Center)
             .align_y(Vertical::Center)
             .style(block_style(accent)),
+        )
+        .width(Length::Fixed(60.0))
+        .height(Length::Fill)
+        .padding(0)
+        .on_press(play_now_msg)
+        .style(move |_, status| button::Style {
+            background: Some(Background::Color(match status {
+                button::Status::Hovered | button::Status::Pressed => accent_purple_hover(),
+                _ => accent,
+            })),
+            border: Border {
+                color: rgb(18, 31, 39),
+                width: 1.0,
+                radius: 0.0.into(),
+            },
+            ..Default::default()
+        });
+
+        let inner = row![
+            number_button,
             column![
                 text(title).size(12).style(text_color(rgb(224, 239, 249))),
                 text(meta).size(9).style(text_color(accent_lavender())),

@@ -411,6 +411,7 @@ enum Message {
     WindowClosed(window::Id),
     Stop,
     TogglePlay,
+    Restart,
     PollDone,
     Seek(i64),
     Player(audio::PlayerId, audio::PlayerCommand),
@@ -454,6 +455,7 @@ enum Message {
     QueueMoveDown,
     QueueMoveBottom,
     QueueRowSelected(usize),
+    QueuePlayNow(usize),
     QueueInsertTrack,
     QueueReplaceTrack,
     QueueRemoveEntry,
@@ -506,6 +508,14 @@ impl App {
 
             Message::Stop => {
                 self.stop_queue_players();
+                Task::none()
+            }
+
+            Message::Restart => {
+                if self.audio.player(self.current_queue_player_id).is_playing() {
+                    self.audio
+                        .handle(self.current_queue_player_id, audio::PlayerCommand::Restart);
+                }
                 Task::none()
             }
 
@@ -833,6 +843,11 @@ impl App {
                 Task::none()
             }
 
+            Message::QueuePlayNow(index) => {
+                self.play_queue_entry_now(index);
+                Task::none()
+            }
+
             Message::QueueInsertTrack => {
                 self.insert_selected_search_into_queue();
                 Task::none()
@@ -1020,13 +1035,22 @@ impl App {
             return;
         }
         let entry = self.queue_entries.remove(0);
+        self.adjust_selected_queue_index_after_remove(0);
+        self.play_queue_entry(player_id, entry);
+    }
 
+    fn play_queue_entry(&mut self, player_id: audio::PlayerId, entry: db::QueueEntry) {
         if let Some(track_id) = entry.track_id {
             if let Some(path) = self.search_track_path(track_id) {
                 self.audio
                     .handle(player_id, audio::PlayerCommand::Load(path));
                 self.audio.handle(player_id, audio::PlayerCommand::Play);
             }
+        }
+
+        if self.previewing_queue_id == Some(entry.id) {
+            self.stop_preview();
+            self.previewing_queue_id = None;
         }
 
         if let Some(db) = &self.db {
@@ -1038,6 +1062,17 @@ impl App {
         self.queue_player_entries.insert(player_id, entry.clone());
         self.current_queue_player_id = player_id;
         self.current_queue_entry = Some(entry);
+    }
+
+    fn play_queue_entry_now(&mut self, index: usize) {
+        if index >= self.queue_entries.len() {
+            return;
+        }
+
+        let player_id = self.queue_player_id_for_immediate_launch();
+        let entry = self.queue_entries.remove(index);
+        self.adjust_selected_queue_index_after_remove(index);
+        self.play_queue_entry(player_id, entry);
     }
 
     fn any_queue_active(&self) -> bool {
@@ -1056,6 +1091,30 @@ impl App {
             audio::PlayerId::QueueB => audio::PlayerId::QueueA,
             _ => audio::PlayerId::QueueA,
         }
+    }
+
+    fn queue_player_id_for_immediate_launch(&self) -> audio::PlayerId {
+        if self.any_queue_active() {
+            self.next_queue_player_id(self.current_queue_player_id)
+        } else {
+            self.current_queue_player_id
+        }
+    }
+
+    fn adjust_selected_queue_index_after_remove(&mut self, removed_index: usize) {
+        let Some(selected_index) = self.selected_queue_index else {
+            return;
+        };
+
+        self.selected_queue_index = if self.queue_entries.is_empty() {
+            None
+        } else if selected_index == removed_index {
+            Some(removed_index.min(self.queue_entries.len() - 1))
+        } else if selected_index > removed_index {
+            Some(selected_index - 1)
+        } else {
+            Some(selected_index)
+        };
     }
 
     fn stop_queue_players(&mut self) {

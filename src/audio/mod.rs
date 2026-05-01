@@ -49,6 +49,7 @@ pub enum PlayerCommand {
     Resume,
     TogglePause,
     Stop,
+    Restart,
     SeekRelative(i64),
 }
 
@@ -123,7 +124,7 @@ pub struct AudioPlayer {
     duration: Option<Duration>,
     levels: Arc<AudioLevels>,
     stop_tx: Option<Sender<()>>,
-    seek_tx: Option<Sender<i64>>,
+    seek_tx: Option<Sender<SeekRequest>>,
     pause_tx: Option<Sender<bool>>,
     done_rx: Option<mpsc::Receiver<()>>,
     preload_rx: Option<mpsc::Receiver<Option<Preloaded>>>,
@@ -156,6 +157,7 @@ impl AudioPlayer {
             PlayerCommand::Resume => self.resume(),
             PlayerCommand::TogglePause => self.toggle_pause(),
             PlayerCommand::Stop => self.stop(),
+            PlayerCommand::Restart => self.restart(),
             PlayerCommand::SeekRelative(offset_ms) => self.seek_relative(offset_ms),
         }
     }
@@ -221,7 +223,13 @@ impl AudioPlayer {
 
     pub fn seek_relative(&mut self, offset_ms: i64) {
         if let Some(tx) = &self.seek_tx {
-            let _ = tx.send(offset_ms);
+            let _ = tx.send(SeekRequest::Relative(offset_ms));
+        }
+    }
+
+    pub fn restart(&mut self) {
+        if let Some(tx) = &self.seek_tx {
+            let _ = tx.send(SeekRequest::Absolute(Duration::ZERO));
         }
     }
 
@@ -334,6 +342,11 @@ pub struct Preloaded {
     source_sample_rate: u32,
 }
 
+enum SeekRequest {
+    Relative(i64),
+    Absolute(Duration),
+}
+
 /// Lit uniquement les métadonnées pour obtenir la durée totale du fichier.
 pub fn read_duration(path: &std::path::Path) -> Option<std::time::Duration> {
     let file = std::fs::File::open(path).ok()?;
@@ -422,19 +435,19 @@ fn do_preload(path: PathBuf) -> Result<Preloaded, Box<dyn std::error::Error + Se
 /// Retourne `(stop_tx, seek_tx, pause_tx, position_ms, done_rx)`.
 /// - `stop_tx`  : envoyer `()` arrête et remet à zéro
 /// - `pause_tx` : envoyer `true` pour pause, `false` pour reprendre
-pub fn play(
+fn play(
     path: PathBuf,
     preloaded: Option<Preloaded>,
     levels: Arc<AudioLevels>,
 ) -> (
     Sender<()>,
-    Sender<i64>,
+    Sender<SeekRequest>,
     Sender<bool>,
     Arc<AtomicU64>,
     mpsc::Receiver<()>,
 ) {
     let (stop_tx, stop_rx) = mpsc::channel::<()>();
-    let (seek_tx, seek_rx) = mpsc::channel::<i64>();
+    let (seek_tx, seek_rx) = mpsc::channel::<SeekRequest>();
     let (pause_tx, pause_rx) = mpsc::channel::<bool>();
     let (done_tx, done_rx) = mpsc::channel::<()>();
     let position_ms = Arc::new(AtomicU64::new(0));
@@ -460,7 +473,7 @@ fn run(
     path: PathBuf,
     preloaded: Option<Preloaded>,
     stop_rx: mpsc::Receiver<()>,
-    seek_rx: mpsc::Receiver<i64>,
+    seek_rx: mpsc::Receiver<SeekRequest>,
     pause_rx: mpsc::Receiver<bool>,
     position_ms: Arc<AtomicU64>,
     levels: Arc<AudioLevels>,
@@ -549,10 +562,13 @@ fn run(
             continue;
         }
 
-        if let Ok(offset_ms) = seek_rx.try_recv() {
-            let target_secs = (current_ts as f64 / source_sample_rate as f64
-                + offset_ms as f64 / 1000.0)
-                .max(0.0);
+        if let Ok(seek) = seek_rx.try_recv() {
+            let target_secs = match seek {
+                SeekRequest::Relative(offset_ms) => (current_ts as f64 / source_sample_rate as f64
+                    + offset_ms as f64 / 1000.0)
+                    .max(0.0),
+                SeekRequest::Absolute(position) => position.as_secs_f64(),
+            };
             let target_time = Time {
                 seconds: target_secs as u64,
                 frac: target_secs.fract(),
@@ -568,6 +584,8 @@ fn run(
                 .is_ok()
             {
                 decoder.reset();
+                current_ts = (target_secs * source_sample_rate as f64) as u64;
+                position_ms.store((target_secs * 1000.0).max(0.0) as u64, Ordering::Relaxed);
                 buffer.lock().expect("verrou buffer audio").clear();
             }
             continue;
