@@ -279,6 +279,24 @@ h1 {
   color: #91a9b7;
 }
 
+.log-total {
+  font-size: 13px;
+  color: #91a9b7;
+  align-self: center;
+}
+
+.pagination {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 0 4px;
+}
+
+.pagination-info {
+  font-size: 13px;
+  color: #91a9b7;
+}
+
 .table-error,
 .form-error {
   border: 1px solid #7f3f4c;

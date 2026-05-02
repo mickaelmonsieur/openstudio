@@ -1,0 +1,218 @@
+import { useEffect, useState } from 'react';
+import { ConfirmDialog } from '../crud/ConfirmDialog.jsx';
+import { TrackEditModal } from './TrackEditModal.jsx';
+
+const LIMIT = 100;
+
+export function TracksPage() {
+  const [rows, setRows] = useState([]);
+  const [total, setTotal] = useState(0);
+  const [page, setPage] = useState(1);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
+
+  const [artists, setArtists] = useState([]);
+  const [subcategories, setSubcategories] = useState([]);
+
+  const [editTrack, setEditTrack] = useState(null);
+  const [saving, setSaving] = useState(false);
+  const [formError, setFormError] = useState(null);
+
+  const [deleteTarget, setDeleteTarget] = useState(null);
+  const [deleting, setDeleting] = useState(false);
+
+  const totalPages = Math.max(1, Math.ceil(total / LIMIT));
+
+  useEffect(() => {
+    Promise.all([
+      fetchJson('/api/artists'),
+      fetchJson('/api/tracks/options')
+    ]).then(([artistsPayload, optionsPayload]) => {
+      setArtists(artistsPayload.rows || []);
+      setSubcategories(optionsPayload.subcategories || []);
+    }).catch(() => {});
+  }, []);
+
+  useEffect(() => {
+    loadTracks();
+  }, [page]);
+
+  async function loadTracks() {
+    setLoading(true);
+    setError(null);
+    try {
+      const payload = await fetchJson(`/api/tracks?page=${page}&limit=${LIMIT}`);
+      setRows(payload.rows || []);
+      setTotal(payload.total || 0);
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function saveTrack(data) {
+    setSaving(true);
+    setFormError(null);
+    try {
+      await fetchJson(`/api/tracks/${editTrack.id}`, {
+        method: 'PUT',
+        body: JSON.stringify(data)
+      });
+      setEditTrack(null);
+      await loadTracks();
+    } catch (err) {
+      setFormError(err.message);
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function confirmDelete() {
+    if (!deleteTarget) return;
+    setDeleting(true);
+    try {
+      await fetchJson(`/api/tracks/${deleteTarget.id}`, { method: 'DELETE' });
+      setDeleteTarget(null);
+      await loadTracks();
+    } catch (err) {
+      setDeleteTarget(null);
+      setError(err.message);
+    } finally {
+      setDeleting(false);
+    }
+  }
+
+  return (
+    <section className="crud-page">
+      <header className="crud-header">
+        <div>
+          <p className="panel-kicker">Library</p>
+          <h2>Tracks</h2>
+        </div>
+        <span className="log-total">{total.toLocaleString()} tracks</span>
+      </header>
+
+      {error ? <div className="table-error">{error}</div> : null}
+
+      {loading ? (
+        <div className="table-loading">Loading...</div>
+      ) : (
+        <>
+          <div className="data-table-wrap">
+            <table className="data-table">
+              <thead>
+                <tr>
+                  <th style={{ width: '70px' }}>ID</th>
+                  <th style={{ width: '170px' }}>Artist</th>
+                  <th>Title</th>
+                  <th style={{ width: '170px' }}>Album</th>
+                  <th style={{ width: '60px' }}>Year</th>
+                  <th style={{ width: '80px' }}>Duration</th>
+                  <th className="actions-column">Actions</th>
+                </tr>
+              </thead>
+              <tbody>
+                {rows.length === 0 ? (
+                  <tr>
+                    <td className="empty-cell" colSpan={7}>No tracks.</td>
+                  </tr>
+                ) : (
+                  rows.map((row) => (
+                    <tr key={row.id}>
+                      <td>{row.id}</td>
+                      <td>{row.artist || '—'}</td>
+                      <td>{row.title || '—'}</td>
+                      <td>{row.album || '—'}</td>
+                      <td>{row.year || '—'}</td>
+                      <td>{formatDuration(row.duration)}</td>
+                      <td className="row-actions">
+                        <button
+                          className="ghost-button"
+                          type="button"
+                          onClick={() => { setFormError(null); setEditTrack(row); }}
+                        >
+                          Edit
+                        </button>
+                        <button
+                          className="danger-button"
+                          type="button"
+                          onClick={() => { setError(null); setDeleteTarget(row); }}
+                        >
+                          Delete
+                        </button>
+                      </td>
+                    </tr>
+                  ))
+                )}
+              </tbody>
+            </table>
+          </div>
+
+          <div className="pagination">
+            <button
+              className="ghost-button"
+              disabled={page <= 1}
+              type="button"
+              onClick={() => setPage((p) => p - 1)}
+            >
+              ← Prev
+            </button>
+            <span className="pagination-info">
+              Page {page} of {totalPages} &mdash; {total.toLocaleString()} total
+            </span>
+            <button
+              className="ghost-button"
+              disabled={page >= totalPages}
+              type="button"
+              onClick={() => setPage((p) => p + 1)}
+            >
+              Next →
+            </button>
+          </div>
+        </>
+      )}
+
+      {editTrack ? (
+        <TrackEditModal
+          artists={artists}
+          error={formError}
+          saving={saving}
+          subcategories={subcategories}
+          track={editTrack}
+          onClose={() => setEditTrack(null)}
+          onSubmit={saveTrack}
+        />
+      ) : null}
+
+      {deleteTarget ? (
+        <ConfirmDialog
+          busy={deleting}
+          message={`Delete "${deleteTarget.title}"? This action is irreversible.`}
+          title="Delete Track"
+          onCancel={() => setDeleteTarget(null)}
+          onConfirm={confirmDelete}
+        />
+      ) : null}
+    </section>
+  );
+}
+
+function formatDuration(seconds) {
+  if (seconds == null) return '—';
+  const total = Math.round(seconds);
+  const m = Math.floor(total / 60);
+  const s = total % 60;
+  return `${m}:${s.toString().padStart(2, '0')}`;
+}
+
+async function fetchJson(url, options = {}) {
+  const response = await fetch(url, {
+    headers: { 'Content-Type': 'application/json', ...(options.headers || {}) },
+    ...options
+  });
+  if (response.status === 204) return {};
+  const payload = await response.json().catch(() => ({}));
+  if (!response.ok) throw new Error(payload.error || `Request failed with status ${response.status}`);
+  return payload;
+}

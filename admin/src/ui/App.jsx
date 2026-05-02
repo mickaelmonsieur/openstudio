@@ -4,6 +4,10 @@ import { CategoryPage } from './pages/CategoryPage.jsx';
 import { artistsResource } from './resources/artists.js';
 import { stationsResource } from './resources/stations.js';
 import { usersResource } from './resources/users.js';
+import { TracksPage } from './pages/TracksPage.jsx';
+import { LogPage } from './pages/LogPage.jsx';
+import { playLogResource } from './resources/play-log.js';
+import { automixLogResource } from './resources/automix-log.js';
 
 const moduleGroups = [
   {
@@ -170,6 +174,30 @@ export function App() {
       return (
         <section className="content-panel">
           <CrudPage resource={usersResource} />
+        </section>
+      );
+    }
+
+    if (activeModule.path === '/tracks') {
+      return (
+        <section className="content-panel">
+          <TracksPage />
+        </section>
+      );
+    }
+
+    if (activeModule.path === '/play-log') {
+      return (
+        <section className="content-panel">
+          <LogPage resource={playLogResource} />
+        </section>
+      );
+    }
+
+    if (activeModule.path === '/auto-mix-log') {
+      return (
+        <section className="content-panel">
+          <LogPage resource={automixLogResource} />
         </section>
       );
     }
