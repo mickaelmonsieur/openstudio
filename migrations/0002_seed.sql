@@ -167,39 +167,74 @@ INSERT INTO tracks (
     (8, 8, 332, 'Lullaby',                'Disintegration',    1989, 248.973333, 44100, 0, NULL, 0, 0, 0, 0, 0, 0, '/Users/mickael/Music/The Cure - Lullaby.flac',                       19, TRUE);
 SELECT setval('tracks_id_seq', 8);
 
-WITH RECURSIVE seed_start (scheduled_at) AS (
-    SELECT NOW()
+-- ── Jingles ──────────────────────────────────────────────────────────────────
+
+INSERT INTO artists (id, name) OVERRIDING SYSTEM VALUE VALUES
+    (9, 'Radio Contact');
+SELECT setval('artists_id_seq', 9);
+
+-- subcategory_id=2 → Jin.W-E ; durations measured with afinfo
+INSERT INTO tracks (
+    id, artist_id, genre_id, title, album, year, duration, sample_rate,
+    cue_in, cue_out, intro, outro, hook_in, hook_out, loop_in, loop_out,
+    path, subcategory_id, active
+) OVERRIDING SYSTEM VALUE VALUES
+    ( 9, 9, NULL, 'Avec elle profitons du w-e',        '', 2000, 20.050045, 44100, 0, NULL, 0, 0, 0, 0, 0, 0, '/Users/mickael/Music/JINGLES/RADIO CONTACT - Avec elle profitons du w-e.flac',        2, TRUE),
+    (10, 9, NULL, 'C''est le w-e quel bonheur',         '', 2000, 14.381474, 44100, 0, NULL, 0, 0, 0, 0, 0, 0, '/Users/mickael/Music/JINGLES/RADIO CONTACT - C''est le w-e quel bonheur.flac',         2, TRUE),
+    (11, 9, NULL, 'Laissons nous vivre, c''est le w-e', '', 2000, 18.169229, 44100, 0, NULL, 0, 0, 0, 0, 0, 0, '/Users/mickael/Music/JINGLES/RADIO CONTACT - Laissons nous vivre, c''est le w-e.flac', 2, TRUE),
+    (12, 9, NULL, 'Le w-e, avec elle, je me sens bien', '', 2000, 16.732494, 44100, 0, NULL, 0, 0, 0, 0, 0, 0, '/Users/mickael/Music/JINGLES/RADIO CONTACT - Le w-e, avec elle, je me sens bien.flac',  2, TRUE),
+    (13, 9, NULL, 'Quel bonheur, c''est le w-e',        '', 2000, 12.735760, 44100, 0, NULL, 0, 0, 0, 0, 0, 0, '/Users/mickael/Music/JINGLES/RADIO CONTACT - Quel bonheur, c''est le w-e.flac',        2, TRUE),
+    (14, 9, NULL, 'Vive le w-e, vive la musique',       '', 2000, 16.549637, 44100, 0, NULL, 0, 0, 0, 0, 0, 0, '/Users/mickael/Music/JINGLES/RADIO CONTACT - Vive le w-e, vive la musique.flac',       2, TRUE);
+SELECT setval('tracks_id_seq', 14);
+
+-- ── Queue ─────────────────────────────────────────────────────────────────────
+
+WITH
+music_ids AS (
+    SELECT id, duration, cue_in,
+           (row_number() OVER (ORDER BY id) - 1)::int AS rn
+    FROM tracks WHERE subcategory_id = 19
 ),
-seeded_queue (position, track_id, scheduled_at, next_scheduled_at) AS (
-    SELECT
-        0,
-        1,
-        s.scheduled_at,
-        s.scheduled_at + (t.duration * INTERVAL '1 second')
-    FROM seed_start s
-    JOIN tracks t ON t.id = 1
-
+music_cnt AS (SELECT count(*)::int AS n FROM music_ids),
+jingle_ids AS (
+    -- shuffled once at seed time
+    SELECT id, duration, cue_in,
+           (row_number() OVER (ORDER BY random()) - 1)::int AS rn
+    FROM tracks WHERE subcategory_id = 2
+),
+jingle_cnt AS (SELECT count(*)::int AS n FROM jingle_ids),
+-- 60 slots >> 2 h worth of music, excess filtered below
+music_slots AS (
+    SELECT g.n * 2 AS pos, m.id, m.duration, m.cue_in
+    FROM generate_series(0, 59) AS g(n)
+    CROSS JOIN music_cnt mc
+    JOIN music_ids m ON m.rn = g.n % mc.n
+),
+jingle_slots AS (
+    SELECT g.n * 2 + 1 AS pos, j.id, j.duration, j.cue_in
+    FROM generate_series(0, 59) AS g(n)
+    CROSS JOIN jingle_cnt jc
+    JOIN jingle_ids j ON j.rn = g.n % jc.n
+),
+all_slots AS (
+    SELECT pos, id, duration, cue_in FROM music_slots
     UNION ALL
-
-    SELECT
-        q.position + 1,
-        ((q.position + 1) % 8) + 1,
-        q.next_scheduled_at,
-        q.next_scheduled_at + (t.duration * INTERVAL '1 second')
-    FROM seeded_queue q
-    JOIN tracks t ON t.id = ((q.position + 1) % 8) + 1
-    JOIN seed_start s ON TRUE
-    WHERE q.next_scheduled_at < s.scheduled_at + INTERVAL '2 hours'
+    SELECT pos, id, duration, cue_in FROM jingle_slots
+),
+timed AS (
+    SELECT pos, id, cue_in,
+           NOW() + COALESCE(
+               SUM(duration) OVER (ORDER BY pos ROWS BETWEEN UNBOUNDED PRECEDING AND 1 PRECEDING),
+               0
+           ) * INTERVAL '1 second' AS scheduled_at
+    FROM all_slots
 )
 INSERT INTO queue (track_id, cue_in, cue_out, scheduled_at)
-SELECT
-    t.id,
-    t.cue_in,
-    GREATEST(t.duration - 5, 0),
-    q.scheduled_at
-FROM seeded_queue q
-JOIN tracks t ON t.id = q.track_id
-ORDER BY q.position;
+SELECT t.id, t.cue_in, GREATEST(t.duration - 5, 0), timed.scheduled_at
+FROM timed
+JOIN tracks t ON t.id = timed.id
+WHERE timed.scheduled_at < NOW() + INTERVAL '2 hours'
+ORDER BY timed.pos;
 
 INSERT INTO templates (id, format_id, category_id, subcategory_id, comment, track_protection, artist_protection) OVERRIDING SYSTEM VALUE VALUES
     (1,   1, 8, NULL, 'PUB',                           600,    0),
