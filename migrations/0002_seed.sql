@@ -162,7 +162,7 @@ INSERT INTO tracks (
     (3, 3,  99, 'Cruel Summer',           'Lover',             2019, 178.426667, 44100, 0, NULL, 0, 0, 0, 0, 0, 0, '/Users/mickael/Music/Taylor Swift - Cruel Summer.flac',              19, TRUE),
     (4, 4,  99, 'Getaway',                'Red Book',          2005, 233.640000, 44100, 0, NULL, 0, 0, 0, 0, 0, 0, '/Users/mickael/Music/Texas - Getaway.flac',                          19, TRUE),
     (5, 5,  99, 'Frozen',                 'Ray Of Light',      1998, 367.333333, 44100, 18, NULL, 0, 0, 0, 0, 0, 0, '/Users/mickael/Music/Madonna - Frozen.flac',                         19, TRUE),
-    (6, 6,  99, 'Never Be The Same Again','Northern Star',     2000, 294.200000, 44100, 0, NULL, 0, 0, 0, 0, 0, 0, '/Users/mickael/Music/Melanie C - Never Be The Same Again.flac',      19, TRUE),
+    (6, 6,  99, 'Never Be The Same Again','Northern Star',     2000, 294.200000, 44100, 0, NULL, 25, 28, 0, 0, 0, 0, '/Users/mickael/Music/Melanie C - Never Be The Same Again.flac',      19, TRUE),
     (7, 7,  99, 'The Look',               'Look Sharp!',       1988, 237.320000, 44100, 0, NULL, 0, 0, 0, 0, 0, 0, '/Users/mickael/Music/Roxette - The Look.flac',                       19, TRUE),
     (8, 8, 332, 'Lullaby',                'Disintegration',    1989, 248.973333, 44100, 0, NULL, 0, 0, 0, 0, 0, 0, '/Users/mickael/Music/The Cure - Lullaby.flac',                       19, TRUE);
 SELECT setval('tracks_id_seq', 8);

@@ -9,10 +9,41 @@ impl App {
     pub fn deck_header(&self, compact: bool) -> Element<'_, Message> {
         let playing = self.ui_playing();
         let elapsed = self.elapsed();
+        let elapsed_str = if elapsed.is_zero() {
+            String::from("--:--")
+        } else {
+            fmt_hms(elapsed)
+        };
         let remaining = self
             .transport_duration()
             .map(|total| fmt_hms(total.saturating_sub(elapsed)))
             .unwrap_or_else(|| String::from("--:--"));
+
+        let (intro_str, intro_color) = self
+            .current_queue_entry
+            .as_ref()
+            .filter(|e| !e.intro.is_zero() && elapsed < e.intro)
+            .map(|e| (fmt_hms(e.intro.saturating_sub(elapsed)), rgb(255, 185, 50)))
+            .unwrap_or_else(|| (String::from("--:--"), rgb(124, 147, 163)));
+
+        let (outro_str, outro_color) = self
+            .current_queue_entry
+            .as_ref()
+            .filter(|e| !e.outro.is_zero())
+            .and_then(|e| {
+                let end = if e.cue_out > std::time::Duration::ZERO && e.cue_out < e.duration {
+                    e.cue_out
+                } else {
+                    e.duration
+                };
+                let outro_start = end.saturating_sub(e.outro);
+                if elapsed >= outro_start && elapsed <= end {
+                    Some((fmt_hms(end.saturating_sub(elapsed)), rgb(255, 100, 70)))
+                } else {
+                    None
+                }
+            })
+            .unwrap_or_else(|| (String::from("--:--"), rgb(124, 147, 163)));
 
         let play_bg = if playing {
             rgb(30, 124, 202)
@@ -136,8 +167,9 @@ impl App {
         .align_y(Alignment::Center);
 
         let timing = row![
-            self.time_box("INTRO", "--:--", rgb(124, 147, 163)),
-            self.time_box("OUTRO", "--:--", rgb(124, 147, 163)),
+            self.time_box("INTRO", intro_str, intro_color),
+            self.time_box("OUTRO", outro_str, outro_color),
+            self.time_box("ELAPSED", elapsed_str, rgb(80, 220, 120)),
             self.time_box("REMAINING", remaining, rgb(52, 206, 251)),
             self.time_box("HOUR", self.current_hour.clone(), rgb(244, 239, 38)),
         ]

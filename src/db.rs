@@ -68,6 +68,7 @@ pub struct SearchTrack {
     pub path: String,
     pub duration: Duration,
     pub intro: Duration,
+    pub outro: Duration,
     pub cue_in: Duration,
     pub cue_out: Duration,
     pub updated_at: String,
@@ -94,6 +95,7 @@ pub struct QueueEntry {
     pub title: String,
     pub duration: Duration,
     pub intro: Duration,
+    pub outro: Duration,
     pub cue_in: Duration,
     pub cue_out: Duration,
     pub scheduled_at: Option<String>,
@@ -204,6 +206,7 @@ impl Database {
                 t.path,
                 t.duration::double precision AS duration,
                 t.intro::double precision AS intro,
+                t.outro::double precision AS outro,
                 t.cue_in::double precision AS cue_in,
                 COALESCE(t.cue_out, t.duration)::double precision AS cue_out,
                 to_char(t.updated_at, 'FMMM/FMDD/YYYY HH24:MI:SS') AS updated_at,
@@ -222,6 +225,7 @@ impl Database {
             .map(|row| {
                 let duration: f64 = row.get("duration");
                 let intro: f64 = row.get("intro");
+                let outro: f64 = row.get("outro");
                 let cue_in: f64 = row.get("cue_in");
                 let cue_out: f64 = row.get("cue_out");
                 SearchTrack {
@@ -234,6 +238,7 @@ impl Database {
                     path: row.get("path"),
                     duration: seconds_to_duration(duration),
                     intro: seconds_to_duration(intro),
+                    outro: seconds_to_duration(outro),
                     cue_in: seconds_to_duration(cue_in),
                     cue_out: seconds_to_duration(cue_out),
                     updated_at: row.get("updated_at"),
@@ -302,6 +307,7 @@ impl Database {
                 q.cue_in::double precision AS cue_in,
                 q.cue_out::double precision AS cue_out,
                 COALESCE(t.intro, 0)::double precision AS intro,
+                COALESCE(t.outro, 0)::double precision AS outro,
                 COALESCE(a.name, '') AS artist_name,
                 COALESCE(t.title, '') AS title,
                 COALESCE(t.duration, 0)::double precision AS duration,
@@ -321,6 +327,7 @@ impl Database {
                 let cue_in: f64 = row.get("cue_in");
                 let cue_out: f64 = row.get("cue_out");
                 let intro: f64 = row.get("intro");
+                let outro: f64 = row.get("outro");
                 QueueEntry {
                     id: row.get("id"),
                     track_id: row.get("track_id"),
@@ -328,6 +335,7 @@ impl Database {
                     title: row.get("title"),
                     duration: seconds_to_duration(duration),
                     intro: seconds_to_duration(intro),
+                    outro: seconds_to_duration(outro),
                     cue_in: seconds_to_duration(cue_in),
                     cue_out: seconds_to_duration(cue_out),
                     scheduled_at: row.get("scheduled_at"),

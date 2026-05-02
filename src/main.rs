@@ -2107,6 +2107,7 @@ impl App {
             title: track.title.clone(),
             duration: track.duration,
             intro: track.intro,
+            outro: track.outro,
             cue_in: std::time::Duration::ZERO,
             cue_out: track.cue_out,
             scheduled_at: None,

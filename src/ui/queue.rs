@@ -12,10 +12,16 @@ impl App {
         for (index, entry) in self.queue_entries.iter().enumerate() {
             let selected = self.selected_queue_index == Some(index);
             let previewing = self.previewing_queue_id == Some(entry.id);
+            let scheduled = entry
+                .scheduled_at
+                .as_deref()
+                .unwrap_or("--:--:--")
+                .to_string();
             rows = rows.push(self.song_slot(
                 index + 1,
                 self.queue_entry_title(entry),
                 self.queue_entry_meta(entry),
+                scheduled,
                 fmt_dur(entry.duration),
                 index % 2 == 0,
                 selected,
@@ -110,6 +116,7 @@ impl App {
         index: usize,
         title: String,
         meta: String,
+        scheduled: String,
         duration: String,
         accented: bool,
         selected: bool,
@@ -217,7 +224,7 @@ impl App {
             column![
                 text(title).size(12).style(text_color(rgb(224, 239, 249))),
                 text(meta).size(9).style(text_color(accent_lavender())),
-                text("00:00").size(10).style(text_color(rgb(221, 237, 73))),
+                text(scheduled).size(10).style(text_color(rgb(221, 237, 73))),
             ]
             .spacing(2)
             .padding([4, 5])
@@ -255,9 +262,7 @@ impl App {
     }
 
     fn queue_entry_meta(&self, entry: &crate::db::QueueEntry) -> String {
-        let scheduled_at = entry.scheduled_at.as_deref().unwrap_or("--:--:--");
         let mut parts = vec![
-            scheduled_at.to_string(),
             format!("Intro {}", fmt_dur(entry.intro)),
             format!(
                 "Cue {}/{}",
