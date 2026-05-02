@@ -426,6 +426,19 @@ impl Database {
         Ok(())
     }
 
+    pub fn insert_play_log(&self, track_id: i32, played_duration: Duration) -> Result<(), DbError> {
+        let mut client = self.client.lock().map_err(|_| DbError::LockPoisoned)?;
+        let played_duration = played_duration.as_secs_f32();
+        client.execute(
+            "
+            INSERT INTO play_log (track_id, played_duration)
+            VALUES ($1, $2)
+            ",
+            &[&track_id, &played_duration],
+        )?;
+        Ok(())
+    }
+
     pub fn load_config(&self) -> Result<AppConfig, DbError> {
         let mut client = self.client.lock().map_err(|_| DbError::LockPoisoned)?;
         let row = client.query_one(

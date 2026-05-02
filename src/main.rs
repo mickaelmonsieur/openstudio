@@ -210,6 +210,7 @@ struct App {
     auto_mix_status: String,
     queue_entries: Vec<db::QueueEntry>,
     queue_player_entries: HashMap<audio::PlayerId, db::QueueEntry>,
+    active_queue_play_logs: HashMap<audio::PlayerId, ActiveQueuePlayLog>,
     preloaded_queue_entry: Option<PreloadedQueueEntry>,
     current_queue_entry: Option<db::QueueEntry>,
     current_queue_player_id: audio::PlayerId,
@@ -311,6 +312,7 @@ impl Default for App {
             },
             queue_entries,
             queue_player_entries: HashMap::new(),
+            active_queue_play_logs: HashMap::new(),
             preloaded_queue_entry: None,
             current_queue_entry: None,
             current_queue_player_id: audio::PlayerId::QueueA,
@@ -380,6 +382,11 @@ pub(crate) struct TrackPickerState {
 struct PreloadedQueueEntry {
     player_id: audio::PlayerId,
     entry: db::QueueEntry,
+}
+
+#[derive(Debug, Clone)]
+struct ActiveQueuePlayLog {
+    track_id: i32,
 }
 
 impl TrackPickerState {
@@ -548,7 +555,10 @@ impl App {
             Message::WindowClosed(window_id) => {
                 let closed = self.windows.remove(&window_id);
                 match closed {
-                    Some(WindowKind::Main) => iced::exit(),
+                    Some(WindowKind::Main) => {
+                        self.stop_queue_players();
+                        iced::exit()
+                    }
                     Some(WindowKind::TrackPicker(_)) => {
                         self.stop_preview();
                         Task::none()
@@ -558,9 +568,11 @@ impl App {
             }
 
             Message::PollDone => {
+                let queue_log_positions = self.active_queue_play_log_positions();
                 let queue_was_active = self.queue_active_flags();
                 let aux_was_active = self.aux_active_flags();
                 self.audio.poll();
+                self.close_finished_queue_play_logs(&queue_log_positions);
                 self.sync_queue_players(queue_was_active);
                 self.sync_auto_mix();
                 self.sync_instant_active_slot();
@@ -1314,6 +1326,50 @@ impl App {
         }
     }
 
+    fn active_queue_play_log_positions(&self) -> HashMap<audio::PlayerId, std::time::Duration> {
+        self.active_queue_play_logs
+            .keys()
+            .filter_map(|&player_id| {
+                self.audio
+                    .player(player_id)
+                    .is_active()
+                    .then(|| (player_id, self.audio.player(player_id).snapshot().position))
+            })
+            .collect()
+    }
+
+    fn begin_queue_play_log(&mut self, player_id: audio::PlayerId, track_id: i32) {
+        self.active_queue_play_logs
+            .insert(player_id, ActiveQueuePlayLog { track_id });
+    }
+
+    fn close_finished_queue_play_logs(
+        &mut self,
+        positions: &HashMap<audio::PlayerId, std::time::Duration>,
+    ) {
+        for (&player_id, &position) in positions {
+            if !self.audio.player(player_id).is_active() {
+                self.close_queue_play_log(player_id, position);
+            }
+        }
+    }
+
+    fn close_queue_play_log(
+        &mut self,
+        player_id: audio::PlayerId,
+        played_duration: std::time::Duration,
+    ) {
+        let Some(active_log) = self.active_queue_play_logs.remove(&player_id) else {
+            return;
+        };
+        let Some(db) = &self.db else {
+            return;
+        };
+        if let Err(error) = db.insert_play_log(active_log.track_id, played_duration) {
+            self.status = format!("Play log insert failed: {error}");
+        }
+    }
+
     fn load_next_from_queue(&mut self, player_id: audio::PlayerId) {
         if self.play_preloaded_queue_entry(player_id) {
             return;
@@ -1344,9 +1400,14 @@ impl App {
 
         if let Some(track_id) = entry.track_id {
             if let Some(path) = self.search_track_path(track_id) {
+                self.close_queue_play_log(
+                    player_id,
+                    self.audio.player(player_id).snapshot().position,
+                );
                 self.audio
                     .handle(player_id, audio::PlayerCommand::Load(path));
                 self.audio.handle(player_id, audio::PlayerCommand::Play);
+                self.begin_queue_play_log(player_id, track_id);
             }
         }
 
@@ -1423,6 +1484,9 @@ impl App {
         self.queue_entries.remove(0);
         self.adjust_selected_queue_index_after_remove(0);
         self.audio.handle(player_id, audio::PlayerCommand::Play);
+        if let Some(track_id) = preloaded.entry.track_id {
+            self.begin_queue_play_log(player_id, track_id);
+        }
         self.auto_mix_status = format!(
             "Track {} has started.",
             Self::queue_entry_label(&preloaded.entry)
@@ -1504,6 +1568,7 @@ impl App {
 
     fn stop_queue_players(&mut self) {
         for player_id in QUEUE_PLAYER_IDS {
+            self.close_queue_play_log(player_id, self.audio.player(player_id).snapshot().position);
             self.audio.handle(player_id, audio::PlayerCommand::Stop);
         }
         self.queue_player_entries.clear();
