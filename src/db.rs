@@ -116,10 +116,10 @@ pub enum DbError {
 impl fmt::Display for DbError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            Self::Config(error) => write!(f, "configuration DB illisible: {error}"),
-            Self::Json(error) => write!(f, "configuration DB invalide: {error}"),
+            Self::Config(error) => write!(f, "database configuration unreadable: {error}"),
+            Self::Json(error) => write!(f, "database configuration invalid: {error}"),
             Self::Postgres(error) => write!(f, "PostgreSQL: {error}"),
-            Self::LockPoisoned => write!(f, "connexion DB verrouillée dans un état invalide"),
+            Self::LockPoisoned => write!(f, "database connection lock is poisoned"),
         }
     }
 }

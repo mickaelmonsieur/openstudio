@@ -392,7 +392,7 @@ fn do_preload(path: PathBuf) -> Result<Preloaded, Box<dyn std::error::Error + Se
     )?;
 
     let mut format = probed.format;
-    let track = format.default_track().ok_or("Aucune piste audio")?;
+    let track = format.default_track().ok_or("No audio track")?;
     let track_id = track.id;
     let source_sample_rate = track.codec_params.sample_rate.unwrap_or(44100);
 
@@ -403,7 +403,7 @@ fn do_preload(path: PathBuf) -> Result<Preloaded, Box<dyn std::error::Error + Se
     let host = cpal::default_host();
     let device = host
         .default_output_device()
-        .ok_or("Aucune sortie audio disponible")?;
+        .ok_or("No audio output device available")?;
     let out_channels = config_for(&device, source_sample_rate)?.channels() as usize;
 
     let mut samples = Vec::new();
@@ -466,7 +466,7 @@ fn play(
             position_ms_thread,
             levels,
         ) {
-            eprintln!("Erreur audio : {e}");
+            eprintln!("Audio error: {e}");
         }
         let _ = done_tx.send(());
     });
@@ -502,7 +502,7 @@ fn run(
                 &MetadataOptions::default(),
             )?;
             let fmt = probed.format;
-            let track = fmt.default_track().ok_or("Aucune piste audio")?;
+            let track = fmt.default_track().ok_or("No audio track")?;
             let track_id = track.id;
             let sr = track.codec_params.sample_rate.unwrap_or(44100);
             let dec = symphonia::default::get_codecs()
@@ -514,7 +514,7 @@ fn run(
     let host = cpal::default_host();
     let device = host
         .default_output_device()
-        .ok_or("Aucune sortie audio disponible")?;
+        .ok_or("No audio output device available")?;
     let config = config_for(&device, source_sample_rate)?;
     let out_channels = config.channels() as usize;
     let (chunk_tx, chunk_rx) = mpsc::sync_channel::<AudioChunk>(64);
@@ -541,7 +541,7 @@ fn run(
             );
             update_levels(&levels_cb, data, out_channels);
         },
-        |err| eprintln!("Erreur cpal : {err}"),
+        |err| eprintln!("CPAL error: {err}"),
         None,
     )?;
     // Le buffer contient déjà ~0.5 s si pré-chargé : premier son immédiat
@@ -614,7 +614,7 @@ fn run(
         let decoded = match decoder.decode(&packet) {
             Ok(d) => d,
             Err(SymphoniaError::DecodeError(msg)) => {
-                eprintln!("Avertissement décodage : {msg}");
+                eprintln!("Decode warning: {msg}");
                 continue;
             }
             Err(e) => return Err(Box::new(e)),
@@ -832,7 +832,7 @@ fn config_for(
         }
     }
     eprintln!(
-        "Avertissement : {} Hz non supporté, fallback sur la config par défaut",
+        "Warning: {} Hz is not supported, falling back to the default config",
         sample_rate
     );
     Ok(device.default_output_config()?)

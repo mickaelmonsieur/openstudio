@@ -207,6 +207,7 @@ struct App {
     db: Option<db::SharedDatabase>,
     audio: audio::AudioManager,
     status: String,
+    auto_mix_status: String,
     queue_entries: Vec<db::QueueEntry>,
     queue_player_entries: HashMap<audio::PlayerId, db::QueueEntry>,
     preloaded_queue_entry: Option<PreloadedQueueEntry>,
@@ -278,7 +279,7 @@ impl Default for App {
 
                 match db.subcategories() {
                     Ok(options) => search_subcategories.extend(options),
-                    Err(error) => warnings.push(format!("sous-categories: {error}")),
+                    Err(error) => warnings.push(format!("subcategories: {error}")),
                 }
 
                 match db.genres() {
@@ -287,17 +288,14 @@ impl Default for App {
                 }
 
                 let status = if warnings.is_empty() {
-                    String::from("Base de données connectée")
+                    String::from("Connected")
                 } else {
-                    format!(
-                        "Base de données - chargement partiel ({})",
-                        warnings.join(" | ")
-                    )
+                    format!("Connected (partial: {})", warnings.join(" | "))
                 };
 
                 (Some(db), status)
             }
-            Err(error) => (None, format!("Base de données indisponible: {error}")),
+            Err(error) => (None, format!("Disconnected ({error})")),
         };
 
         let mut app = Self {
@@ -306,6 +304,11 @@ impl Default for App {
             db,
             audio: audio::AudioManager::new(),
             status,
+            auto_mix_status: if app_config.auto_mix_on_start {
+                String::from("Waiting")
+            } else {
+                String::from("Disabled")
+            },
             queue_entries,
             queue_player_entries: HashMap::new(),
             preloaded_queue_entry: None,
@@ -839,6 +842,12 @@ impl App {
             }
             Message::ToggleAutoDj => {
                 self.autodj_enabled = !self.autodj_enabled;
+                if self.autodj_enabled {
+                    self.auto_mix_status = String::from("Waiting");
+                } else {
+                    self.preloaded_queue_entry = None;
+                    self.auto_mix_status = String::from("Disabled");
+                }
                 Task::none()
             }
 
@@ -867,7 +876,7 @@ impl App {
             Message::QueueMoveUp => {
                 if let Some(i) = self.selected_queue_index {
                     if i > 0 {
-                        self.preloaded_queue_entry = None;
+                        self.clear_preloaded_queue_status();
                         self.queue_entries.swap(i, i - 1);
                         self.selected_queue_index = Some(i - 1);
                     }
@@ -878,7 +887,7 @@ impl App {
             Message::QueueMoveTop => {
                 if let Some(i) = self.selected_queue_index {
                     if i > 0 {
-                        self.preloaded_queue_entry = None;
+                        self.clear_preloaded_queue_status();
                         let entry = self.queue_entries.remove(i);
                         self.queue_entries.insert(0, entry);
                         self.selected_queue_index = Some(0);
@@ -890,7 +899,7 @@ impl App {
             Message::QueueMoveDown => {
                 if let Some(i) = self.selected_queue_index {
                     if i + 1 < self.queue_entries.len() {
-                        self.preloaded_queue_entry = None;
+                        self.clear_preloaded_queue_status();
                         self.queue_entries.swap(i, i + 1);
                         self.selected_queue_index = Some(i + 1);
                     }
@@ -902,7 +911,7 @@ impl App {
                 if let Some(i) = self.selected_queue_index {
                     let last = self.queue_entries.len() - 1;
                     if i < last {
-                        self.preloaded_queue_entry = None;
+                        self.clear_preloaded_queue_status();
                         let entry = self.queue_entries.remove(i);
                         self.queue_entries.push(entry);
                         self.selected_queue_index = Some(last);
@@ -942,9 +951,9 @@ impl App {
                         Ok(()) => {
                             self.queue_entries.clear();
                             self.selected_queue_index = None;
-                            self.preloaded_queue_entry = None;
+                            self.clear_preloaded_queue_status();
                         }
-                        Err(e) => self.status = format!("Vidage queue impossible: {e}"),
+                        Err(e) => self.status = format!("Queue clear failed: {e}"),
                     }
                 }
                 Task::none()
@@ -1049,14 +1058,14 @@ impl App {
                         .and_then(|json| std::fs::write(&path, json).map_err(|e| e.to_string()))
                     {
                         Err(e) => {
-                            self.status = format!("Erreur écriture config: {e}");
+                            self.status = format!("Config write failed: {e}");
                             return Task::none();
                         }
                         Ok(()) => {}
                     }
                     self.dialog = None;
                     self.db = None;
-                    self.status = "Reconnexion…".into();
+                    self.status = "Reconnecting...".into();
                     Task::perform(
                         async move {
                             tokio::task::spawn_blocking(move || {
@@ -1075,12 +1084,12 @@ impl App {
             Message::DbConfigConnected(result) => {
                 match result {
                     Ok(db) => {
-                        self.status = "Base de données connectée".into();
+                        self.status = "Connected".into();
                         self.db = Some(db);
                     }
                     Err(e) => {
                         self.db = None;
-                        self.status = format!("Connexion échouée : {e}");
+                        self.status = format!("Disconnected ({e})");
                     }
                 }
                 Task::none()
@@ -1149,7 +1158,7 @@ impl App {
 
             Message::ConfigSaved(result) => {
                 if let Err(e) = result {
-                    self.status = format!("Config non sauvée : {e}");
+                    self.status = format!("Config save failed: {e}");
                 }
                 Task::none()
             }
@@ -1290,6 +1299,21 @@ impl App {
         }
     }
 
+    fn db_status_display(&self) -> String {
+        if self.db.is_some() {
+            if self.status.starts_with("Connected") {
+                self.status.clone()
+            } else {
+                String::from("Connected")
+            }
+        } else if self.status.starts_with("Disconnected") || self.status.starts_with("Reconnecting")
+        {
+            self.status.clone()
+        } else {
+            String::from("Disconnected")
+        }
+    }
+
     fn load_next_from_queue(&mut self, player_id: audio::PlayerId) {
         if self.play_preloaded_queue_entry(player_id) {
             return;
@@ -1315,7 +1339,7 @@ impl App {
             .as_ref()
             .is_some_and(|preloaded| preloaded.player_id == player_id)
         {
-            self.preloaded_queue_entry = None;
+            self.clear_preloaded_queue_status();
         }
 
         if let Some(track_id) = entry.track_id {
@@ -1327,6 +1351,21 @@ impl App {
         }
 
         self.finalize_queue_entry_launch(player_id, entry);
+    }
+
+    fn queue_entry_label(entry: &db::QueueEntry) -> String {
+        match (entry.artist_name.trim(), entry.title.trim()) {
+            ("", "") => format!("Queue item {}", entry.id),
+            ("", title) => title.to_string(),
+            (artist, "") => artist.to_string(),
+            (artist, title) => format!("{artist} - {title}"),
+        }
+    }
+
+    fn clear_preloaded_queue_status(&mut self) {
+        if self.preloaded_queue_entry.take().is_some() && self.autodj_enabled {
+            self.auto_mix_status = String::from("Waiting");
+        }
     }
 
     fn preload_next_queue_entry(&mut self, player_id: audio::PlayerId) {
@@ -1357,6 +1396,10 @@ impl App {
 
         self.audio
             .handle(player_id, audio::PlayerCommand::Load(path));
+        self.auto_mix_status = format!(
+            "Track {} has been preloaded.",
+            Self::queue_entry_label(&entry)
+        );
         self.preloaded_queue_entry = Some(PreloadedQueueEntry { player_id, entry });
     }
 
@@ -1372,7 +1415,7 @@ impl App {
 
         if preloaded.player_id != player_id || !matches_next_queue_entry {
             if preloaded.player_id == player_id {
-                self.preloaded_queue_entry = None;
+                self.clear_preloaded_queue_status();
             }
             return false;
         }
@@ -1380,6 +1423,10 @@ impl App {
         self.queue_entries.remove(0);
         self.adjust_selected_queue_index_after_remove(0);
         self.audio.handle(player_id, audio::PlayerCommand::Play);
+        self.auto_mix_status = format!(
+            "Track {} has started.",
+            Self::queue_entry_label(&preloaded.entry)
+        );
         self.finalize_queue_entry_launch(player_id, preloaded.entry);
         self.preloaded_queue_entry = None;
         true
@@ -1393,7 +1440,7 @@ impl App {
 
         if let Some(db) = &self.db {
             if let Err(e) = db.delete_queue_entry(entry.id) {
-                self.status = format!("Suppression queue impossible: {e}");
+                self.status = format!("Queue entry delete failed: {e}");
             }
         }
 
@@ -1461,6 +1508,11 @@ impl App {
         }
         self.queue_player_entries.clear();
         self.preloaded_queue_entry = None;
+        self.auto_mix_status = if self.autodj_enabled {
+            String::from("Stopped")
+        } else {
+            String::from("Disabled")
+        };
         self.current_queue_entry = None;
         self.current_queue_player_id = audio::PlayerId::QueueA;
     }
@@ -1605,9 +1657,7 @@ impl App {
                     self.active_instant_page.min(self.instant_pages.len() - 1);
                 self.load_active_instant_slots();
             }
-            Err(error) => {
-                self.status = format!("Instant pages indisponibles: {error}");
-            }
+            Err(error) => self.status = format!("Instant pages unavailable: {error}"),
         }
     }
 
@@ -1630,9 +1680,7 @@ impl App {
                     }
                 }
             }
-            Err(error) => {
-                self.status = format!("Instant slots indisponibles: {error}");
-            }
+            Err(error) => self.status = format!("Instant slots unavailable: {error}"),
         }
     }
 
@@ -1667,12 +1715,12 @@ impl App {
         self.dialog = Some(Dialog::SaveInstantPage {
             name: String::new(),
         });
-        self.status = String::from("Nouvelle page instant");
+        self.status = String::from("New instant page");
     }
 
     fn save_instant_page(&mut self) {
         let Some(db) = self.db.clone() else {
-            self.status = String::from("Base de données indisponible: page non sauvée");
+            self.status = String::from("Disconnected (instant page not saved)");
             return;
         };
 
@@ -1693,7 +1741,7 @@ impl App {
         let page_id = match self.active_instant_page_id() {
             Some(page_id) => {
                 if let Err(error) = db.update_instant_page_name(page_id, &name) {
-                    self.status = format!("Sauvegarde instant impossible: {error}");
+                    self.status = format!("Instant page save failed: {error}");
                     return;
                 }
                 page_id
@@ -1701,21 +1749,21 @@ impl App {
             None => match db.insert_instant_page(&name) {
                 Ok(page_id) => page_id,
                 Err(error) => {
-                    self.status = format!("Creation page instant impossible: {error}");
+                    self.status = format!("Instant page creation failed: {error}");
                     return;
                 }
             },
         };
 
         if let Err(error) = db.clear_instant_slots(page_id) {
-            self.status = format!("Nettoyage slots instant impossible: {error}");
+            self.status = format!("Instant slots clear failed: {error}");
             return;
         }
 
         for (slot_index, slot) in self.instant_slots.iter().enumerate() {
             if let Some(track) = slot {
                 if let Err(error) = db.insert_instant_slot(page_id, slot_index, track.id) {
-                    self.status = format!("Sauvegarde slot instant impossible: {error}");
+                    self.status = format!("Instant slot save failed: {error}");
                     return;
                 }
             }
@@ -1733,29 +1781,26 @@ impl App {
         }
 
         self.dialog = None;
-        self.status = format!("Page instant sauvee: {name}");
+        self.status = format!("Instant page saved: {name}");
     }
 
     fn delete_active_instant_page(&mut self) {
         let Some(page_id) = self.active_instant_page_id() else {
             self.instant_slots = vec![None; 10];
-            self.status = String::from("Page instant vide");
+            self.status = String::from("Instant page is empty");
             return;
         };
         let Some(db) = self.db.clone() else {
-            self.status = String::from("Base de données indisponible: page non supprimee");
+            self.status = String::from("Disconnected (instant page not deleted)");
             return;
         };
 
         if let Err(error) = db.delete_instant_page(page_id) {
-            self.status = format!("Suppression page instant impossible: {error}");
+            self.status = format!("Instant page delete failed: {error}");
             return;
         }
 
-        self.status = format!(
-            "Page instant supprimee: {}",
-            self.active_instant_page_name()
-        );
+        self.status = format!("Instant page deleted: {}", self.active_instant_page_name());
         self.load_instant_pages_from_db();
         if self.instant_pages.is_empty() {
             self.instant_pages = vec![InstantPage::default()];
@@ -1882,7 +1927,7 @@ impl App {
         };
         match db.insert_queue_entry(track_id) {
             Ok(new_id) => {
-                self.preloaded_queue_entry = None;
+                self.clear_preloaded_queue_status();
                 let mut entry = new_entry;
                 entry.id = new_id;
                 let insert_at = insert_at.min(self.queue_entries.len());
@@ -1890,7 +1935,7 @@ impl App {
                 self.selected_queue_index = Some(insert_at);
             }
             Err(e) => {
-                self.status = format!("Insertion queue impossible: {e}");
+                self.status = format!("Queue insert failed: {e}");
             }
         }
     }
@@ -1912,7 +1957,7 @@ impl App {
             track.intro,
             track.fade_out,
         );
-        self.preloaded_queue_entry = None;
+        self.clear_preloaded_queue_status();
         let Some(entry) = self.queue_entries.get_mut(queue_index) else {
             return;
         };
@@ -1931,7 +1976,7 @@ impl App {
                 entry.fade_in = std::time::Duration::ZERO;
                 entry.fade_out = new_fade_out;
             }
-            Err(e) => self.status = format!("Remplacement queue impossible: {e}"),
+            Err(e) => self.status = format!("Queue replace failed: {e}"),
         }
     }
 
@@ -1949,7 +1994,7 @@ impl App {
         };
         match db.delete_queue_entry(queue_id) {
             Ok(()) => {
-                self.preloaded_queue_entry = None;
+                self.clear_preloaded_queue_status();
                 self.queue_entries.remove(queue_index);
                 self.selected_queue_index = if self.queue_entries.is_empty() {
                     None
@@ -1957,7 +2002,7 @@ impl App {
                     Some(queue_index.min(self.queue_entries.len() - 1))
                 };
             }
-            Err(e) => self.status = format!("Suppression queue impossible: {e}"),
+            Err(e) => self.status = format!("Queue entry delete failed: {e}"),
         }
     }
 
@@ -2205,6 +2250,7 @@ impl App {
     }
 
     fn footer_bar(&self) -> Element<'_, Message> {
+        let db_status = self.db_status_display();
         let status_color = if self.db.is_some() {
             rgb(221, 230, 237)
         } else {
@@ -2248,19 +2294,47 @@ impl App {
             Some(Message::DbConfigOpen),
             db_icon_color,
         );
+        let auto_mix_color = if self.autodj_enabled {
+            rgb(221, 230, 237)
+        } else {
+            rgb(125, 154, 171)
+        };
+        let section_label =
+            |label: &'static str| text(label).size(12).style(text_color(rgb(160, 180, 195)));
 
         container(
             row![
-                Space::with_width(Length::Fixed(34.0)),
                 container(
-                    text(self.status.clone())
-                        .size(14)
-                        .style(text_color(status_color))
+                    row![
+                        section_label("DB:"),
+                        text(db_status).size(13).style(text_color(status_color))
+                    ]
+                    .spacing(6)
+                    .align_y(Alignment::Center)
                 )
-                .center_x(Length::Fill)
+                .width(Length::FillPortion(5))
+                .height(Length::Fill)
+                .padding([0, 12])
                 .center_y(Length::Fill),
-                cfg_btn,
-                db_btn,
+                container(Space::with_width(Length::Fixed(1.0)))
+                    .width(Length::Fixed(1.0))
+                    .height(Length::Fill)
+                    .style(block_style(rgb(37, 54, 64))),
+                container(
+                    row![
+                        section_label("AUTO MIX:"),
+                        text(self.auto_mix_status.clone())
+                            .size(13)
+                            .style(text_color(auto_mix_color))
+                    ]
+                    .spacing(6)
+                    .align_y(Alignment::Center)
+                )
+                .width(Length::FillPortion(7))
+                .height(Length::Fill)
+                .padding([0, 12])
+                .center_y(Length::Fill),
+                row![cfg_btn, db_btn].spacing(0).align_y(Alignment::Center),
             ]
             .align_y(Alignment::Center)
             .width(Length::Fill)
@@ -2276,7 +2350,7 @@ impl App {
         let dialog = match &self.dialog {
             Some(Dialog::SaveInstantPage { name }) => container(
                 column![
-                    text("Save instant page")
+                    text("Save Instant Page")
                         .size(14)
                         .style(text_color(rgb(226, 238, 245))),
                     text_input("Page name", name)
@@ -2319,7 +2393,7 @@ impl App {
                 };
                 container(
                     column![
-                        text("Database configuration")
+                        text("Database Settings")
                             .size(14)
                             .style(text_color(rgb(226, 238, 245))),
                         field("Host", host, DbField::Host),
@@ -2367,11 +2441,11 @@ impl App {
                 .padding([3, 8]);
 
                 let fieldset_body = column![
-                    checkbox("Enable AUTO MIX on Start", *auto_mix_on_start)
+                    checkbox("Enable AUTO MIX on startup", *auto_mix_on_start)
                         .on_toggle(|_| Message::ConfigToggle(ConfigField::AutoMixOnStart))
                         .size(14)
                         .text_size(13),
-                    checkbox("Enable AUTO Play on Start", *auto_play_on_start)
+                    checkbox("Enable AUTO PLAY on startup", *auto_play_on_start)
                         .on_toggle(|_| Message::ConfigToggle(ConfigField::AutoPlayOnStart))
                         .size(14)
                         .text_size(13),
@@ -2407,7 +2481,7 @@ impl App {
 
                 container(
                     column![
-                        text("Configuration")
+                        text("Settings")
                             .size(14)
                             .style(text_color(rgb(226, 238, 245))),
                         fieldset,
