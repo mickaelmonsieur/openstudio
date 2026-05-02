@@ -68,6 +68,7 @@ pub struct SearchTrack {
     pub path: String,
     pub duration: Duration,
     pub intro: Duration,
+    pub cue_in: Duration,
     pub cue_out: Duration,
     pub updated_at: String,
     pub created_at: String,
@@ -203,6 +204,7 @@ impl Database {
                 t.path,
                 t.duration::double precision AS duration,
                 t.intro::double precision AS intro,
+                t.cue_in::double precision AS cue_in,
                 COALESCE(t.cue_out, t.duration)::double precision AS cue_out,
                 to_char(t.updated_at, 'FMMM/FMDD/YYYY HH24:MI:SS') AS updated_at,
                 to_char(t.created_at, 'FMMM/FMDD/YYYY HH24:MI:SS') AS created_at
@@ -220,6 +222,7 @@ impl Database {
             .map(|row| {
                 let duration: f64 = row.get("duration");
                 let intro: f64 = row.get("intro");
+                let cue_in: f64 = row.get("cue_in");
                 let cue_out: f64 = row.get("cue_out");
                 SearchTrack {
                     id: row.get("id"),
@@ -231,6 +234,7 @@ impl Database {
                     path: row.get("path"),
                     duration: seconds_to_duration(duration),
                     intro: seconds_to_duration(intro),
+                    cue_in: seconds_to_duration(cue_in),
                     cue_out: seconds_to_duration(cue_out),
                     updated_at: row.get("updated_at"),
                     created_at: row.get("created_at"),

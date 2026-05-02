@@ -421,6 +421,7 @@ pub(crate) struct LoadedTrack {
     pub(crate) artist: String,
     pub(crate) title: String,
     pub(crate) duration: std::time::Duration,
+    pub(crate) cue_in: std::time::Duration,
     pub(crate) path: PathBuf,
 }
 
@@ -652,11 +653,14 @@ impl App {
             }
 
             Message::SearchPreviewPlay => {
-                if let Some(path) = self.selected_search_track_path() {
-                    self.audio
-                        .handle(PREVIEW_PLAYER_ID, audio::PlayerCommand::Load(path));
-                    self.audio
-                        .handle(PREVIEW_PLAYER_ID, audio::PlayerCommand::Play);
+                if let Some(id) = self.selected_search_track_id {
+                    if let Some(path) = self.search_track_path(id) {
+                        let cue_in = self.search_track_cue_in(id);
+                        self.audio
+                            .handle(PREVIEW_PLAYER_ID, audio::PlayerCommand::Load { path, cue_in });
+                        self.audio
+                            .handle(PREVIEW_PLAYER_ID, audio::PlayerCommand::Play);
+                    }
                 }
                 Task::none()
             }
@@ -823,11 +827,14 @@ impl App {
                 let selected_id = self
                     .track_picker(window_id)
                     .and_then(|picker| picker.selected_track_id);
-                if let Some(path) = selected_id.and_then(|id| self.search_track_path(id)) {
-                    self.audio
-                        .handle(PREVIEW_PLAYER_ID, audio::PlayerCommand::Load(path));
-                    self.audio
-                        .handle(PREVIEW_PLAYER_ID, audio::PlayerCommand::Play);
+                if let Some(id) = selected_id {
+                    if let Some(path) = self.search_track_path(id) {
+                        let cue_in = self.search_track_cue_in(id);
+                        self.audio
+                            .handle(PREVIEW_PLAYER_ID, audio::PlayerCommand::Load { path, cue_in });
+                        self.audio
+                            .handle(PREVIEW_PLAYER_ID, audio::PlayerCommand::Play);
+                    }
                 }
                 Task::none()
             }
@@ -889,15 +896,14 @@ impl App {
                     self.stop_preview();
                     self.previewing_queue_id = None;
                 } else {
-                    let path = self
-                        .queue_entries
-                        .iter()
-                        .find(|e| e.id == queue_id)
-                        .and_then(|e| e.track_id)
-                        .and_then(|tid| self.search_track_path(tid));
+                    let entry = self.queue_entries.iter().find(|e| e.id == queue_id);
+                    let (track_id, cue_in) = entry
+                        .map(|e| (e.track_id, e.cue_in))
+                        .unwrap_or((None, std::time::Duration::ZERO));
+                    let path = track_id.and_then(|tid| self.search_track_path(tid));
                     if let Some(path) = path {
                         self.audio
-                            .handle(PREVIEW_PLAYER_ID, audio::PlayerCommand::Load(path));
+                            .handle(PREVIEW_PLAYER_ID, audio::PlayerCommand::Load { path, cue_in });
                         self.audio
                             .handle(PREVIEW_PLAYER_ID, audio::PlayerCommand::Play);
                         self.previewing_queue_id = Some(queue_id);
@@ -1480,7 +1486,7 @@ impl App {
                     self.audio.player(player_id).snapshot().position,
                 );
                 self.audio
-                    .handle(player_id, audio::PlayerCommand::Load(path));
+                    .handle(player_id, audio::PlayerCommand::Load { path, cue_in: entry.cue_in });
                 self.audio.handle(player_id, audio::PlayerCommand::Play);
                 self.begin_queue_play_log(player_id, track_id);
             }
@@ -1531,7 +1537,7 @@ impl App {
         };
 
         self.audio
-            .handle(player_id, audio::PlayerCommand::Load(path));
+            .handle(player_id, audio::PlayerCommand::Load { path, cue_in: entry.cue_in });
         self.set_auto_mix_status(format!(
             "Track {} has been preloaded.",
             Self::queue_entry_label(&entry)
@@ -1794,11 +1800,6 @@ impl App {
         self.current_queue_entry = None;
     }
 
-    fn selected_search_track_path(&self) -> Option<PathBuf> {
-        let selected_id = self.selected_search_track_id?;
-        self.search_track_path(selected_id)
-    }
-
     fn search_track_path(&self, track_id: i32) -> Option<PathBuf> {
         let path = self
             .search_tracks
@@ -1808,6 +1809,14 @@ impl App {
             .trim();
 
         (!path.is_empty()).then(|| PathBuf::from(path))
+    }
+
+    fn search_track_cue_in(&self, track_id: i32) -> std::time::Duration {
+        self.search_tracks
+            .iter()
+            .find(|track| track.id == track_id)
+            .map(|track| track.cue_in)
+            .unwrap_or_default()
     }
 
     fn loaded_track(&self, track_id: i32) -> Option<LoadedTrack> {
@@ -1820,6 +1829,7 @@ impl App {
             artist: track.artist_name.clone(),
             title: track.title.clone(),
             duration: track.duration,
+            cue_in: track.cue_in,
             path: PathBuf::from(track.path.trim()),
         })
     }
@@ -2040,17 +2050,14 @@ impl App {
     }
 
     fn play_instant_slot(&mut self, index: usize) {
-        let Some(path) = self
-            .instant_slots
-            .get(index)
-            .and_then(Option::as_ref)
-            .map(|track| track.path.clone())
-        else {
+        let Some(track) = self.instant_slots.get(index).and_then(Option::as_ref) else {
             return;
         };
+        let path = track.path.clone();
+        let cue_in = track.cue_in;
 
         self.audio
-            .handle(INSTANT_PLAYER_ID, audio::PlayerCommand::Load(path));
+            .handle(INSTANT_PLAYER_ID, audio::PlayerCommand::Load { path, cue_in });
         self.audio
             .handle(INSTANT_PLAYER_ID, audio::PlayerCommand::Play);
         self.active_instant_slot = Some(index);
@@ -2252,17 +2259,14 @@ impl App {
         let Some(player_id) = Self::aux_player_id(index) else {
             return;
         };
-        let Some(path) = self
-            .aux_slots
-            .get(index)
-            .and_then(Option::as_ref)
-            .map(|track| track.path.clone())
-        else {
+        let Some(track) = self.aux_slots.get(index).and_then(Option::as_ref) else {
             return;
         };
+        let path = track.path.clone();
+        let cue_in = track.cue_in;
 
         self.audio
-            .handle(player_id, audio::PlayerCommand::Load(path));
+            .handle(player_id, audio::PlayerCommand::Load { path, cue_in });
         self.audio.handle(player_id, audio::PlayerCommand::Play);
     }
 

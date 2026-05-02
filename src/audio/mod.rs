@@ -42,7 +42,7 @@ impl PlayerId {
 #[allow(dead_code)]
 #[derive(Debug, Clone)]
 pub enum PlayerCommand {
-    Load(PathBuf),
+    Load { path: PathBuf, cue_in: Duration },
     Play,
     Pause,
     Resume,
@@ -122,6 +122,7 @@ impl Default for AudioManager {
 pub struct AudioPlayer {
     id: PlayerId,
     loaded_path: Option<PathBuf>,
+    cue_in: Duration,
     duration: Option<Duration>,
     levels: Arc<AudioLevels>,
     stop_tx: Option<Sender<()>>,
@@ -139,6 +140,7 @@ impl AudioPlayer {
         Self {
             id,
             loaded_path: None,
+            cue_in: Duration::ZERO,
             duration: None,
             levels: Arc::new(AudioLevels::default()),
             stop_tx: None,
@@ -154,7 +156,7 @@ impl AudioPlayer {
 
     pub fn handle(&mut self, command: PlayerCommand) {
         match command {
-            PlayerCommand::Load(path) => self.load(path),
+            PlayerCommand::Load { path, cue_in } => self.load(path, cue_in),
             PlayerCommand::Play => self.play(),
             PlayerCommand::Pause => self.pause(),
             PlayerCommand::Resume => self.resume(),
@@ -167,10 +169,11 @@ impl AudioPlayer {
         }
     }
 
-    pub fn load(&mut self, path: PathBuf) {
+    pub fn load(&mut self, path: PathBuf, cue_in: Duration) {
         self.stop_thread();
+        self.cue_in = cue_in;
         self.duration = read_duration(&path);
-        self.preload_rx = Some(preload(path.clone()));
+        self.preload_rx = Some(preload(path.clone(), cue_in));
         self.loaded_path = Some(path);
     }
 
@@ -187,7 +190,7 @@ impl AudioPlayer {
         self.preload_rx = None;
 
         let (stop_tx, seek_tx, pause_tx, fade_tx, position_ms, done_rx) =
-            play(path, preloaded, Arc::clone(&self.levels));
+            play(path, preloaded, self.cue_in, Arc::clone(&self.levels));
         self.stop_tx = Some(stop_tx);
         self.seek_tx = Some(seek_tx);
         self.pause_tx = Some(pause_tx);
@@ -224,7 +227,7 @@ impl AudioPlayer {
 
     pub fn stop(&mut self) {
         self.stop_thread();
-        self.preload_rx = self.loaded_path.as_ref().map(|path| preload(path.clone()));
+        self.preload_rx = self.loaded_path.as_ref().map(|path| preload(path.clone(), self.cue_in));
     }
 
     pub fn soft_stop(&mut self, duration: Duration) {
@@ -273,7 +276,7 @@ impl AudioPlayer {
             self.position_ms = None;
             self.paused = false;
             self.levels.reset();
-            self.preload_rx = self.loaded_path.as_ref().map(|path| preload(path.clone()));
+            self.preload_rx = self.loaded_path.as_ref().map(|path| preload(path.clone(), self.cue_in));
         }
     }
 
@@ -443,15 +446,15 @@ pub fn read_duration(path: &std::path::Path) -> Option<std::time::Duration> {
 
 /// Démarre le pré-chargement en arrière-plan dès la sélection du fichier.
 /// Retourne un Receiver : `try_recv()` donne le résultat quand il est prêt.
-pub fn preload(path: PathBuf) -> mpsc::Receiver<Option<Preloaded>> {
+pub fn preload(path: PathBuf, cue_in: Duration) -> mpsc::Receiver<Option<Preloaded>> {
     let (tx, rx) = mpsc::sync_channel(1);
     std::thread::spawn(move || {
-        let _ = tx.send(do_preload(path).ok());
+        let _ = tx.send(do_preload(path, cue_in).ok());
     });
     rx
 }
 
-fn do_preload(path: PathBuf) -> Result<Preloaded, Box<dyn std::error::Error + Send + Sync>> {
+fn do_preload(path: PathBuf, cue_in: Duration) -> Result<Preloaded, Box<dyn std::error::Error + Send + Sync>> {
     let file = std::fs::File::open(&path)?;
     let mss = MediaSourceStream::new(Box::new(file), Default::default());
     let probed = symphonia::default::get_probe().format(
@@ -475,6 +478,22 @@ fn do_preload(path: PathBuf) -> Result<Preloaded, Box<dyn std::error::Error + Se
         .default_output_device()
         .ok_or("No audio output device available")?;
     let out_channels = config_for(&device, source_sample_rate)?.channels() as usize;
+
+    if !cue_in.is_zero() {
+        let target_secs = cue_in.as_secs_f64();
+        let target_time = Time {
+            seconds: target_secs as u64,
+            frac: target_secs.fract(),
+        };
+        let _ = format.seek(
+            SeekMode::Coarse,
+            SeekTo::Time {
+                time: target_time,
+                track_id: Some(track_id),
+            },
+        );
+        decoder.reset();
+    }
 
     let mut samples = Vec::new();
     let prefill_target = source_sample_rate as usize * out_channels / 2; // 0.5 s
@@ -512,6 +531,7 @@ fn do_preload(path: PathBuf) -> Result<Preloaded, Box<dyn std::error::Error + Se
 fn play(
     path: PathBuf,
     preloaded: Option<Preloaded>,
+    cue_in: Duration,
     levels: Arc<AudioLevels>,
 ) -> (
     Sender<()>,
@@ -532,6 +552,7 @@ fn play(
         if let Err(e) = run(
             path,
             preloaded,
+            cue_in,
             stop_rx,
             seek_rx,
             pause_rx,
@@ -549,6 +570,7 @@ fn play(
 fn run(
     path: PathBuf,
     preloaded: Option<Preloaded>,
+    cue_in: Duration,
     stop_rx: mpsc::Receiver<()>,
     seek_rx: mpsc::Receiver<SeekRequest>,
     pause_rx: mpsc::Receiver<bool>,
@@ -575,12 +597,32 @@ fn run(
                 &FormatOptions::default(),
                 &MetadataOptions::default(),
             )?;
-            let fmt = probed.format;
+            let mut fmt = probed.format;
             let track = fmt.default_track().ok_or("No audio track")?;
             let track_id = track.id;
             let sr = track.codec_params.sample_rate.unwrap_or(44100);
-            let dec = symphonia::default::get_codecs()
+            let mut dec = symphonia::default::get_codecs()
                 .make(&track.codec_params, &DecoderOptions::default())?;
+            if !cue_in.is_zero() {
+                let target_secs = cue_in.as_secs_f64();
+                let target_time = Time {
+                    seconds: target_secs as u64,
+                    frac: target_secs.fract(),
+                };
+                if fmt
+                    .seek(
+                        SeekMode::Coarse,
+                        SeekTo::Time {
+                            time: target_time,
+                            track_id: Some(track_id),
+                        },
+                    )
+                    .is_ok()
+                {
+                    dec.reset();
+                    position_ms.store((target_secs * 1000.0) as u64, Ordering::Relaxed);
+                }
+            }
             (fmt, dec, track_id, sr, Vec::new())
         }
     };
