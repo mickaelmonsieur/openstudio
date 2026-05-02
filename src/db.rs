@@ -5,9 +5,24 @@ use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use postgres::{Client, Config, NoTls};
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 
 pub type SharedDatabase = Arc<Database>;
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AppConfig {
+    pub auto_mix_on_start: bool,
+    pub auto_play_on_start: bool,
+}
+
+impl Default for AppConfig {
+    fn default() -> Self {
+        Self {
+            auto_mix_on_start: false,
+            auto_play_on_start: false,
+        }
+    }
+}
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct FilterOption {
@@ -117,6 +132,12 @@ impl From<postgres::Error> for DbError {
 
 pub struct Database {
     client: Mutex<Client>,
+}
+
+impl std::fmt::Debug for Database {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Database").finish_non_exhaustive()
+    }
 }
 
 impl Database {
@@ -389,6 +410,27 @@ impl Database {
     pub fn delete_queue_entry(&self, id: i32) -> Result<(), DbError> {
         let mut client = self.client.lock().map_err(|_| DbError::LockPoisoned)?;
         client.execute("DELETE FROM queue WHERE id = $1", &[&id])?;
+        Ok(())
+    }
+
+    pub fn load_config(&self) -> Result<AppConfig, DbError> {
+        let mut client = self.client.lock().map_err(|_| DbError::LockPoisoned)?;
+        let row = client.query_one(
+            "SELECT auto_mix_on_start, auto_play_on_start FROM configurations LIMIT 1",
+            &[],
+        )?;
+        Ok(AppConfig {
+            auto_mix_on_start: row.get(0),
+            auto_play_on_start: row.get(1),
+        })
+    }
+
+    pub fn save_config(&self, cfg: &AppConfig) -> Result<(), DbError> {
+        let mut client = self.client.lock().map_err(|_| DbError::LockPoisoned)?;
+        client.execute(
+            "UPDATE configurations SET auto_mix_on_start = $1, auto_play_on_start = $2",
+            &[&cfg.auto_mix_on_start, &cfg.auto_play_on_start],
+        )?;
         Ok(())
     }
 

@@ -5,14 +5,26 @@ mod ui;
 use std::collections::HashMap;
 use std::path::PathBuf;
 
-use iced::alignment::Vertical;
 use iced::keyboard::key::Named;
 use iced::keyboard::Key;
-use iced::widget::{button, column, container, responsive, row, stack, text, text_input, Space};
+use iced::widget::{
+    button, checkbox, column, container, responsive, row, stack, text, text_input, Space,
+};
 use iced::{
     window, Alignment, Background, Border, Color, Element, Length, Size, Subscription, Task, Theme,
 };
+use iced_fonts::{Bootstrap, BOOTSTRAP_FONT};
 use ui::{accent_purple, block_style, panel_style, rgb, text_color};
+
+fn db_config_path() -> PathBuf {
+    std::env::current_exe()
+        .ok()
+        .and_then(|exe| {
+            let candidate = exe.parent()?.parent()?.join("Resources/database.json");
+            candidate.exists().then_some(candidate)
+        })
+        .unwrap_or_else(|| PathBuf::from("config/database.json"))
+}
 
 const ANY_CATEGORY: &str = "Any Category";
 const ANY_SUBCATEGORY: &str = "Any Subcategory";
@@ -222,6 +234,7 @@ struct App {
     active_instant_slot: Option<usize>,
     aux_slots: Vec<Option<LoadedTrack>>,
     aux_loops: Vec<bool>,
+    app_config: db::AppConfig,
     dialog: Option<Dialog>,
 }
 
@@ -235,19 +248,16 @@ impl Default for App {
         let mut search_genres = vec![search_genre.clone()];
         let mut search_tracks = Vec::new();
         let mut queue_entries = Vec::new();
+        let mut app_config = db::AppConfig::default();
 
-        let db_config_path = std::env::current_exe()
-            .ok()
-            .and_then(|exe| {
-                // In a macOS .app bundle: Contents/MacOS/<exe> → Contents/Resources/database.json
-                let candidate = exe.parent()?.parent()?.join("Resources/database.json");
-                candidate.exists().then_some(candidate)
-            })
-            .unwrap_or_else(|| std::path::PathBuf::from("config/database.json"));
-
-        let (db, status) = match db::Database::connect_from_file(&db_config_path) {
+        let (db, status) = match db::Database::connect_from_file(&db_config_path()) {
             Ok(db) => {
                 let mut warnings = Vec::new();
+
+                match db.load_config() {
+                    Ok(cfg) => app_config = cfg,
+                    Err(error) => warnings.push(format!("config: {error}")),
+                }
 
                 match db.search_tracks() {
                     Ok(tracks) => search_tracks = tracks,
@@ -299,7 +309,7 @@ impl Default for App {
             current_queue_entry: None,
             current_queue_player_id: audio::PlayerId::QueueA,
             selected_queue_index: None,
-            autodj_enabled: false,
+            autodj_enabled: app_config.auto_mix_on_start,
             previewing_queue_id: None,
             search_tracks,
             search_categories,
@@ -322,6 +332,7 @@ impl Default for App {
             active_instant_slot: None,
             aux_slots: vec![None; 3],
             aux_loops: vec![false; 3],
+            app_config,
             dialog: None,
         };
         app.load_instant_pages_from_db();
@@ -332,10 +343,12 @@ impl Default for App {
 impl App {
     fn new() -> (Self, Task<Message>) {
         let mut app = Self::default();
+        app.apply_startup_playback_config();
+
         let (window_id, open) = window::open(main_window_settings());
         app.main_window = Some(window_id);
         app.windows.insert(window_id, WindowKind::Main);
-        (app, open.map(|_| Message::WindowOpened))
+        (app, open.map(|_| Message::NoOp))
     }
 }
 
@@ -405,7 +418,35 @@ impl Default for InstantPage {
 
 #[derive(Debug, Clone)]
 enum Dialog {
-    SaveInstantPage { name: String },
+    SaveInstantPage {
+        name: String,
+    },
+    EditConfig {
+        auto_mix_on_start: bool,
+        auto_play_on_start: bool,
+    },
+    EditDbConfig {
+        host: String,
+        port: String,
+        database: String,
+        user: String,
+        password: String,
+    },
+}
+
+#[derive(Debug, Clone)]
+enum DbField {
+    Host,
+    Port,
+    Database,
+    User,
+    Password,
+}
+
+#[derive(Debug, Clone)]
+enum ConfigField {
+    AutoMixOnStart,
+    AutoPlayOnStart,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -416,7 +457,7 @@ enum InstantView {
 
 #[derive(Debug, Clone)]
 enum Message {
-    WindowOpened,
+    NoOp,
     WindowClosed(window::Id),
     Stop,
     TogglePlay,
@@ -474,6 +515,14 @@ enum Message {
     AuxToggleLoop(usize),
     MeterTick,
     ClockTick,
+    DbConfigOpen,
+    DbConfigFieldChanged(DbField, String),
+    DbConfigSave,
+    DbConfigConnected(Result<db::SharedDatabase, String>),
+    ConfigOpen,
+    ConfigToggle(ConfigField),
+    ConfigSave,
+    ConfigSaved(Result<(), String>),
 }
 
 // ── Update ────────────────────────────────────────────────────────────────────
@@ -481,7 +530,7 @@ enum Message {
 impl App {
     fn update(&mut self, message: Message) -> Task<Message> {
         match message {
-            Message::WindowOpened => Task::none(),
+            Message::NoOp => Task::none(),
             Message::WindowClosed(window_id) => {
                 let closed = self.windows.remove(&window_id);
                 match closed {
@@ -627,7 +676,7 @@ impl App {
                     window_id,
                     WindowKind::TrackPicker(TrackPickerState::new(target)),
                 );
-                open.map(|_| Message::WindowOpened)
+                open.map(|_| Message::NoOp)
             }
             Message::PickerSearchChanged(window_id, value) => {
                 if let Some(picker) = self.track_picker_mut(window_id) {
@@ -902,6 +951,181 @@ impl App {
                 self.current_date = current_date();
                 Task::none()
             }
+
+            Message::DbConfigOpen => {
+                let (host, port, database, user, password) =
+                    if let Ok(raw) = std::fs::read_to_string(db_config_path()) {
+                        if let Ok(val) = serde_json::from_str::<serde_json::Value>(&raw) {
+                            (
+                                val["host"].as_str().unwrap_or("localhost").to_string(),
+                                val["port"].as_u64().unwrap_or(5432).to_string(),
+                                val["database"].as_str().unwrap_or("").to_string(),
+                                val["user"].as_str().unwrap_or("").to_string(),
+                                val["password"].as_str().unwrap_or("").to_string(),
+                            )
+                        } else {
+                            (
+                                "localhost".into(),
+                                "5432".into(),
+                                String::new(),
+                                String::new(),
+                                String::new(),
+                            )
+                        }
+                    } else {
+                        (
+                            "localhost".into(),
+                            "5432".into(),
+                            String::new(),
+                            String::new(),
+                            String::new(),
+                        )
+                    };
+                self.dialog = Some(Dialog::EditDbConfig {
+                    host,
+                    port,
+                    database,
+                    user,
+                    password,
+                });
+                Task::none()
+            }
+
+            Message::DbConfigFieldChanged(field, value) => {
+                if let Some(Dialog::EditDbConfig {
+                    host,
+                    port,
+                    database,
+                    user,
+                    password,
+                }) = &mut self.dialog
+                {
+                    match field {
+                        DbField::Host => *host = value,
+                        DbField::Port => *port = value,
+                        DbField::Database => *database = value,
+                        DbField::User => *user = value,
+                        DbField::Password => *password = value,
+                    }
+                }
+                Task::none()
+            }
+
+            Message::DbConfigSave => {
+                if let Some(Dialog::EditDbConfig {
+                    host,
+                    port,
+                    database,
+                    user,
+                    password,
+                }) = &self.dialog
+                {
+                    let config = serde_json::json!({
+                        "host": host,
+                        "port": port.parse::<u16>().unwrap_or(5432),
+                        "database": database,
+                        "user": user,
+                        "password": password,
+                    });
+                    let path = db_config_path();
+                    match serde_json::to_string_pretty(&config)
+                        .map_err(|e| e.to_string())
+                        .and_then(|json| std::fs::write(&path, json).map_err(|e| e.to_string()))
+                    {
+                        Err(e) => {
+                            self.status = format!("Erreur écriture config: {e}");
+                            return Task::none();
+                        }
+                        Ok(()) => {}
+                    }
+                    self.dialog = None;
+                    self.db = None;
+                    self.status = "Reconnexion…".into();
+                    Task::perform(
+                        async move {
+                            tokio::task::spawn_blocking(move || {
+                                db::Database::connect_from_file(&path).map_err(|e| e.to_string())
+                            })
+                            .await
+                            .unwrap_or_else(|e| Err(e.to_string()))
+                        },
+                        Message::DbConfigConnected,
+                    )
+                } else {
+                    Task::none()
+                }
+            }
+
+            Message::DbConfigConnected(result) => {
+                match result {
+                    Ok(db) => {
+                        self.status = "Base de données connectée".into();
+                        self.db = Some(db);
+                    }
+                    Err(e) => {
+                        self.db = None;
+                        self.status = format!("Connexion échouée : {e}");
+                    }
+                }
+                Task::none()
+            }
+
+            Message::ConfigOpen => {
+                self.dialog = Some(Dialog::EditConfig {
+                    auto_mix_on_start: self.app_config.auto_mix_on_start,
+                    auto_play_on_start: self.app_config.auto_play_on_start,
+                });
+                Task::none()
+            }
+
+            Message::ConfigToggle(field) => {
+                if let Some(Dialog::EditConfig {
+                    auto_mix_on_start,
+                    auto_play_on_start,
+                }) = &mut self.dialog
+                {
+                    match field {
+                        ConfigField::AutoMixOnStart => *auto_mix_on_start = !*auto_mix_on_start,
+                        ConfigField::AutoPlayOnStart => *auto_play_on_start = !*auto_play_on_start,
+                    }
+                }
+                Task::none()
+            }
+
+            Message::ConfigSave => {
+                if let Some(Dialog::EditConfig {
+                    auto_mix_on_start,
+                    auto_play_on_start,
+                }) = &self.dialog
+                {
+                    let cfg = db::AppConfig {
+                        auto_mix_on_start: *auto_mix_on_start,
+                        auto_play_on_start: *auto_play_on_start,
+                    };
+                    self.app_config = cfg.clone();
+                    self.dialog = None;
+                    if let Some(db) = self.db.clone() {
+                        return Task::perform(
+                            async move {
+                                tokio::task::spawn_blocking(move || {
+                                    db.save_config(&cfg).map_err(|e| e.to_string())
+                                })
+                                .await
+                                .unwrap_or_else(|e| Err(e.to_string()))
+                            },
+                            Message::ConfigSaved,
+                        );
+                    }
+                }
+                Task::none()
+            }
+
+            Message::ConfigSaved(result) => {
+                if let Err(e) = result {
+                    self.status = format!("Config non sauvée : {e}");
+                }
+                Task::none()
+            }
         }
     }
 
@@ -1046,6 +1270,12 @@ impl App {
         let entry = self.queue_entries.remove(0);
         self.adjust_selected_queue_index_after_remove(0);
         self.play_queue_entry(player_id, entry);
+    }
+
+    fn apply_startup_playback_config(&mut self) {
+        if self.app_config.auto_play_on_start && !self.queue_entries.is_empty() {
+            self.play_queue_entry_now(0);
+        }
     }
 
     fn play_queue_entry(&mut self, player_id: audio::PlayerId, entry: db::QueueEntry) {
@@ -1346,7 +1576,9 @@ impl App {
                     trimmed.chars().take(64).collect()
                 }
             }
-            None => self.active_instant_page_name(),
+            None | Some(Dialog::EditDbConfig { .. }) | Some(Dialog::EditConfig { .. }) => {
+                self.active_instant_page_name()
+            }
         };
 
         let page_id = match self.active_instant_page_id() {
@@ -1861,18 +2093,71 @@ impl App {
     }
 
     fn footer_bar(&self) -> Element<'_, Message> {
-        let color = if self.db.is_some() {
+        let status_color = if self.db.is_some() {
             rgb(221, 230, 237)
         } else {
             rgb(255, 190, 120)
         };
-        container(text(self.status.clone()).size(14).style(text_color(color)))
+        let db_icon_color = if self.db.is_some() {
+            rgb(100, 140, 170)
+        } else {
+            rgb(255, 160, 80)
+        };
+        let icon_btn = |icon: Bootstrap, msg: Option<Message>, color: Color| {
+            let t = text(icon.to_string())
+                .font(BOOTSTRAP_FONT)
+                .size(14)
+                .style(text_color(color));
+            let b = button(t).padding([0, 10]).style(|_, _| button::Style {
+                background: None,
+                ..Default::default()
+            });
+            if let Some(m) = msg {
+                b.on_press(m)
+            } else {
+                b
+            }
+        };
+
+        let active_color = rgb(100, 140, 170);
+        let inactive_color = rgb(70, 90, 105);
+
+        let cfg_btn = icon_btn(
+            Bootstrap::GearFill,
+            self.db.is_some().then_some(Message::ConfigOpen),
+            if self.db.is_some() {
+                active_color
+            } else {
+                inactive_color
+            },
+        );
+        let db_btn = icon_btn(
+            Bootstrap::DatabaseFill,
+            Some(Message::DbConfigOpen),
+            db_icon_color,
+        );
+
+        container(
+            row![
+                Space::with_width(Length::Fixed(34.0)),
+                container(
+                    text(self.status.clone())
+                        .size(14)
+                        .style(text_color(status_color))
+                )
+                .center_x(Length::Fill)
+                .center_y(Length::Fill),
+                cfg_btn,
+                db_btn,
+            ]
+            .align_y(Alignment::Center)
             .width(Length::Fill)
-            .height(Length::Fixed(34.0))
-            .center_x(Length::Fill)
-            .align_y(Vertical::Center)
-            .style(block_style(rgb(55, 75, 89)))
-            .into()
+            .height(Length::Fill),
+        )
+        .width(Length::Fill)
+        .height(Length::Fixed(34.0))
+        .style(block_style(rgb(55, 75, 89)))
+        .into()
     }
 
     fn dialog_overlay(&self) -> Element<'_, Message> {
@@ -1901,6 +2186,118 @@ impl App {
             .width(Length::Fixed(420.0))
             .padding(16)
             .style(panel_style(rgb(31, 46, 55), accent_purple())),
+            Some(Dialog::EditDbConfig {
+                host,
+                port,
+                database,
+                user,
+                password,
+            }) => {
+                let lbl = |s: &'static str| text(s).size(11).style(text_color(rgb(160, 180, 195)));
+                let field = |label: &'static str, val: &str, f: DbField| {
+                    column![
+                        lbl(label),
+                        text_input("", val)
+                            .on_input(move |v| Message::DbConfigFieldChanged(f.clone(), v))
+                            .padding(7)
+                            .size(13)
+                            .width(Length::Fill),
+                    ]
+                    .spacing(4)
+                };
+                container(
+                    column![
+                        text("Database configuration")
+                            .size(14)
+                            .style(text_color(rgb(226, 238, 245))),
+                        field("Host", host, DbField::Host),
+                        field("Port", port, DbField::Port),
+                        field("Database", database, DbField::Database),
+                        field("User", user, DbField::User),
+                        column![
+                            lbl("Password"),
+                            text_input("", password)
+                                .on_input(|v| Message::DbConfigFieldChanged(DbField::Password, v))
+                                .secure(true)
+                                .padding(7)
+                                .size(13)
+                                .width(Length::Fill),
+                        ]
+                        .spacing(4),
+                        row![
+                            Space::with_width(Length::Fill),
+                            self.dialog_button("Cancel", Message::DialogCancel, rgb(62, 83, 97)),
+                            self.dialog_button(
+                                "Save & Reconnect",
+                                Message::DbConfigSave,
+                                accent_purple()
+                            ),
+                        ]
+                        .spacing(8)
+                        .align_y(Alignment::Center),
+                    ]
+                    .spacing(12),
+                )
+                .width(Length::Fixed(460.0))
+                .padding(16)
+                .style(panel_style(rgb(31, 46, 55), accent_purple()))
+            }
+            Some(Dialog::EditConfig {
+                auto_mix_on_start,
+                auto_play_on_start,
+            }) => {
+                let fieldset_label = container(
+                    text("AUTO MIX")
+                        .size(11)
+                        .style(text_color(rgb(160, 180, 195))),
+                )
+                .padding([3, 8]);
+
+                let fieldset_body = column![
+                    checkbox("Enable AUTO MIX on Start", *auto_mix_on_start)
+                        .on_toggle(|_| Message::ConfigToggle(ConfigField::AutoMixOnStart))
+                        .size(14)
+                        .text_size(13),
+                    checkbox("Enable AUTO Play on Start", *auto_play_on_start)
+                        .on_toggle(|_| Message::ConfigToggle(ConfigField::AutoPlayOnStart))
+                        .size(14)
+                        .text_size(13),
+                ]
+                .spacing(10)
+                .padding([10, 12]);
+
+                let fieldset =
+                    container(column![fieldset_label, fieldset_body].spacing(0)).style(|_| {
+                        container::Style {
+                            border: Border {
+                                color: rgb(62, 83, 97),
+                                width: 1.0,
+                                radius: 3.0.into(),
+                            },
+                            ..Default::default()
+                        }
+                    });
+
+                container(
+                    column![
+                        text("Configuration")
+                            .size(14)
+                            .style(text_color(rgb(226, 238, 245))),
+                        fieldset,
+                        row![
+                            Space::with_width(Length::Fill),
+                            self.dialog_button("Cancel", Message::DialogCancel, rgb(62, 83, 97)),
+                            self.dialog_button("Save", Message::ConfigSave, accent_purple()),
+                        ]
+                        .spacing(8)
+                        .align_y(Alignment::Center),
+                    ]
+                    .spacing(16),
+                )
+                .width(Length::Fixed(380.0))
+                .padding(16)
+                .style(panel_style(rgb(31, 46, 55), accent_purple()))
+            }
             None => container(Space::new(Length::Shrink, Length::Shrink)),
         };
 
