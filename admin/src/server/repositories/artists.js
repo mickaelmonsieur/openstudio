@@ -1,14 +1,52 @@
-export async function listArtists(db) {
-  const { rows } = await db.query(`
+export async function listArtists(db, search = '') {
+  const { where, values } = buildSearchWhere(search);
+  const { rows } = await db.query(
+    `
     SELECT
       id,
       name,
       to_char(last_broadcast_at, 'YYYY-MM-DD HH24:MI:SS') AS last_broadcast_at
     FROM artists
+    ${where}
     ORDER BY name
-  `);
+    `,
+    values
+  );
 
   return rows;
+}
+
+function buildSearchWhere(search) {
+  const terms = String(search || '')
+    .trim()
+    .split(/\s+/)
+    .filter(Boolean)
+    .slice(0, 8);
+
+  if (terms.length === 0) {
+    return { where: '', values: [] };
+  }
+
+  const values = terms.map((term) => `%${escapeLike(term)}%`);
+  const clauses = values.map((_, index) => {
+    const param = `$${index + 1}`;
+    return `
+      (
+        id::text ILIKE ${param} ESCAPE '\\'
+        OR name ILIKE ${param} ESCAPE '\\'
+        OR COALESCE(to_char(last_broadcast_at, 'YYYY-MM-DD HH24:MI:SS'), '') ILIKE ${param} ESCAPE '\\'
+      )
+    `;
+  });
+
+  return {
+    where: `WHERE ${clauses.join(' AND ')}`,
+    values
+  };
+}
+
+function escapeLike(value) {
+  return String(value).replace(/[\\%_]/g, '\\$&');
 }
 
 export async function getArtist(db, id) {

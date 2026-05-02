@@ -5,6 +5,8 @@ import { DataTable } from './DataTable.jsx';
 
 export function CrudPage({ resource }) {
   const [rows, setRows] = useState([]);
+  const [searchInput, setSearchInput] = useState('');
+  const [searchQuery, setSearchQuery] = useState('');
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [modal, setModal] = useState(null);
@@ -14,13 +16,28 @@ export function CrudPage({ resource }) {
 
   useEffect(() => {
     loadRows();
-  }, [resource.endpoint]);
+  }, [resource.endpoint, searchQuery]);
+
+  useEffect(() => {
+    if (!resource.searchable) return undefined;
+
+    const timer = setTimeout(() => {
+      setSearchQuery(searchInput.trim());
+    }, 250);
+
+    return () => clearTimeout(timer);
+  }, [resource.searchable, searchInput]);
 
   async function loadRows() {
     setLoading(true);
     setError(null);
     try {
-      const response = await fetch(resource.endpoint);
+      const params = new URLSearchParams();
+      if (resource.searchable && searchQuery) params.set('q', searchQuery);
+      const url = params.toString()
+        ? `${resource.endpoint}?${params.toString()}`
+        : resource.endpoint;
+      const response = await fetch(url);
       const payload = await readJsonResponse(response);
       setRows(payload.rows || []);
     } catch (loadError) {
@@ -87,18 +104,48 @@ export function CrudPage({ resource }) {
           <p className="panel-kicker">CRUD</p>
           <h2>{resource.title}</h2>
         </div>
-        {resource.actions.add ? (
-          <button
-            className="primary-button"
-            onClick={() => setModal({ mode: 'create', row: null })}
-            type="button"
-          >
-            Add
-          </button>
-        ) : null}
+        <div className="header-actions">
+          {resource.searchable ? (
+            <label className="table-search">
+              <span>Search</span>
+              <input
+                type="search"
+                value={searchInput}
+                onChange={(event) => setSearchInput(event.target.value)}
+              />
+            </label>
+          ) : null}
+
+          {resource.actions.add ? (
+            <button
+              className="primary-button"
+              onClick={() => setModal({ mode: 'create', row: null })}
+              type="button"
+            >
+              Add
+            </button>
+          ) : null}
+        </div>
       </header>
 
       {error ? <div className="table-error">{error}</div> : null}
+
+      {resource.searchable && searchQuery ? (
+        <div className="filter-status">
+          Search: <strong>{searchQuery}</strong>
+          <button
+            className="ghost-button"
+            type="button"
+            onClick={() => {
+              setSearchInput('');
+              setSearchQuery('');
+            }}
+          >
+            Clear
+          </button>
+        </div>
+      ) : null}
+
       {loading ? (
         <div className="table-loading">Loading...</div>
       ) : (

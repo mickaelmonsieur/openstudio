@@ -24,23 +24,74 @@ const FROM_JOIN = `
   LEFT JOIN categories    c  ON c.id  = sc.category_id
 `;
 
-export async function countTracks(db) {
-  const { rows } = await db.query('SELECT COUNT(*)::integer AS total FROM tracks');
+export async function countTracks(db, search = '') {
+  const { where, values } = buildSearchWhere(search);
+  const { rows } = await db.query(
+    `
+    SELECT COUNT(*)::integer AS total
+    ${FROM_JOIN}
+    ${where}
+    `,
+    values
+  );
   return rows[0].total;
 }
 
-export async function listTracks(db, { limit, offset }) {
+export async function listTracks(db, { limit, offset, search = '' }) {
+  const { where, values } = buildSearchWhere(search);
+  const limitParam = values.length + 1;
+  const offsetParam = values.length + 2;
+
   const { rows } = await db.query(
     `
     SELECT ${LIST_COLUMNS}
     ${FROM_JOIN}
+    ${where}
     ORDER BY a.name NULLS LAST, t.title
-    LIMIT $1 OFFSET $2
+    LIMIT $${limitParam} OFFSET $${offsetParam}
     `,
-    [limit, offset]
+    [...values, limit, offset]
   );
 
   return rows;
+}
+
+function buildSearchWhere(search) {
+  const terms = String(search || '')
+    .trim()
+    .split(/\s+/)
+    .filter(Boolean)
+    .slice(0, 8);
+
+  if (terms.length === 0) {
+    return { where: '', values: [] };
+  }
+
+  const values = terms.map((term) => `%${escapeLike(term)}%`);
+  const clauses = values.map((_, index) => {
+    const param = `$${index + 1}`;
+    return `
+      (
+        t.id::text ILIKE ${param} ESCAPE '\\'
+        OR COALESCE(a.name, '') ILIKE ${param} ESCAPE '\\'
+        OR COALESCE(t.title, '') ILIKE ${param} ESCAPE '\\'
+        OR COALESCE(t.album, '') ILIKE ${param} ESCAPE '\\'
+        OR COALESCE(g.name, '') ILIKE ${param} ESCAPE '\\'
+        OR COALESCE(c.name, '') ILIKE ${param} ESCAPE '\\'
+        OR COALESCE(sc.name, '') ILIKE ${param} ESCAPE '\\'
+        OR COALESCE(t.year::text, '') ILIKE ${param} ESCAPE '\\'
+      )
+    `;
+  });
+
+  return {
+    where: `WHERE ${clauses.join(' AND ')}`,
+    values
+  };
+}
+
+function escapeLike(value) {
+  return String(value).replace(/[\\%_]/g, '\\$&');
 }
 
 export async function getTrack(db, id) {
@@ -89,6 +140,20 @@ export async function createTrack(db, data) {
   );
 
   return getTrack(db, rows[0].id);
+}
+
+export async function trackExistsByPath(db, trackPath) {
+  const { rows } = await db.query(
+    `
+    SELECT id
+    FROM tracks
+    WHERE path = $1
+    LIMIT 1
+    `,
+    [trackPath]
+  );
+
+  return rows[0] || null;
 }
 
 export async function updateTrack(db, id, data) {

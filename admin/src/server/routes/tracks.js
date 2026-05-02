@@ -15,6 +15,12 @@ import {
   updateTrack
 } from '../repositories/tracks.js';
 import { importFlacTrack } from '../services/import-flac.js';
+import {
+  databaseRoot,
+  getFolderImportJob,
+  listDatabaseFolders,
+  startFolderImport
+} from '../services/folder-import.js';
 
 const DEFAULT_LIMIT = 100;
 const MAX_LIMIT = 500;
@@ -43,6 +49,10 @@ function parsePagination(query) {
   const page  = Math.max(1, parseInt(query.page  || 1,             10) || 1);
   const limit = Math.min(MAX_LIMIT, Math.max(1, parseInt(query.limit || DEFAULT_LIMIT, 10) || DEFAULT_LIMIT));
   return { page, limit, offset: (page - 1) * limit };
+}
+
+function parseSearch(query) {
+  return String(query.q || '').trim().slice(0, 120);
 }
 
 function validateTrack(data, options = {}) {
@@ -159,12 +169,16 @@ function asyncRoute(handler) {
 export function registerTrackRoutes(app, getDatabaseConfig) {
   app.get('/api/tracks', asyncRoute(async (req, res) => {
     const { page, limit, offset } = parsePagination(req.query);
+    const search = parseSearch(req.query);
 
     const [total, rows] = await withDatabase(getDatabaseConfig(), (db) =>
-      Promise.all([countTracks(db), listTracks(db, { limit, offset })])
+      Promise.all([
+        countTracks(db, search),
+        listTracks(db, { limit, offset, search })
+      ])
     );
 
-    res.json({ rows, total, page, limit });
+    res.json({ rows, total, page, limit, q: search });
   }));
 
   // Must be declared before /api/tracks/:id to avoid "options" being parsed as an id
@@ -173,6 +187,54 @@ export function registerTrackRoutes(app, getDatabaseConfig) {
       Promise.all([listGenres(db), listSubcategoriesWithCategory(db)])
     );
     res.json({ genres, subcategories });
+  }));
+
+  app.get('/api/tracks/folders', asyncRoute(async (req, res) => {
+    const payload = await listDatabaseFolders(req.query.path);
+    res.json({
+      root: databaseRoot(),
+      ...payload
+    });
+  }));
+
+  app.post('/api/tracks/folder-import', asyncRoute(async (req, res) => {
+    const folderPath = String(req.body?.folderPath || '').trim();
+    const genre_id = parseOptionalPositiveInteger(req.body?.genre_id);
+    const subcategory_id = parseOptionalPositiveInteger(req.body?.subcategory_id);
+
+    if (!folderPath) {
+      res.status(400).json({ error: 'Folder is required.' });
+      return;
+    }
+
+    if (!genre_id || genre_id === false) {
+      res.status(400).json({ error: 'Genre is required.' });
+      return;
+    }
+
+    if (!subcategory_id || subcategory_id === false) {
+      res.status(400).json({ error: 'Category is required.' });
+      return;
+    }
+
+    const job = startFolderImport(getDatabaseConfig(), {
+      folderPath,
+      genre_id,
+      subcategory_id,
+      includeSubfolders: req.body?.includeSubfolders !== false
+    });
+
+    res.status(202).json({ job });
+  }));
+
+  app.get('/api/tracks/folder-import/:jobId', asyncRoute(async (req, res) => {
+    const job = getFolderImportJob(req.params.jobId);
+    if (!job) {
+      res.status(404).json({ error: 'Import job not found.' });
+      return;
+    }
+
+    res.json({ job });
   }));
 
   app.post('/api/tracks/import-flac/preview', upload.single('file'), asyncRoute(async (req, res) => {

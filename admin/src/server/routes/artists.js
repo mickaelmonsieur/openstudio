@@ -25,6 +25,10 @@ function validateArtist(data) {
   return { ok: true, value: { name } };
 }
 
+function parseSearch(query) {
+  return String(query.q || '').trim().slice(0, 120);
+}
+
 function asyncRoute(handler) {
   return async (req, res) => {
     try {
@@ -38,9 +42,10 @@ function asyncRoute(handler) {
 }
 
 export function registerArtistRoutes(app, getDatabaseConfig) {
-  app.get('/api/artists', asyncRoute(async (_req, res) => {
-    const rows = await withDatabase(getDatabaseConfig(), listArtists);
-    res.json({ rows });
+  app.get('/api/artists', asyncRoute(async (req, res) => {
+    const search = parseSearch(req.query);
+    const rows = await withDatabase(getDatabaseConfig(), (db) => listArtists(db, search));
+    res.json({ rows, q: search });
   }));
 
   app.get('/api/artists/:id', asyncRoute(async (req, res) => {

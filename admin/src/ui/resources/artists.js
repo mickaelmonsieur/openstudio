@@ -2,6 +2,7 @@ export const artistsResource = {
   name: 'artists',
   title: 'Artists',
   endpoint: '/api/artists',
+  searchable: true,
   primaryKey: 'id',
   columns: [
     { key: 'id', label: 'ID', width: '90px' },

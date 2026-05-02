@@ -15,7 +15,17 @@ export async function importFlacTrack(db, file) {
     throw new Error('Only .flac files can be imported.');
   }
 
-  const metadata = await parseFile(file.path);
+  const draft = await buildFlacTrackDraft(db, file.path, file.originalname);
+  const importedPath = await copyIntoDatabase(file.path, file.originalname);
+
+  return {
+    ...draft,
+    path: importedPath
+  };
+}
+
+export async function buildFlacTrackDraft(db, filePath, displayName, options = {}) {
+  const metadata = await parseFile(filePath);
   assertFlacMetadata(metadata);
 
   const common = metadata.common || {};
@@ -24,11 +34,12 @@ export async function importFlacTrack(db, file) {
   const artistName = firstText(common.artist || common.artists?.[0]);
   const genreName = firstText(common.genre);
   const artist = artistName ? await findOrCreateArtist(db, artistName) : null;
-  const genre = genreName ? await findGenreByName(db, genreName) : null;
-  const title = firstText(common.title) || stripExtension(file.originalname);
+  const genre = options.inferGenre === false
+    ? null
+    : (genreName ? await findGenreByName(db, genreName) : null);
+  const title = firstText(common.title) || stripExtension(displayName);
   const album = firstText(common.album);
   const year = parseYear(common.year || common.date);
-  const importedPath = await copyIntoDatabase(file.path, file.originalname);
 
   return {
     artist_id: artist?.id || '',
@@ -40,7 +51,7 @@ export async function importFlacTrack(db, file) {
     year: year || '',
     duration: Number(format.duration || 0),
     sample_rate: Number(format.sampleRate || 44100),
-    path: importedPath,
+    path: filePath,
     subcategory_id: '',
     active: true
   };

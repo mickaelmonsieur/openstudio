@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { ConfirmDialog } from '../crud/ConfirmDialog.jsx';
+import { ScanFolderModal } from './ScanFolderModal.jsx';
 import { TrackEditModal } from './TrackEditModal.jsx';
 
 const LIMIT = 100;
@@ -9,6 +10,8 @@ export function TracksPage() {
   const [rows, setRows] = useState([]);
   const [total, setTotal] = useState(0);
   const [page, setPage] = useState(1);
+  const [searchInput, setSearchInput] = useState('');
+  const [searchQuery, setSearchQuery] = useState('');
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
 
@@ -18,6 +21,7 @@ export function TracksPage() {
 
   const [editTrack, setEditTrack] = useState(null);
   const [importDraft, setImportDraft] = useState(null);
+  const [scanFolderOpen, setScanFolderOpen] = useState(false);
   const [importing, setImporting] = useState(false);
   const [saving, setSaving] = useState(false);
   const [formError, setFormError] = useState(null);
@@ -33,7 +37,16 @@ export function TracksPage() {
 
   useEffect(() => {
     loadTracks();
-  }, [page]);
+  }, [page, searchQuery]);
+
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setSearchQuery(searchInput.trim());
+      setPage(1);
+    }, 250);
+
+    return () => clearTimeout(timer);
+  }, [searchInput]);
 
   async function loadOptions() {
     try {
@@ -53,7 +66,13 @@ export function TracksPage() {
     setLoading(true);
     setError(null);
     try {
-      const payload = await fetchJson(`/api/tracks?page=${page}&limit=${LIMIT}`);
+      const params = new URLSearchParams({
+        page: String(page),
+        limit: String(LIMIT)
+      });
+      if (searchQuery) params.set('q', searchQuery);
+
+      const payload = await fetchJson(`/api/tracks?${params.toString()}`);
       setRows(payload.rows || []);
       setTotal(payload.total || 0);
     } catch (err) {
@@ -152,6 +171,14 @@ export function TracksPage() {
           <h2>Tracks</h2>
         </div>
         <div className="header-actions">
+          <label className="table-search">
+            <span>Search</span>
+            <input
+              type="search"
+              value={searchInput}
+              onChange={(event) => setSearchInput(event.target.value)}
+            />
+          </label>
           <input
             ref={fileInputRef}
             accept=".flac,audio/flac"
@@ -167,11 +194,35 @@ export function TracksPage() {
           >
             {importing ? 'Importing...' : 'Add File'}
           </button>
+          <button
+            className="ghost-button"
+            type="button"
+            onClick={() => setScanFolderOpen(true)}
+          >
+            Scan Folder
+          </button>
           <span className="log-total">{total.toLocaleString()} tracks</span>
         </div>
       </header>
 
       {error ? <div className="table-error">{error}</div> : null}
+
+      {searchQuery ? (
+        <div className="filter-status">
+          Search: <strong>{searchQuery}</strong>
+          <button
+            className="ghost-button"
+            type="button"
+            onClick={() => {
+              setSearchInput('');
+              setSearchQuery('');
+              setPage(1);
+            }}
+          >
+            Clear
+          </button>
+        </div>
+      ) : null}
 
       {loading ? (
         <div className="table-loading">Loading...</div>
@@ -277,6 +328,15 @@ export function TracksPage() {
           track={importDraft}
           onClose={() => setImportDraft(null)}
           onSubmit={saveImportedTrack}
+        />
+      ) : null}
+
+      {scanFolderOpen ? (
+        <ScanFolderModal
+          genres={genres}
+          subcategories={subcategories}
+          onClose={() => setScanFolderOpen(false)}
+          onFinished={loadTracks}
         />
       ) : null}
 
