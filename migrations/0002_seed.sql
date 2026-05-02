@@ -379,7 +379,14 @@ INSERT INTO schedules (id, from_hour, to_hour, monday, tuesday, wednesday, thurs
     (1, 0, 23, TRUE, TRUE, TRUE, TRUE, TRUE, TRUE, TRUE, 3);
 SELECT setval('schedules_id_seq', 1);
 
-INSERT INTO users (id, login, password_hash, active, role) OVERRIDING SYSTEM VALUE VALUES
+INSERT INTO users_roles (id, name) OVERRIDING SYSTEM VALUE VALUES
+    (1, 'SuperAdmin'),
+    (2, 'Admin'),
+    (3, 'Manager'),
+    (4, 'User');
+SELECT setval('users_roles_id_seq', 4);
+
+INSERT INTO users (id, login, password_hash, active, role_id) OVERRIDING SYSTEM VALUE VALUES
     (1, 'admin', crypt('admin123', gen_salt('bf')), TRUE, 1);
 SELECT setval('users_id_seq', 1);
 

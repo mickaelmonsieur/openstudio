@@ -6,6 +6,7 @@ import { fileURLToPath } from 'node:url';
 import { registerArtistRoutes } from './routes/artists.js';
 import { registerCategoryRoutes } from './routes/categories.js';
 import { registerStationRoutes } from './routes/stations.js';
+import { registerUserRoutes } from './routes/users.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const adminRoot = path.resolve(__dirname, '../..');
@@ -151,6 +152,7 @@ export async function createOpenStudioAdminServer(config) {
   registerCategoryRoutes(webApp, () => readDatabaseConfig(dataDir));
   registerArtistRoutes(webApp, () => readDatabaseConfig(dataDir));
   registerStationRoutes(webApp, () => readDatabaseConfig(dataDir));
+  registerUserRoutes(webApp, () => readDatabaseConfig(dataDir));
   await attachWebUi(webApp);
 
   const controlApp = express();

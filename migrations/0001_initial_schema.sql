@@ -238,25 +238,31 @@ CREATE INDEX idx_automix_log_logged_at ON automix_log (logged_at);
 
 -- ── Users ───────────────────────────────────────────────────────────────────
 
+CREATE TABLE users_roles (
+    id   SMALLINT    GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+    name VARCHAR(32) NOT NULL,
+    CONSTRAINT uq_users_roles_name UNIQUE (name)
+);
+
 CREATE TABLE users (
     id            INTEGER      GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
     login         VARCHAR(32)  NOT NULL,
     password_hash VARCHAR(255) NOT NULL DEFAULT '',
     active        BOOLEAN      NOT NULL DEFAULT FALSE,
-    role          SMALLINT     NOT NULL DEFAULT 0,
+    role_id       SMALLINT     NOT NULL DEFAULT 4 REFERENCES users_roles(id),
     CONSTRAINT uq_users_login UNIQUE (login)
 );
 
 -- ── User audit log ──────────────────────────────────────────────────────────
 
-CREATE TABLE user_actions (
+CREATE TABLE users_actions (
     id           INTEGER      GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
     user_id      INTEGER      NOT NULL REFERENCES users (id),
     action       VARCHAR(64)  NOT NULL DEFAULT '',
     performed_at TIMESTAMPTZ  NOT NULL DEFAULT NOW()
 );
 
-CREATE INDEX idx_user_actions_user ON user_actions (user_id);
+CREATE INDEX idx_users_actions_user ON users_actions (user_id);
 
 -- ── App configuration (singleton) ───────────────────────────────────────────
 

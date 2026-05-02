@@ -42,6 +42,17 @@ export function CrudFormModal({ mode, resource, row, error, saving, onClose, onS
                   type="checkbox"
                   onChange={(event) => updateField(field.key, event.target.checked)}
                 />
+              ) : field.type === 'select' ? (
+                <select
+                  required={field.required}
+                  value={formData[field.key] ?? ''}
+                  onChange={(event) => updateField(field.key, event.target.value)}
+                >
+                  <option value="">— select —</option>
+                  {field.options.map((opt) => (
+                    <option key={opt.value} value={opt.value}>{opt.label}</option>
+                  ))}
+                </select>
               ) : (
                 <input
                   maxLength={field.maxLength}

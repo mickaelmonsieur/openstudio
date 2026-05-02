@@ -3,6 +3,7 @@ import { CrudPage } from './crud/CrudPage.jsx';
 import { CategoryPage } from './pages/CategoryPage.jsx';
 import { artistsResource } from './resources/artists.js';
 import { stationsResource } from './resources/stations.js';
+import { usersResource } from './resources/users.js';
 
 const moduleGroups = [
   {
@@ -161,6 +162,14 @@ export function App() {
       return (
         <section className="content-panel wide-panel">
           <CategoryPage />
+        </section>
+      );
+    }
+
+    if (activeModule.path === '/users') {
+      return (
+        <section className="content-panel">
+          <CrudPage resource={usersResource} />
         </section>
       );
     }
