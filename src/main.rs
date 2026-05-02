@@ -236,7 +236,16 @@ impl Default for App {
         let mut search_tracks = Vec::new();
         let mut queue_entries = Vec::new();
 
-        let (db, status) = match db::Database::connect_from_file("config/database.json") {
+        let db_config_path = std::env::current_exe()
+            .ok()
+            .and_then(|exe| {
+                // In a macOS .app bundle: Contents/MacOS/<exe> → Contents/Resources/database.json
+                let candidate = exe.parent()?.parent()?.join("Resources/database.json");
+                candidate.exists().then_some(candidate)
+            })
+            .unwrap_or_else(|| std::path::PathBuf::from("config/database.json"));
+
+        let (db, status) = match db::Database::connect_from_file(&db_config_path) {
             Ok(db) => {
                 let mut warnings = Vec::new();
 
