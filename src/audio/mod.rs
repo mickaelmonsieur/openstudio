@@ -1,9 +1,8 @@
 use std::collections::HashMap;
-use std::collections::VecDeque;
 use std::path::PathBuf;
-use std::sync::atomic::{AtomicU32, AtomicU64, Ordering};
-use std::sync::mpsc::{self, Sender};
-use std::sync::{Arc, Mutex};
+use std::sync::atomic::{AtomicU32, AtomicU64, AtomicUsize, Ordering};
+use std::sync::mpsc::{self, Sender, SyncSender, TrySendError};
+use std::sync::Arc;
 use std::time::Duration;
 
 use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
@@ -335,11 +334,16 @@ impl AudioLevels {
 
 /// Résultat du pré-chargement : décodeur prêt + buffer pré-rempli avec ~0.5 s d'audio.
 pub struct Preloaded {
-    buffer: Arc<Mutex<VecDeque<f32>>>,
+    samples: Vec<f32>,
     format: Box<dyn symphonia::core::formats::FormatReader>,
     decoder: Box<dyn symphonia::core::codecs::Decoder>,
     track_id: u32,
     source_sample_rate: u32,
+}
+
+struct AudioChunk {
+    generation: u64,
+    samples: Vec<f32>,
 }
 
 enum SeekRequest {
@@ -402,11 +406,11 @@ fn do_preload(path: PathBuf) -> Result<Preloaded, Box<dyn std::error::Error + Se
         .ok_or("Aucune sortie audio disponible")?;
     let out_channels = config_for(&device, source_sample_rate)?.channels() as usize;
 
-    let buffer: Arc<Mutex<VecDeque<f32>>> = Arc::new(Mutex::new(VecDeque::new()));
+    let mut samples = Vec::new();
     let prefill_target = source_sample_rate as usize * out_channels / 2; // 0.5 s
 
     loop {
-        if buffer.lock().expect("verrou preload").len() >= prefill_target {
+        if samples.len() >= prefill_target {
             break;
         }
         let packet = match format.next_packet() {
@@ -417,13 +421,13 @@ fn do_preload(path: PathBuf) -> Result<Preloaded, Box<dyn std::error::Error + Se
             continue;
         }
         match decoder.decode(&packet) {
-            Ok(decoded) => push_to_buffer(&buffer, decoded, out_channels),
+            Ok(decoded) => samples.extend(decoded_to_samples(decoded, out_channels)),
             Err(_) => continue,
         }
     }
 
     Ok(Preloaded {
-        buffer,
+        samples,
         format,
         decoder,
         track_id,
@@ -479,13 +483,14 @@ fn run(
     levels: Arc<AudioLevels>,
 ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     // Récupérer l'état symphonia — depuis le pré-chargement ou en ouvrant le fichier
-    let (mut format, mut decoder, track_id, source_sample_rate, buffer) = match preloaded {
+    let (mut format, mut decoder, track_id, source_sample_rate, preloaded_samples) = match preloaded
+    {
         Some(p) => (
             p.format,
             p.decoder,
             p.track_id,
             p.source_sample_rate,
-            p.buffer,
+            p.samples,
         ),
         None => {
             let file = std::fs::File::open(&path)?;
@@ -502,13 +507,7 @@ fn run(
             let sr = track.codec_params.sample_rate.unwrap_or(44100);
             let dec = symphonia::default::get_codecs()
                 .make(&track.codec_params, &DecoderOptions::default())?;
-            (
-                fmt,
-                dec,
-                track_id,
-                sr,
-                Arc::new(Mutex::new(VecDeque::new())),
-            )
+            (fmt, dec, track_id, sr, Vec::new())
         }
     };
 
@@ -518,17 +517,28 @@ fn run(
         .ok_or("Aucune sortie audio disponible")?;
     let config = config_for(&device, source_sample_rate)?;
     let out_channels = config.channels() as usize;
-    let max_buffered = source_sample_rate as usize * out_channels * 2; // 2 s max
+    let (chunk_tx, chunk_rx) = mpsc::sync_channel::<AudioChunk>(64);
+    let buffered_samples = Arc::new(AtomicUsize::new(preloaded_samples.len()));
+    let playback_generation = Arc::new(AtomicU64::new(0));
 
-    let buffer_cb = Arc::clone(&buffer);
     let levels_cb = Arc::clone(&levels);
+    let buffered_samples_cb = Arc::clone(&buffered_samples);
+    let playback_generation_cb = Arc::clone(&playback_generation);
+    let mut current_chunk = preloaded_samples;
+    let mut current_offset = 0;
+    let mut callback_generation = 0;
     let stream = device.build_output_stream(
         &config.into(),
         move |data: &mut [f32], _| {
-            let mut buf = buffer_cb.lock().expect("verrou buffer audio");
-            for s in data.iter_mut() {
-                *s = buf.pop_front().unwrap_or(0.0);
-            }
+            fill_output_from_chunks(
+                data,
+                &chunk_rx,
+                &buffered_samples_cb,
+                &playback_generation_cb,
+                &mut current_chunk,
+                &mut current_offset,
+                &mut callback_generation,
+            );
             update_levels(&levels_cb, data, out_channels);
         },
         |err| eprintln!("Erreur cpal : {err}"),
@@ -542,8 +552,7 @@ fn run(
 
     loop {
         if stop_rx.try_recv().is_ok() {
-            buffer.lock().expect("verrou buffer audio").clear();
-            break;
+            return Ok(());
         }
 
         if let Ok(should_pause) = pause_rx.try_recv() {
@@ -563,10 +572,11 @@ fn run(
         }
 
         if let Ok(seek) = seek_rx.try_recv() {
+            let audible_secs = position_ms.load(Ordering::Relaxed) as f64 / 1000.0;
             let target_secs = match seek {
-                SeekRequest::Relative(offset_ms) => (current_ts as f64 / source_sample_rate as f64
-                    + offset_ms as f64 / 1000.0)
-                    .max(0.0),
+                SeekRequest::Relative(offset_ms) => {
+                    (audible_secs + offset_ms as f64 / 1000.0).max(0.0)
+                }
                 SeekRequest::Absolute(position) => position.as_secs_f64(),
             };
             let target_time = Time {
@@ -586,7 +596,8 @@ fn run(
                 decoder.reset();
                 current_ts = (target_secs * source_sample_rate as f64) as u64;
                 position_ms.store((target_secs * 1000.0).max(0.0) as u64, Ordering::Relaxed);
-                buffer.lock().expect("verrou buffer audio").clear();
+                buffered_samples.store(0, Ordering::Relaxed);
+                playback_generation.fetch_add(1, Ordering::Relaxed);
             }
             continue;
         }
@@ -609,56 +620,48 @@ fn run(
             Err(e) => return Err(Box::new(e)),
         };
 
-        push_to_buffer(&buffer, decoded, out_channels);
+        let samples = decoded_to_samples(decoded, out_channels);
+        let sample_count = samples.len();
+        let generation = playback_generation.load(Ordering::Relaxed);
+        let chunk = AudioChunk {
+            generation,
+            samples,
+        };
+
+        if !send_audio_chunk(&chunk_tx, chunk, &stop_rx, &buffered_samples, sample_count) {
+            return Ok(());
+        }
 
         // Position affichée = position décodée − contenu du buffer (audio pas encore joué)
-        {
-            let buf_samples = buffer.lock().expect("verrou buffer audio").len();
-            let buf_ms =
-                buf_samples as u64 * 1000 / (source_sample_rate as u64 * out_channels as u64);
-            let decode_ms = current_ts * 1000 / source_sample_rate as u64;
-            position_ms.store(decode_ms.saturating_sub(buf_ms), Ordering::Relaxed);
-        }
-
-        // Throttle : 2 s max dans le buffer
-        loop {
-            let len = buffer.lock().expect("verrou buffer audio").len();
-            if len <= max_buffered {
-                break;
-            }
-            if stop_rx.try_recv().is_ok() {
-                buffer.lock().expect("verrou buffer audio").clear();
-                return Ok(());
-            }
-            let buf_ms = len as u64 * 1000 / (source_sample_rate as u64 * out_channels as u64);
-            position_ms.store(
-                (current_ts * 1000 / source_sample_rate as u64).saturating_sub(buf_ms),
-                Ordering::Relaxed,
-            );
-            std::thread::sleep(std::time::Duration::from_millis(10));
-        }
+        update_position_from_buffer(
+            &position_ms,
+            current_ts,
+            source_sample_rate,
+            out_channels,
+            buffered_samples.load(Ordering::Relaxed),
+        );
     }
 
     // Arrêt explicite : vider immédiatement
     if stop_rx.try_recv().is_ok() {
-        buffer.lock().expect("verrou buffer audio").clear();
         return Ok(());
     }
 
-    // Fin naturelle : attendre que le callback cpal ait consommé tout le VecDeque
+    // Fin naturelle : attendre que le callback cpal ait consommé tous les blocs envoyés.
     loop {
         if stop_rx.try_recv().is_ok() {
-            buffer.lock().expect("verrou buffer audio").clear();
             return Ok(());
         }
-        let remaining = buffer.lock().expect("verrou buffer audio").len();
+        let remaining = buffered_samples.load(Ordering::Relaxed);
         if remaining == 0 {
             break;
         }
-        let buf_ms = remaining as u64 * 1000 / (source_sample_rate as u64 * out_channels as u64);
-        position_ms.store(
-            (current_ts * 1000 / source_sample_rate as u64).saturating_sub(buf_ms),
-            Ordering::Relaxed,
+        update_position_from_buffer(
+            &position_ms,
+            current_ts,
+            source_sample_rate,
+            out_channels,
+            remaining,
         );
         std::thread::sleep(std::time::Duration::from_millis(10));
     }
@@ -673,6 +676,101 @@ fn run(
     }
 
     Ok(())
+}
+
+fn fill_output_from_chunks(
+    data: &mut [f32],
+    chunk_rx: &mpsc::Receiver<AudioChunk>,
+    buffered_samples: &AtomicUsize,
+    playback_generation: &AtomicU64,
+    current_chunk: &mut Vec<f32>,
+    current_offset: &mut usize,
+    callback_generation: &mut u64,
+) {
+    let active_generation = playback_generation.load(Ordering::Relaxed);
+    if *callback_generation != active_generation {
+        current_chunk.clear();
+        *current_offset = 0;
+        *callback_generation = active_generation;
+    }
+
+    let mut written = 0;
+    while written < data.len() {
+        if *current_offset >= current_chunk.len() {
+            current_chunk.clear();
+            *current_offset = 0;
+
+            match chunk_rx.try_recv() {
+                Ok(chunk) if chunk.generation == active_generation => {
+                    *current_chunk = chunk.samples;
+                }
+                Ok(_) => continue,
+                Err(_) => {
+                    data[written..].fill(0.0);
+                    break;
+                }
+            }
+        }
+
+        let available = current_chunk.len().saturating_sub(*current_offset);
+        let to_copy = available.min(data.len() - written);
+        if to_copy == 0 {
+            continue;
+        }
+
+        let src_end = *current_offset + to_copy;
+        let dst_end = written + to_copy;
+        data[written..dst_end].copy_from_slice(&current_chunk[*current_offset..src_end]);
+        decrement_buffered_samples(buffered_samples, to_copy);
+        *current_offset = src_end;
+        written = dst_end;
+    }
+}
+
+fn decrement_buffered_samples(buffered_samples: &AtomicUsize, consumed: usize) {
+    let _ = buffered_samples.fetch_update(Ordering::Relaxed, Ordering::Relaxed, |current| {
+        Some(current.saturating_sub(consumed))
+    });
+}
+
+fn send_audio_chunk(
+    chunk_tx: &SyncSender<AudioChunk>,
+    mut chunk: AudioChunk,
+    stop_rx: &mpsc::Receiver<()>,
+    buffered_samples: &AtomicUsize,
+    sample_count: usize,
+) -> bool {
+    loop {
+        buffered_samples.fetch_add(sample_count, Ordering::Relaxed);
+        match chunk_tx.try_send(chunk) {
+            Ok(()) => return true,
+            Err(TrySendError::Full(returned_chunk)) => {
+                decrement_buffered_samples(buffered_samples, sample_count);
+                if stop_rx.try_recv().is_ok() {
+                    return false;
+                }
+                chunk = returned_chunk;
+                std::thread::sleep(std::time::Duration::from_millis(5));
+            }
+            Err(TrySendError::Disconnected(_)) => {
+                decrement_buffered_samples(buffered_samples, sample_count);
+                return false;
+            }
+        }
+    }
+}
+
+fn update_position_from_buffer(
+    position_ms: &AtomicU64,
+    current_ts: u64,
+    source_sample_rate: u32,
+    out_channels: usize,
+    buffered_sample_count: usize,
+) {
+    let buf_ms = buffered_sample_count as u64 * 1000
+        / (source_sample_rate as u64 * out_channels.max(1) as u64);
+    let decode_ms = current_ts * 1000 / source_sample_rate as u64;
+    position_ms.store(decode_ms.saturating_sub(buf_ms), Ordering::Relaxed);
 }
 
 fn update_levels(levels: &AudioLevels, data: &[f32], channels: usize) {
@@ -694,11 +792,7 @@ fn update_levels(levels: &AudioLevels, data: &[f32], channels: usize) {
     levels.store(left, right);
 }
 
-fn push_to_buffer(
-    buffer: &Arc<Mutex<VecDeque<f32>>>,
-    decoded: AudioBufferRef<'_>,
-    out_channels: usize,
-) {
+fn decoded_to_samples(decoded: AudioBufferRef<'_>, out_channels: usize) -> Vec<f32> {
     let spec = *decoded.spec();
     let capacity = decoded.capacity() as u64;
     let mut sample_buf = SampleBuffer::<f32>::new(capacity, spec);
@@ -706,21 +800,25 @@ fn push_to_buffer(
     let samples = sample_buf.samples();
     let src_ch = spec.channels.count();
 
-    let mut buf = buffer.lock().expect("verrou buffer audio");
     if src_ch == out_channels {
-        buf.extend(samples.iter().copied());
+        samples.to_vec()
     } else if src_ch == 1 {
+        let mut out = Vec::with_capacity(samples.len() * out_channels);
         for &s in samples {
             for _ in 0..out_channels {
-                buf.push_back(s);
+                out.push(s);
             }
         }
+        out
     } else {
+        let frame_count = samples.len() / src_ch;
+        let mut out = Vec::with_capacity(frame_count * out_channels);
         for frame in samples.chunks(src_ch) {
             for i in 0..out_channels {
-                buf.push_back(*frame.get(i % src_ch).unwrap_or(&0.0));
+                out.push(*frame.get(i % src_ch).unwrap_or(&0.0));
             }
         }
+        out
     }
 }
 

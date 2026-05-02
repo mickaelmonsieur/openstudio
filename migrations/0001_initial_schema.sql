@@ -251,5 +251,6 @@ CREATE INDEX idx_user_actions_user ON user_actions (user_id);
 CREATE TABLE configurations (
     id                 INTEGER GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
     auto_mix_on_start  BOOLEAN NOT NULL DEFAULT false,
-    auto_play_on_start BOOLEAN NOT NULL DEFAULT false
+    auto_play_on_start BOOLEAN NOT NULL DEFAULT false,
+    preload            INTEGER NOT NULL DEFAULT 10
 );

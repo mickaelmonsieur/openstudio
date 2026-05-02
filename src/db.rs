@@ -13,6 +13,7 @@ pub type SharedDatabase = Arc<Database>;
 pub struct AppConfig {
     pub auto_mix_on_start: bool,
     pub auto_play_on_start: bool,
+    pub preload: i32,
 }
 
 impl Default for AppConfig {
@@ -20,6 +21,7 @@ impl Default for AppConfig {
         Self {
             auto_mix_on_start: false,
             auto_play_on_start: false,
+            preload: 10,
         }
     }
 }
@@ -151,10 +153,21 @@ impl Database {
             .user(&config.user)
             .password(&config.password);
 
-        let client = pg_config.connect(NoTls)?;
+        let mut client = pg_config.connect(NoTls)?;
+        Self::ensure_config_schema(&mut client)?;
         Ok(Arc::new(Self {
             client: Mutex::new(client),
         }))
+    }
+
+    fn ensure_config_schema(client: &mut Client) -> Result<(), DbError> {
+        client.batch_execute(
+            "
+            ALTER TABLE configurations
+            ADD COLUMN IF NOT EXISTS preload INTEGER NOT NULL DEFAULT 10
+            ",
+        )?;
+        Ok(())
     }
 
     pub fn search_tracks(&self) -> Result<Vec<SearchTrack>, DbError> {
@@ -416,20 +429,21 @@ impl Database {
     pub fn load_config(&self) -> Result<AppConfig, DbError> {
         let mut client = self.client.lock().map_err(|_| DbError::LockPoisoned)?;
         let row = client.query_one(
-            "SELECT auto_mix_on_start, auto_play_on_start FROM configurations LIMIT 1",
+            "SELECT auto_mix_on_start, auto_play_on_start, preload FROM configurations LIMIT 1",
             &[],
         )?;
         Ok(AppConfig {
             auto_mix_on_start: row.get(0),
             auto_play_on_start: row.get(1),
+            preload: row.get(2),
         })
     }
 
     pub fn save_config(&self, cfg: &AppConfig) -> Result<(), DbError> {
         let mut client = self.client.lock().map_err(|_| DbError::LockPoisoned)?;
         client.execute(
-            "UPDATE configurations SET auto_mix_on_start = $1, auto_play_on_start = $2",
-            &[&cfg.auto_mix_on_start, &cfg.auto_play_on_start],
+            "UPDATE configurations SET auto_mix_on_start = $1, auto_play_on_start = $2, preload = $3",
+            &[&cfg.auto_mix_on_start, &cfg.auto_play_on_start, &cfg.preload],
         )?;
         Ok(())
     }

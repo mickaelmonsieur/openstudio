@@ -38,8 +38,8 @@ const AUX_PLAYER_IDS: [audio::PlayerId; 3] = [
     audio::PlayerId::Aux2,
     audio::PlayerId::Aux3,
 ];
-const METER_TICK_MS: u64 = 25;
-const METER_DECAY_PER_TICK: f32 = 0.008;
+const METER_TICK_MS: u64 = 100;
+const METER_DECAY_PER_SECOND: f32 = 0.32;
 
 fn main() -> iced::Result {
     iced::daemon(App::title, App::update, App::view)
@@ -80,7 +80,8 @@ fn smooth_meter(current: f32, target: f32) -> f32 {
     if target >= current {
         target
     } else {
-        (current - METER_DECAY_PER_TICK).max(target).max(0.0)
+        let decay = METER_DECAY_PER_SECOND * METER_TICK_MS as f32 / 1000.0;
+        (current - decay).max(target).max(0.0)
     }
 }
 
@@ -208,6 +209,7 @@ struct App {
     status: String,
     queue_entries: Vec<db::QueueEntry>,
     queue_player_entries: HashMap<audio::PlayerId, db::QueueEntry>,
+    preloaded_queue_entry: Option<PreloadedQueueEntry>,
     current_queue_entry: Option<db::QueueEntry>,
     current_queue_player_id: audio::PlayerId,
     selected_queue_index: Option<usize>,
@@ -306,6 +308,7 @@ impl Default for App {
             status,
             queue_entries,
             queue_player_entries: HashMap::new(),
+            preloaded_queue_entry: None,
             current_queue_entry: None,
             current_queue_player_id: audio::PlayerId::QueueA,
             selected_queue_index: None,
@@ -370,6 +373,12 @@ pub(crate) struct TrackPickerState {
     pub(crate) last_click: Option<(i32, std::time::Instant)>,
 }
 
+#[derive(Debug, Clone)]
+struct PreloadedQueueEntry {
+    player_id: audio::PlayerId,
+    entry: db::QueueEntry,
+}
+
 impl TrackPickerState {
     fn new(target: PickerTarget) -> Self {
         Self {
@@ -424,6 +433,7 @@ enum Dialog {
     EditConfig {
         auto_mix_on_start: bool,
         auto_play_on_start: bool,
+        preload: String,
     },
     EditDbConfig {
         host: String,
@@ -521,6 +531,7 @@ enum Message {
     DbConfigConnected(Result<db::SharedDatabase, String>),
     ConfigOpen,
     ConfigToggle(ConfigField),
+    ConfigPreloadChanged(String),
     ConfigSave,
     ConfigSaved(Result<(), String>),
 }
@@ -856,6 +867,7 @@ impl App {
             Message::QueueMoveUp => {
                 if let Some(i) = self.selected_queue_index {
                     if i > 0 {
+                        self.preloaded_queue_entry = None;
                         self.queue_entries.swap(i, i - 1);
                         self.selected_queue_index = Some(i - 1);
                     }
@@ -866,6 +878,7 @@ impl App {
             Message::QueueMoveTop => {
                 if let Some(i) = self.selected_queue_index {
                     if i > 0 {
+                        self.preloaded_queue_entry = None;
                         let entry = self.queue_entries.remove(i);
                         self.queue_entries.insert(0, entry);
                         self.selected_queue_index = Some(0);
@@ -877,6 +890,7 @@ impl App {
             Message::QueueMoveDown => {
                 if let Some(i) = self.selected_queue_index {
                     if i + 1 < self.queue_entries.len() {
+                        self.preloaded_queue_entry = None;
                         self.queue_entries.swap(i, i + 1);
                         self.selected_queue_index = Some(i + 1);
                     }
@@ -888,6 +902,7 @@ impl App {
                 if let Some(i) = self.selected_queue_index {
                     let last = self.queue_entries.len() - 1;
                     if i < last {
+                        self.preloaded_queue_entry = None;
                         let entry = self.queue_entries.remove(i);
                         self.queue_entries.push(entry);
                         self.selected_queue_index = Some(last);
@@ -927,6 +942,7 @@ impl App {
                         Ok(()) => {
                             self.queue_entries.clear();
                             self.selected_queue_index = None;
+                            self.preloaded_queue_entry = None;
                         }
                         Err(e) => self.status = format!("Vidage queue impossible: {e}"),
                     }
@@ -1074,6 +1090,7 @@ impl App {
                 self.dialog = Some(Dialog::EditConfig {
                     auto_mix_on_start: self.app_config.auto_mix_on_start,
                     auto_play_on_start: self.app_config.auto_play_on_start,
+                    preload: self.app_config.preload.to_string(),
                 });
                 Task::none()
             }
@@ -1082,6 +1099,7 @@ impl App {
                 if let Some(Dialog::EditConfig {
                     auto_mix_on_start,
                     auto_play_on_start,
+                    ..
                 }) = &mut self.dialog
                 {
                     match field {
@@ -1092,15 +1110,24 @@ impl App {
                 Task::none()
             }
 
+            Message::ConfigPreloadChanged(value) => {
+                if let Some(Dialog::EditConfig { preload, .. }) = &mut self.dialog {
+                    *preload = value;
+                }
+                Task::none()
+            }
+
             Message::ConfigSave => {
                 if let Some(Dialog::EditConfig {
                     auto_mix_on_start,
                     auto_play_on_start,
+                    preload,
                 }) = &self.dialog
                 {
                     let cfg = db::AppConfig {
                         auto_mix_on_start: *auto_mix_on_start,
                         auto_play_on_start: *auto_play_on_start,
+                        preload: preload.trim().parse::<i32>().unwrap_or(10).max(0),
                     };
                     self.app_config = cfg.clone();
                     self.dialog = None;
@@ -1264,6 +1291,10 @@ impl App {
     }
 
     fn load_next_from_queue(&mut self, player_id: audio::PlayerId) {
+        if self.play_preloaded_queue_entry(player_id) {
+            return;
+        }
+
         if self.queue_entries.is_empty() {
             return;
         }
@@ -1279,6 +1310,14 @@ impl App {
     }
 
     fn play_queue_entry(&mut self, player_id: audio::PlayerId, entry: db::QueueEntry) {
+        if self
+            .preloaded_queue_entry
+            .as_ref()
+            .is_some_and(|preloaded| preloaded.player_id == player_id)
+        {
+            self.preloaded_queue_entry = None;
+        }
+
         if let Some(track_id) = entry.track_id {
             if let Some(path) = self.search_track_path(track_id) {
                 self.audio
@@ -1287,6 +1326,66 @@ impl App {
             }
         }
 
+        self.finalize_queue_entry_launch(player_id, entry);
+    }
+
+    fn preload_next_queue_entry(&mut self, player_id: audio::PlayerId) {
+        if self.queue_entries.is_empty() || self.audio.player(player_id).is_active() {
+            return;
+        }
+
+        let Some(entry) = self.queue_entries.first().cloned() else {
+            return;
+        };
+
+        if self
+            .preloaded_queue_entry
+            .as_ref()
+            .is_some_and(|preloaded| {
+                preloaded.player_id == player_id && preloaded.entry.id == entry.id
+            })
+        {
+            return;
+        }
+
+        let Some(path) = entry
+            .track_id
+            .and_then(|track_id| self.search_track_path(track_id))
+        else {
+            return;
+        };
+
+        self.audio
+            .handle(player_id, audio::PlayerCommand::Load(path));
+        self.preloaded_queue_entry = Some(PreloadedQueueEntry { player_id, entry });
+    }
+
+    fn play_preloaded_queue_entry(&mut self, player_id: audio::PlayerId) -> bool {
+        let Some(preloaded) = self.preloaded_queue_entry.clone() else {
+            return false;
+        };
+
+        let matches_next_queue_entry = self
+            .queue_entries
+            .first()
+            .is_some_and(|entry| entry.id == preloaded.entry.id);
+
+        if preloaded.player_id != player_id || !matches_next_queue_entry {
+            if preloaded.player_id == player_id {
+                self.preloaded_queue_entry = None;
+            }
+            return false;
+        }
+
+        self.queue_entries.remove(0);
+        self.adjust_selected_queue_index_after_remove(0);
+        self.audio.handle(player_id, audio::PlayerCommand::Play);
+        self.finalize_queue_entry_launch(player_id, preloaded.entry);
+        self.preloaded_queue_entry = None;
+        true
+    }
+
+    fn finalize_queue_entry_launch(&mut self, player_id: audio::PlayerId, entry: db::QueueEntry) {
         if self.previewing_queue_id == Some(entry.id) {
             self.stop_preview();
             self.previewing_queue_id = None;
@@ -1361,6 +1460,7 @@ impl App {
             self.audio.handle(player_id, audio::PlayerCommand::Stop);
         }
         self.queue_player_entries.clear();
+        self.preloaded_queue_entry = None;
         self.current_queue_entry = None;
         self.current_queue_player_id = audio::PlayerId::QueueA;
     }
@@ -1406,11 +1506,20 @@ impl App {
             return;
         }
 
-        if self.audio.player(player_id).snapshot().position < trigger {
+        let snapshot = self.audio.player(player_id).snapshot();
+        let next_player_id = self.next_queue_player_id(player_id);
+        let preload_at = trigger.saturating_sub(std::time::Duration::from_secs(
+            self.app_config.preload.max(0) as u64,
+        ));
+
+        if snapshot.position >= preload_at && !self.audio.player(next_player_id).is_active() {
+            self.preload_next_queue_entry(next_player_id);
+        }
+
+        if snapshot.position < trigger {
             return;
         }
 
-        let next_player_id = self.next_queue_player_id(player_id);
         if self.audio.player(next_player_id).is_active() {
             return;
         }
@@ -1773,6 +1882,7 @@ impl App {
         };
         match db.insert_queue_entry(track_id) {
             Ok(new_id) => {
+                self.preloaded_queue_entry = None;
                 let mut entry = new_entry;
                 entry.id = new_id;
                 let insert_at = insert_at.min(self.queue_entries.len());
@@ -1802,6 +1912,7 @@ impl App {
             track.intro,
             track.fade_out,
         );
+        self.preloaded_queue_entry = None;
         let Some(entry) = self.queue_entries.get_mut(queue_index) else {
             return;
         };
@@ -1838,6 +1949,7 @@ impl App {
         };
         match db.delete_queue_entry(queue_id) {
             Ok(()) => {
+                self.preloaded_queue_entry = None;
                 self.queue_entries.remove(queue_index);
                 self.selected_queue_index = if self.queue_entries.is_empty() {
                     None
@@ -2245,6 +2357,7 @@ impl App {
             Some(Dialog::EditConfig {
                 auto_mix_on_start,
                 auto_play_on_start,
+                preload,
             }) => {
                 let fieldset_label = container(
                     text("AUTO MIX")
@@ -2262,6 +2375,20 @@ impl App {
                         .on_toggle(|_| Message::ConfigToggle(ConfigField::AutoPlayOnStart))
                         .size(14)
                         .text_size(13),
+                    row![
+                        text("Preload")
+                            .size(13)
+                            .style(text_color(rgb(226, 238, 245))),
+                        Space::with_width(Length::Fill),
+                        text_input("", preload)
+                            .on_input(Message::ConfigPreloadChanged)
+                            .padding(6)
+                            .size(13)
+                            .width(Length::Fixed(70.0)),
+                        text("s").size(13).style(text_color(rgb(160, 180, 195))),
+                    ]
+                    .spacing(6)
+                    .align_y(Alignment::Center),
                 ]
                 .spacing(10)
                 .padding([10, 12]);
