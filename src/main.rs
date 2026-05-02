@@ -2743,7 +2743,7 @@ impl App {
                     ..Default::default()
                 }),
         )
-        .on_press(Message::DialogCancel)
+        .on_press(Message::NoOp)
         .into()
     }
 
