@@ -224,7 +224,9 @@ impl App {
             column![
                 text(title).size(12).style(text_color(rgb(224, 239, 249))),
                 text(meta).size(9).style(text_color(accent_lavender())),
-                text(scheduled).size(10).style(text_color(rgb(221, 237, 73))),
+                text(scheduled)
+                    .size(10)
+                    .style(text_color(rgb(221, 237, 73))),
             ]
             .spacing(2)
             .padding([4, 5])
@@ -264,11 +266,7 @@ impl App {
     fn queue_entry_meta(&self, entry: &crate::db::QueueEntry) -> String {
         let mut parts = vec![
             format!("Intro {}", fmt_dur(entry.intro)),
-            format!(
-                "Cue {}/{}",
-                fmt_dur(entry.cue_in),
-                fmt_dur(entry.cue_out)
-            ),
+            format!("Cue {}/{}", fmt_dur(entry.cue_in), fmt_dur(entry.cue_out)),
         ];
 
         if entry.fixed_time {

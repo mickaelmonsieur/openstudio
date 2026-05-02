@@ -8,14 +8,14 @@ use std::path::PathBuf;
 use iced::keyboard::key::Named;
 use iced::keyboard::Key;
 use iced::widget::{
-    button, checkbox, column, container, mouse_area, responsive, row, stack, text, text_input,
-    Space,
+    button, checkbox, column, container, mouse_area, pick_list, responsive, row, stack, text,
+    text_input, Space,
 };
 use iced::{
     window, Alignment, Background, Border, Color, Element, Length, Size, Subscription, Task, Theme,
 };
 use iced_fonts::{Bootstrap, BOOTSTRAP_FONT};
-use ui::{accent_purple, block_style, panel_style, rgb, text_color};
+use ui::{accent_purple, block_style, panel_style, rgb, search_pick_list_style, text_color};
 
 fn db_config_path() -> PathBuf {
     std::env::current_exe()
@@ -241,6 +241,7 @@ struct App {
     aux_slots: Vec<Option<LoadedTrack>>,
     aux_loops: Vec<bool>,
     app_config: db::AppConfig,
+    timezone_options: Vec<String>,
     dialog: Option<Dialog>,
 }
 
@@ -255,6 +256,7 @@ impl Default for App {
         let mut search_tracks = Vec::new();
         let mut queue_entries = Vec::new();
         let mut app_config = db::AppConfig::default();
+        let mut timezone_options = Vec::new();
 
         let (db, status) = match db::Database::connect_from_file(&db_config_path()) {
             Ok(db) => {
@@ -270,9 +272,14 @@ impl Default for App {
                     Err(error) => warnings.push(format!("tracks: {error}")),
                 }
 
-                match db.queue_entries() {
+                match db.queue_entries(&app_config.timezone) {
                     Ok(entries) => queue_entries = entries,
                     Err(error) => warnings.push(format!("queue: {error}")),
+                }
+
+                match db.timezones() {
+                    Ok(options) => timezone_options = options,
+                    Err(error) => warnings.push(format!("timezones: {error}")),
                 }
 
                 match db.categories() {
@@ -344,8 +351,10 @@ impl Default for App {
             aux_slots: vec![None; 3],
             aux_loops: vec![false; 3],
             app_config,
+            timezone_options,
             dialog: None,
         };
+        app.ensure_configured_timezone_option();
         app.load_instant_pages_from_db();
         let auto_mix_status = app.auto_mix_status.clone();
         app.log_auto_mix_status(&auto_mix_status);
@@ -452,6 +461,7 @@ enum Dialog {
         preload: String,
         fade_out_duration_ms: String,
         stop_fade_duration_ms: String,
+        timezone: String,
     },
     EditDbConfig {
         host: String,
@@ -552,6 +562,7 @@ enum Message {
     ConfigPreloadChanged(String),
     ConfigFadeOutDurationChanged(String),
     ConfigStopFadeDurationChanged(String),
+    ConfigTimezoneChanged(String),
     ConfigSave,
     ConfigSaved(Result<(), String>),
 }
@@ -657,8 +668,10 @@ impl App {
                 if let Some(id) = self.selected_search_track_id {
                     if let Some(path) = self.search_track_path(id) {
                         let cue_in = self.search_track_cue_in(id);
-                        self.audio
-                            .handle(PREVIEW_PLAYER_ID, audio::PlayerCommand::Load { path, cue_in });
+                        self.audio.handle(
+                            PREVIEW_PLAYER_ID,
+                            audio::PlayerCommand::Load { path, cue_in },
+                        );
                         self.audio
                             .handle(PREVIEW_PLAYER_ID, audio::PlayerCommand::Play);
                     }
@@ -831,8 +844,10 @@ impl App {
                 if let Some(id) = selected_id {
                     if let Some(path) = self.search_track_path(id) {
                         let cue_in = self.search_track_cue_in(id);
-                        self.audio
-                            .handle(PREVIEW_PLAYER_ID, audio::PlayerCommand::Load { path, cue_in });
+                        self.audio.handle(
+                            PREVIEW_PLAYER_ID,
+                            audio::PlayerCommand::Load { path, cue_in },
+                        );
                         self.audio
                             .handle(PREVIEW_PLAYER_ID, audio::PlayerCommand::Play);
                     }
@@ -903,8 +918,10 @@ impl App {
                         .unwrap_or((None, std::time::Duration::ZERO));
                     let path = track_id.and_then(|tid| self.search_track_path(tid));
                     if let Some(path) = path {
-                        self.audio
-                            .handle(PREVIEW_PLAYER_ID, audio::PlayerCommand::Load { path, cue_in });
+                        self.audio.handle(
+                            PREVIEW_PLAYER_ID,
+                            audio::PlayerCommand::Load { path, cue_in },
+                        );
                         self.audio
                             .handle(PREVIEW_PLAYER_ID, audio::PlayerCommand::Play);
                         self.previewing_queue_id = Some(queue_id);
@@ -1125,7 +1142,14 @@ impl App {
                 match result {
                     Ok(db) => {
                         self.status = "Connected".into();
+                        match db.timezones() {
+                            Ok(options) => self.timezone_options = options,
+                            Err(error) => {
+                                self.status = format!("Connected (partial: timezones: {error})")
+                            }
+                        }
                         self.db = Some(db);
+                        self.ensure_configured_timezone_option();
                         let auto_mix_status = self.auto_mix_status.clone();
                         self.log_auto_mix_status(&auto_mix_status);
                     }
@@ -1144,6 +1168,7 @@ impl App {
                     preload: self.app_config.preload.to_string(),
                     fade_out_duration_ms: self.app_config.fade_out_duration_ms.to_string(),
                     stop_fade_duration_ms: self.app_config.stop_fade_duration_ms.to_string(),
+                    timezone: self.app_config.timezone.clone(),
                 });
                 Task::none()
             }
@@ -1192,6 +1217,13 @@ impl App {
                 Task::none()
             }
 
+            Message::ConfigTimezoneChanged(value) => {
+                if let Some(Dialog::EditConfig { timezone, .. }) = &mut self.dialog {
+                    *timezone = value;
+                }
+                Task::none()
+            }
+
             Message::ConfigSave => {
                 if let Some(Dialog::EditConfig {
                     auto_mix_on_start,
@@ -1199,6 +1231,7 @@ impl App {
                     preload,
                     fade_out_duration_ms,
                     stop_fade_duration_ms,
+                    timezone,
                 }) = &self.dialog
                 {
                     let cfg = db::AppConfig {
@@ -1215,8 +1248,11 @@ impl App {
                             .parse::<i32>()
                             .unwrap_or(1000)
                             .max(0),
+                        timezone: timezone.clone(),
                     };
                     self.app_config = cfg.clone();
+                    self.ensure_configured_timezone_option();
+                    self.reload_queue_entries_from_db();
                     self.dialog = None;
                     if let Some(db) = self.db.clone() {
                         return Task::perform(
@@ -1392,6 +1428,24 @@ impl App {
         }
     }
 
+    fn ensure_configured_timezone_option(&mut self) {
+        if !self.timezone_options.contains(&self.app_config.timezone) {
+            self.timezone_options.push(self.app_config.timezone.clone());
+            self.timezone_options.sort();
+        }
+    }
+
+    fn reload_queue_entries_from_db(&mut self) {
+        let Some(db) = &self.db else {
+            return;
+        };
+
+        match db.queue_entries(&self.app_config.timezone) {
+            Ok(entries) => self.queue_entries = entries,
+            Err(error) => self.status = format!("Queue reload failed: {error}"),
+        }
+    }
+
     fn set_auto_mix_status(&mut self, status: impl Into<String>) {
         let status = status.into();
         self.auto_mix_status = status.clone();
@@ -1486,8 +1540,13 @@ impl App {
                     player_id,
                     self.audio.player(player_id).snapshot().position,
                 );
-                self.audio
-                    .handle(player_id, audio::PlayerCommand::Load { path, cue_in: entry.cue_in });
+                self.audio.handle(
+                    player_id,
+                    audio::PlayerCommand::Load {
+                        path,
+                        cue_in: entry.cue_in,
+                    },
+                );
                 self.audio.handle(player_id, audio::PlayerCommand::Play);
                 self.begin_queue_play_log(player_id, track_id);
             }
@@ -1537,8 +1596,13 @@ impl App {
             return;
         };
 
-        self.audio
-            .handle(player_id, audio::PlayerCommand::Load { path, cue_in: entry.cue_in });
+        self.audio.handle(
+            player_id,
+            audio::PlayerCommand::Load {
+                path,
+                cue_in: entry.cue_in,
+            },
+        );
         self.set_auto_mix_status(format!(
             "Track {} has been preloaded.",
             Self::queue_entry_label(&entry)
@@ -2057,8 +2121,10 @@ impl App {
         let path = track.path.clone();
         let cue_in = track.cue_in;
 
-        self.audio
-            .handle(INSTANT_PLAYER_ID, audio::PlayerCommand::Load { path, cue_in });
+        self.audio.handle(
+            INSTANT_PLAYER_ID,
+            audio::PlayerCommand::Load { path, cue_in },
+        );
         self.audio
             .handle(INSTANT_PLAYER_ID, audio::PlayerCommand::Play);
         self.active_instant_slot = Some(index);
@@ -2630,15 +2696,43 @@ impl App {
                 preload,
                 fade_out_duration_ms,
                 stop_fade_duration_ms,
+                timezone,
             }) => {
-                let fieldset_label = container(
+                let general_fieldset_label = container(
+                    text("General")
+                        .size(11)
+                        .style(text_color(rgb(160, 180, 195))),
+                )
+                .padding([3, 8]);
+
+                let general_fieldset_body = column![row![
+                    text("Timezone")
+                        .size(13)
+                        .style(text_color(rgb(226, 238, 245))),
+                    Space::with_width(Length::Fill),
+                    pick_list(
+                        self.timezone_options.clone(),
+                        Some(timezone.clone()),
+                        Message::ConfigTimezoneChanged,
+                    )
+                    .padding(6)
+                    .text_size(13)
+                    .width(Length::Fixed(220.0))
+                    .style(search_pick_list_style),
+                ]
+                .spacing(6)
+                .align_y(Alignment::Center),]
+                .spacing(10)
+                .padding([10, 12]);
+
+                let automix_fieldset_label = container(
                     text("AUTO MIX")
                         .size(11)
                         .style(text_color(rgb(160, 180, 195))),
                 )
                 .padding([3, 8]);
 
-                let fieldset_body = column![
+                let automix_fieldset_body = column![
                     checkbox("Enable AUTO MIX on startup", *auto_mix_on_start)
                         .on_toggle(|_| Message::ConfigToggle(ConfigField::AutoMixOnStart))
                         .size(14)
@@ -2693,24 +2787,35 @@ impl App {
                 .spacing(10)
                 .padding([10, 12]);
 
-                let fieldset =
-                    container(column![fieldset_label, fieldset_body].spacing(0)).style(|_| {
-                        container::Style {
+                let general_fieldset =
+                    container(column![general_fieldset_label, general_fieldset_body].spacing(0))
+                        .style(|_| container::Style {
                             border: Border {
                                 color: rgb(62, 83, 97),
                                 width: 1.0,
                                 radius: 3.0.into(),
                             },
                             ..Default::default()
-                        }
-                    });
+                        });
+
+                let automix_fieldset =
+                    container(column![automix_fieldset_label, automix_fieldset_body].spacing(0))
+                        .style(|_| container::Style {
+                            border: Border {
+                                color: rgb(62, 83, 97),
+                                width: 1.0,
+                                radius: 3.0.into(),
+                            },
+                            ..Default::default()
+                        });
 
                 container(
                     column![
                         text("Settings")
                             .size(14)
                             .style(text_color(rgb(226, 238, 245))),
-                        fieldset,
+                        general_fieldset,
+                        automix_fieldset,
                         row![
                             Space::with_width(Length::Fill),
                             self.dialog_button("Cancel", Message::DialogCancel, rgb(62, 83, 97)),

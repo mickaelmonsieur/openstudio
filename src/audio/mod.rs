@@ -227,7 +227,10 @@ impl AudioPlayer {
 
     pub fn stop(&mut self) {
         self.stop_thread();
-        self.preload_rx = self.loaded_path.as_ref().map(|path| preload(path.clone(), self.cue_in));
+        self.preload_rx = self
+            .loaded_path
+            .as_ref()
+            .map(|path| preload(path.clone(), self.cue_in));
     }
 
     pub fn soft_stop(&mut self, duration: Duration) {
@@ -276,7 +279,10 @@ impl AudioPlayer {
             self.position_ms = None;
             self.paused = false;
             self.levels.reset();
-            self.preload_rx = self.loaded_path.as_ref().map(|path| preload(path.clone(), self.cue_in));
+            self.preload_rx = self
+                .loaded_path
+                .as_ref()
+                .map(|path| preload(path.clone(), self.cue_in));
         }
     }
 
@@ -454,7 +460,10 @@ pub fn preload(path: PathBuf, cue_in: Duration) -> mpsc::Receiver<Option<Preload
     rx
 }
 
-fn do_preload(path: PathBuf, cue_in: Duration) -> Result<Preloaded, Box<dyn std::error::Error + Send + Sync>> {
+fn do_preload(
+    path: PathBuf,
+    cue_in: Duration,
+) -> Result<Preloaded, Box<dyn std::error::Error + Send + Sync>> {
     let file = std::fs::File::open(&path)?;
     let mss = MediaSourceStream::new(Box::new(file), Default::default());
     let probed = symphonia::default::get_probe().format(

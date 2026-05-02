@@ -16,6 +16,7 @@ pub struct AppConfig {
     pub preload: i32,
     pub fade_out_duration_ms: i32,
     pub stop_fade_duration_ms: i32,
+    pub timezone: String,
 }
 
 impl Default for AppConfig {
@@ -26,6 +27,7 @@ impl Default for AppConfig {
             preload: 10,
             fade_out_duration_ms: 2500,
             stop_fade_duration_ms: 1000,
+            timezone: String::from("Europe/Paris"),
         }
     }
 }
@@ -179,6 +181,9 @@ impl Database {
             ALTER TABLE configurations
             ADD COLUMN IF NOT EXISTS stop_fade_duration_ms INTEGER NOT NULL DEFAULT 1000;
 
+            ALTER TABLE configurations
+            ADD COLUMN IF NOT EXISTS timezone TEXT NOT NULL DEFAULT 'Europe/Paris';
+
             CREATE TABLE IF NOT EXISTS automix_log (
                 id        INTEGER     GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
                 message   TEXT        NOT NULL,
@@ -295,7 +300,7 @@ impl Database {
             .collect())
     }
 
-    pub fn queue_entries(&self) -> Result<Vec<QueueEntry>, DbError> {
+    pub fn queue_entries(&self, timezone: &str) -> Result<Vec<QueueEntry>, DbError> {
         let mut client = self.client.lock().map_err(|_| DbError::LockPoisoned)?;
         let rows = client.query(
             "
@@ -311,13 +316,13 @@ impl Database {
                 COALESCE(a.name, '') AS artist_name,
                 COALESCE(t.title, '') AS title,
                 COALESCE(t.duration, 0)::double precision AS duration,
-                to_char(q.scheduled_at, 'HH24:MI:SS') AS scheduled_at
+                to_char(q.scheduled_at AT TIME ZONE $1, 'HH24:MI:SS') AS scheduled_at
             FROM queue q
             LEFT JOIN tracks t ON t.id = q.track_id
             LEFT JOIN artists a ON a.id = t.artist_id
             ORDER BY q.scheduled_at NULLS LAST, q.priority, q.id
             ",
-            &[],
+            &[&timezone],
         )?;
 
         Ok(rows
@@ -482,7 +487,7 @@ impl Database {
     pub fn load_config(&self) -> Result<AppConfig, DbError> {
         let mut client = self.client.lock().map_err(|_| DbError::LockPoisoned)?;
         let row = client.query_one(
-            "SELECT auto_mix_on_start, auto_play_on_start, preload, fade_out_duration_ms, stop_fade_duration_ms FROM configurations LIMIT 1",
+            "SELECT auto_mix_on_start, auto_play_on_start, preload, fade_out_duration_ms, stop_fade_duration_ms, timezone FROM configurations LIMIT 1",
             &[],
         )?;
         Ok(AppConfig {
@@ -491,19 +496,36 @@ impl Database {
             preload: row.get(2),
             fade_out_duration_ms: row.get(3),
             stop_fade_duration_ms: row.get(4),
+            timezone: row.get(5),
         })
+    }
+
+    pub fn timezones(&self) -> Result<Vec<String>, DbError> {
+        let mut client = self.client.lock().map_err(|_| DbError::LockPoisoned)?;
+        let rows = client.query(
+            "
+            SELECT name
+            FROM pg_timezone_names
+            WHERE name NOT LIKE 'posix/%'
+              AND name NOT LIKE 'right/%'
+            ORDER BY name
+            ",
+            &[],
+        )?;
+        Ok(rows.into_iter().map(|row| row.get("name")).collect())
     }
 
     pub fn save_config(&self, cfg: &AppConfig) -> Result<(), DbError> {
         let mut client = self.client.lock().map_err(|_| DbError::LockPoisoned)?;
         client.execute(
-            "UPDATE configurations SET auto_mix_on_start = $1, auto_play_on_start = $2, preload = $3, fade_out_duration_ms = $4, stop_fade_duration_ms = $5",
+            "UPDATE configurations SET auto_mix_on_start = $1, auto_play_on_start = $2, preload = $3, fade_out_duration_ms = $4, stop_fade_duration_ms = $5, timezone = $6",
             &[
                 &cfg.auto_mix_on_start,
                 &cfg.auto_play_on_start,
                 &cfg.preload,
                 &cfg.fade_out_duration_ms,
                 &cfg.stop_fade_duration_ms,
+                &cfg.timezone,
             ],
         )?;
         Ok(())

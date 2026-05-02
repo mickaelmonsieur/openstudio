@@ -383,5 +383,12 @@ INSERT INTO users (id, login, password_hash, active, role) OVERRIDING SYSTEM VAL
     (1, 'admin', crypt('admin123', gen_salt('bf')), TRUE, 1);
 SELECT setval('users_id_seq', 1);
 
-INSERT INTO configurations (auto_mix_on_start, auto_play_on_start, preload, fade_out_duration_ms, stop_fade_duration_ms)
-VALUES (false, false, 10, 2500, 1000);
+INSERT INTO configurations (
+    auto_mix_on_start,
+    auto_play_on_start,
+    preload,
+    fade_out_duration_ms,
+    stop_fade_duration_ms,
+    timezone
+)
+VALUES (false, false, 10, 2500, 1000, 'Europe/Paris');
