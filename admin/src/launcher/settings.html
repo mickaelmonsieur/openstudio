@@ -1,0 +1,225 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>OpenStudio Admin Launcher</title>
+    <style>
+      :root {
+        color: #e6eef4;
+        background: #1f2e37;
+        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      }
+
+      body {
+        margin: 0;
+      }
+
+      main {
+        padding: 18px;
+      }
+
+      h1 {
+        margin: 0 0 18px;
+        font-size: 18px;
+        font-weight: 600;
+      }
+
+      fieldset {
+        margin: 0 0 14px;
+        padding: 14px;
+        border: 1px solid #3e5361;
+        border-radius: 4px;
+      }
+
+      legend {
+        padding: 0 8px;
+        color: #a0b4c3;
+        font-size: 12px;
+      }
+
+      label {
+        display: grid;
+        grid-template-columns: 1fr 190px;
+        gap: 12px;
+        align-items: center;
+        margin: 0 0 12px;
+        font-size: 13px;
+      }
+
+      input,
+      select {
+        box-sizing: border-box;
+        width: 100%;
+        padding: 7px 8px;
+        border: 1px solid #4a6374;
+        border-radius: 3px;
+        color: #eef7fb;
+        background: #2b3d48;
+      }
+
+      input[type="checkbox"] {
+        width: auto;
+        justify-self: end;
+      }
+
+      .status {
+        margin: 12px 0 16px;
+        padding: 10px;
+        border-radius: 3px;
+        color: #a5f5c2;
+        background: #18382b;
+        font-size: 13px;
+      }
+
+      .actions {
+        display: flex;
+        gap: 8px;
+        justify-content: flex-end;
+      }
+
+      button {
+        min-width: 88px;
+        padding: 8px 12px;
+        border: 1px solid #4a6374;
+        border-radius: 3px;
+        color: #eef7fb;
+        background: #3e5361;
+        cursor: pointer;
+      }
+
+      button.primary {
+        background: #6857d8;
+        border-color: #8173ef;
+      }
+    </style>
+  </head>
+  <body>
+    <main>
+      <h1>OpenStudio Admin Launcher</h1>
+
+      <fieldset>
+        <legend>Network</legend>
+        <label>
+          Listen on
+          <select id="bindAddress"></select>
+        </label>
+        <label>
+          Web UI port
+          <input id="webPort" type="number" min="1" max="65535" />
+        </label>
+        <label>
+          Control port
+          <input id="controlPort" type="number" min="1" max="65535" />
+        </label>
+      </fieldset>
+
+      <fieldset>
+        <legend>Startup</legend>
+        <label>
+          Autostart with system
+          <input id="autostart" type="checkbox" />
+        </label>
+        <label>
+          Start minimized
+          <input id="startMinimized" type="checkbox" />
+        </label>
+      </fieldset>
+
+      <div class="status" id="status">Starting...</div>
+
+      <div class="actions">
+        <button id="openAdmin">Open Admin</button>
+        <button id="minimize">Minimize</button>
+        <button id="hide">Hide to tray</button>
+        <button class="primary" id="save">Save</button>
+      </div>
+    </main>
+
+    <script>
+      const bindAddress = document.querySelector('#bindAddress');
+      const webPort = document.querySelector('#webPort');
+      const controlPort = document.querySelector('#controlPort');
+      const autostart = document.querySelector('#autostart');
+      const startMinimized = document.querySelector('#startMinimized');
+      const status = document.querySelector('#status');
+
+      function readForm() {
+        return {
+          bindAddress: bindAddress.value,
+          webPort: Number(webPort.value),
+          controlPort: Number(controlPort.value),
+          autostart: autostart.checked,
+          startMinimized: startMinimized.checked
+        };
+      }
+
+      function render(state) {
+        bindAddress.innerHTML = '';
+        for (const option of state.networkOptions || []) {
+          const el = document.createElement('option');
+          el.value = option.value;
+          el.textContent = option.label;
+          bindAddress.appendChild(el);
+        }
+
+        if (![...bindAddress.options].some((option) => option.value === state.config.bindAddress)) {
+          const el = document.createElement('option');
+          el.value = state.config.bindAddress;
+          el.textContent = state.config.bindAddress;
+          bindAddress.appendChild(el);
+        }
+
+        bindAddress.value = state.config.bindAddress;
+        webPort.value = state.config.webPort;
+        controlPort.value = state.config.controlPort;
+        autostart.checked = state.config.autostart;
+        startMinimized.checked = state.config.startMinimized;
+        if (state.error) {
+          status.textContent = `Server error: ${state.error}`;
+        } else {
+          status.textContent = state.running
+            ? `Running: ${state.webUrl} | ${state.controlUrl}`
+            : 'Stopped';
+        }
+      }
+
+      if (!window.openStudioLauncher) {
+        status.textContent = 'Launcher bridge unavailable. Restart the app.';
+      }
+
+      document.querySelector('#save').addEventListener('click', async () => {
+        if (!window.openStudioLauncher) {
+          return;
+        }
+        const state = await window.openStudioLauncher.saveConfig(readForm());
+        render(state);
+      });
+
+      document.querySelector('#openAdmin').addEventListener('click', () => {
+        if (!window.openStudioLauncher) {
+          return;
+        }
+        window.openStudioLauncher.openAdmin();
+      });
+      document.querySelector('#minimize').addEventListener('click', () => {
+        if (!window.openStudioLauncher) {
+          return;
+        }
+        window.openStudioLauncher.minimize();
+      });
+      document.querySelector('#hide').addEventListener('click', () => {
+        if (!window.openStudioLauncher) {
+          return;
+        }
+        window.openStudioLauncher.hide();
+      });
+
+      if (window.openStudioLauncher) {
+        window.openStudioLauncher.getState().then(render).catch((error) => {
+          status.textContent = `Launcher error: ${error.message}`;
+        });
+      }
+    </script>
+  </body>
+</html>

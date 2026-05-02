@@ -1,0 +1,47 @@
+{
+  "name": "openstudio-admin",
+  "version": "0.1.4",
+  "private": true,
+  "type": "module",
+  "main": "src/launcher/main.js",
+  "productName": "OpenStudio Admin",
+  "description": "OpenStudio administration launcher and web app",
+  "author": "Mickael Monsieur",
+  "scripts": {
+    "dev": "electron .",
+    "start": "electron .",
+    "build:web": "vite build",
+    "preview:web": "vite preview --host 127.0.0.1 --port 7061",
+    "log": "node ./scripts/show-log.js",
+    "pack": "electron-builder --dir",
+    "dist": "npm run build:web && electron-builder"
+  },
+  "dependencies": {
+    "@vitejs/plugin-react": "^5.0.0",
+    "electron": "^38.0.0",
+    "express": "^5.1.0",
+    "vite": "^7.1.0",
+    "react": "^19.1.0",
+    "react-dom": "^19.1.0",
+    "electron-builder": "^26.0.12",
+    "pg": "^8.13.1"
+  },
+  "devDependencies": {},
+  "build": {
+    "appId": "be.mickael.openstudio.admin",
+    "productName": "OpenStudio Admin",
+    "files": [
+      "dist/**/*",
+      "src/launcher/**/*",
+      "src/server/**/*",
+      "package.json"
+    ],
+    "mac": {
+      "category": "public.app-category.music",
+      "icon": "../icons/512x512.png"
+    },
+    "win": {
+      "icon": "../icons/512x512.png"
+    }
+  }
+}
