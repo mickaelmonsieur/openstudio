@@ -1,5 +1,5 @@
 use super::styles::*;
-use crate::{audio, db, App, Message, PickerTarget, TrackPickerState, SEARCH_PAGE_SIZE};
+use crate::{audio, db, App, Message, PickerTarget, TrackPickerState};
 use iced::alignment::{Horizontal, Vertical};
 use iced::widget::text::Wrapping;
 use iced::widget::{button, column, container, pick_list, row, scrollable, text, text_input};
@@ -54,14 +54,8 @@ impl App {
             0,
         );
 
-        let visible_tracks: Vec<_> = self
-            .search_tracks
-            .iter()
-            .filter(|track| self.picker_track_matches(picker, track))
-            .skip(picker.page_start)
-            .take(SEARCH_PAGE_SIZE)
-            .collect();
-        let total_rows = self.filtered_picker_total(picker);
+        let visible_tracks = &picker.tracks;
+        let total_rows = picker.total_rows;
         let visible_end = (picker.page_start + visible_tracks.len()).min(total_rows);
 
         let mut rows = column![header].spacing(0);

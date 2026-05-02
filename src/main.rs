@@ -94,6 +94,14 @@ fn auto_mix_trigger(entry: &db::QueueEntry) -> std::time::Duration {
     }
 }
 
+fn page_start_for_total(total: usize) -> usize {
+    if total == 0 {
+        0
+    } else {
+        ((total - 1) / SEARCH_PAGE_SIZE) * SEARCH_PAGE_SIZE
+    }
+}
+
 // ── Time helpers ─────────────────────────────────────────────────────────────
 
 #[cfg(unix)]
@@ -220,6 +228,7 @@ struct App {
     deck_soft_stopping: bool,
     previewing_queue_id: Option<i32>,
     search_tracks: Vec<db::SearchTrack>,
+    search_total_rows: usize,
     search_categories: Vec<db::FilterOption>,
     search_subcategories: Vec<db::FilterOption>,
     search_genres: Vec<db::FilterOption>,
@@ -254,6 +263,7 @@ impl Default for App {
         let mut search_subcategories = vec![search_subcategory.clone()];
         let mut search_genres = vec![search_genre.clone()];
         let mut search_tracks = Vec::new();
+        let mut search_total_rows = 0;
         let mut queue_entries = Vec::new();
         let mut app_config = db::AppConfig::default();
         let mut timezone_options = Vec::new();
@@ -267,8 +277,11 @@ impl Default for App {
                     Err(error) => warnings.push(format!("config: {error}")),
                 }
 
-                match db.search_tracks() {
-                    Ok(tracks) => search_tracks = tracks,
+                match db.search_tracks_page("", None, None, None, 0, SEARCH_PAGE_SIZE) {
+                    Ok((tracks, total)) => {
+                        search_tracks = tracks;
+                        search_total_rows = total;
+                    }
                     Err(error) => warnings.push(format!("tracks: {error}")),
                 }
 
@@ -330,6 +343,7 @@ impl Default for App {
             deck_soft_stopping: false,
             previewing_queue_id: None,
             search_tracks,
+            search_total_rows,
             search_categories,
             search_subcategories,
             search_genres,
@@ -388,6 +402,8 @@ pub(crate) struct TrackPickerState {
     pub(crate) search_subcategory: db::FilterOption,
     pub(crate) search_genre: db::FilterOption,
     pub(crate) page_start: usize,
+    pub(crate) tracks: Vec<db::SearchTrack>,
+    pub(crate) total_rows: usize,
     pub(crate) selected_track_id: Option<i32>,
     pub(crate) last_click: Option<(i32, std::time::Instant)>,
 }
@@ -412,6 +428,8 @@ impl TrackPickerState {
             search_subcategory: db::FilterOption::all(ANY_SUBCATEGORY),
             search_genre: db::FilterOption::all(ANY_GENRE),
             page_start: 0,
+            tracks: Vec::new(),
+            total_rows: 0,
             selected_track_id: None,
             last_click: None,
         }
@@ -681,6 +699,7 @@ impl App {
 
             Message::ShowSearch => {
                 self.instant_view = InstantView::Search;
+                self.reload_search_tracks_from_db();
                 Task::none()
             }
             Message::ShowInstantPlayers => {
@@ -690,6 +709,7 @@ impl App {
             Message::SearchChanged(value) => {
                 self.search_query = value;
                 self.search_page_start = 0;
+                self.reload_search_tracks_from_db();
                 Task::none()
             }
             Message::CategorySelected(value) => {
@@ -701,16 +721,19 @@ impl App {
                     self.search_subcategory = db::FilterOption::all(ANY_SUBCATEGORY);
                 }
                 self.search_page_start = 0;
+                self.reload_search_tracks_from_db();
                 Task::none()
             }
             Message::SubcategorySelected(value) => {
                 self.search_subcategory = value;
                 self.search_page_start = 0;
+                self.reload_search_tracks_from_db();
                 Task::none()
             }
             Message::GenreSelected(value) => {
                 self.search_genre = value;
                 self.search_page_start = 0;
+                self.reload_search_tracks_from_db();
                 Task::none()
             }
             Message::SearchRowSelected(track_id) => {
@@ -719,20 +742,24 @@ impl App {
             }
             Message::SearchFirstPage => {
                 self.search_page_start = 0;
+                self.reload_search_tracks_from_db();
                 Task::none()
             }
             Message::SearchPreviousPage => {
                 self.search_page_start = self.search_page_start.saturating_sub(SEARCH_PAGE_SIZE);
+                self.reload_search_tracks_from_db();
                 Task::none()
             }
             Message::SearchNextPage => {
                 let last_start = self.last_search_page_start();
                 self.search_page_start =
                     (self.search_page_start + SEARCH_PAGE_SIZE).min(last_start);
+                self.reload_search_tracks_from_db();
                 Task::none()
             }
             Message::SearchLastPage => {
                 self.search_page_start = self.last_search_page_start();
+                self.reload_search_tracks_from_db();
                 Task::none()
             }
             Message::OpenTrackPicker(target) => {
@@ -741,6 +768,7 @@ impl App {
                     window_id,
                     WindowKind::TrackPicker(TrackPickerState::new(target)),
                 );
+                self.reload_picker_tracks_from_db(window_id);
                 open.map(|_| Message::NoOp)
             }
             Message::PickerSearchChanged(window_id, value) => {
@@ -748,6 +776,7 @@ impl App {
                     picker.search_query = value;
                     picker.page_start = 0;
                 }
+                self.reload_picker_tracks_from_db(window_id);
                 Task::none()
             }
             Message::PickerCategorySelected(window_id, value) => {
@@ -761,6 +790,7 @@ impl App {
                     }
                     picker.page_start = 0;
                 }
+                self.reload_picker_tracks_from_db(window_id);
                 Task::none()
             }
             Message::PickerSubcategorySelected(window_id, value) => {
@@ -768,6 +798,7 @@ impl App {
                     picker.search_subcategory = value;
                     picker.page_start = 0;
                 }
+                self.reload_picker_tracks_from_db(window_id);
                 Task::none()
             }
             Message::PickerGenreSelected(window_id, value) => {
@@ -775,6 +806,7 @@ impl App {
                     picker.search_genre = value;
                     picker.page_start = 0;
                 }
+                self.reload_picker_tracks_from_db(window_id);
                 Task::none()
             }
             Message::PickerRowPressed(window_id, track_id) => {
@@ -809,12 +841,14 @@ impl App {
                 if let Some(picker) = self.track_picker_mut(window_id) {
                     picker.page_start = 0;
                 }
+                self.reload_picker_tracks_from_db(window_id);
                 Task::none()
             }
             Message::PickerPreviousPage(window_id) => {
                 if let Some(picker) = self.track_picker_mut(window_id) {
                     picker.page_start = picker.page_start.saturating_sub(SEARCH_PAGE_SIZE);
                 }
+                self.reload_picker_tracks_from_db(window_id);
                 Task::none()
             }
             Message::PickerNextPage(window_id) => {
@@ -825,6 +859,7 @@ impl App {
                 if let Some(picker) = self.track_picker_mut(window_id) {
                     picker.page_start = (picker.page_start + SEARCH_PAGE_SIZE).min(last_start);
                 }
+                self.reload_picker_tracks_from_db(window_id);
                 Task::none()
             }
             Message::PickerLastPage(window_id) => {
@@ -835,6 +870,7 @@ impl App {
                 if let Some(picker) = self.track_picker_mut(window_id) {
                     picker.page_start = last_start;
                 }
+                self.reload_picker_tracks_from_db(window_id);
                 Task::none()
             }
             Message::PickerPreviewPlay(window_id) => {
@@ -1446,6 +1482,115 @@ impl App {
         }
     }
 
+    fn reload_search_tracks_from_db(&mut self) {
+        let Some(db) = &self.db else {
+            self.search_tracks.clear();
+            self.search_total_rows = 0;
+            return;
+        };
+
+        match db.search_tracks_page(
+            &self.search_query,
+            self.search_category.id,
+            self.search_subcategory.id,
+            self.search_genre.id,
+            self.search_page_start,
+            SEARCH_PAGE_SIZE,
+        ) {
+            Ok((mut tracks, total_rows)) => {
+                let last_start = page_start_for_total(total_rows);
+                if self.search_page_start > last_start {
+                    self.search_page_start = last_start;
+                    match db.search_tracks_page(
+                        &self.search_query,
+                        self.search_category.id,
+                        self.search_subcategory.id,
+                        self.search_genre.id,
+                        self.search_page_start,
+                        SEARCH_PAGE_SIZE,
+                    ) {
+                        Ok((last_page_tracks, _)) => tracks = last_page_tracks,
+                        Err(error) => {
+                            self.status = format!("Search reload failed: {error}");
+                            return;
+                        }
+                    }
+                }
+                self.search_tracks = tracks;
+                self.search_total_rows = total_rows;
+                if self.selected_search_track_id.is_some_and(|selected_id| {
+                    !self
+                        .search_tracks
+                        .iter()
+                        .any(|track| track.id == selected_id)
+                }) {
+                    self.selected_search_track_id = None;
+                }
+            }
+            Err(error) => self.status = format!("Search reload failed: {error}"),
+        }
+    }
+
+    fn reload_picker_tracks_from_db(&mut self, window_id: window::Id) {
+        let Some(db) = self.db.clone() else {
+            if let Some(picker) = self.track_picker_mut(window_id) {
+                picker.tracks.clear();
+                picker.total_rows = 0;
+            }
+            return;
+        };
+
+        let Some(picker) = self.track_picker(window_id) else {
+            return;
+        };
+        let query = picker.search_query.clone();
+        let category_id = picker.search_category.id;
+        let subcategory_id = picker.search_subcategory.id;
+        let genre_id = picker.search_genre.id;
+        let page_start = picker.page_start;
+
+        match db.search_tracks_page(
+            &query,
+            category_id,
+            subcategory_id,
+            genre_id,
+            page_start,
+            SEARCH_PAGE_SIZE,
+        ) {
+            Ok((mut tracks, total_rows)) => {
+                let last_start = page_start_for_total(total_rows);
+                let effective_page_start = page_start.min(last_start);
+                if page_start > last_start {
+                    match db.search_tracks_page(
+                        &query,
+                        category_id,
+                        subcategory_id,
+                        genre_id,
+                        effective_page_start,
+                        SEARCH_PAGE_SIZE,
+                    ) {
+                        Ok((last_page_tracks, _)) => tracks = last_page_tracks,
+                        Err(error) => {
+                            self.status = format!("Picker reload failed: {error}");
+                            return;
+                        }
+                    }
+                }
+                if let Some(picker) = self.track_picker_mut(window_id) {
+                    picker.tracks = tracks;
+                    picker.total_rows = total_rows;
+                    picker.page_start = effective_page_start;
+                    if picker.selected_track_id.is_some_and(|selected_id| {
+                        !picker.tracks.iter().any(|track| track.id == selected_id)
+                    }) {
+                        picker.selected_track_id = None;
+                    }
+                }
+            }
+            Err(error) => self.status = format!("Picker reload failed: {error}"),
+        }
+    }
+
     fn set_auto_mix_status(&mut self, status: impl Into<String>) {
         let status = status.into();
         self.auto_mix_status = status.clone();
@@ -1866,29 +2011,20 @@ impl App {
     }
 
     fn search_track_path(&self, track_id: i32) -> Option<PathBuf> {
-        let path = self
-            .search_tracks
-            .iter()
-            .find(|track| track.id == track_id)?
-            .path
-            .trim();
+        let track = self.search_track(track_id)?;
+        let path = track.path.trim();
 
         (!path.is_empty()).then(|| PathBuf::from(path))
     }
 
     fn search_track_cue_in(&self, track_id: i32) -> std::time::Duration {
-        self.search_tracks
-            .iter()
-            .find(|track| track.id == track_id)
+        self.search_track(track_id)
             .map(|track| track.cue_in)
             .unwrap_or_default()
     }
 
     fn loaded_track(&self, track_id: i32) -> Option<LoadedTrack> {
-        let track = self
-            .search_tracks
-            .iter()
-            .find(|track| track.id == track_id)?;
+        let track = self.search_track(track_id)?;
         Some(LoadedTrack {
             id: track.id,
             artist: track.artist_name.clone(),
@@ -1897,6 +2033,28 @@ impl App {
             cue_in: track.cue_in,
             path: PathBuf::from(track.path.trim()),
         })
+    }
+
+    fn search_track(&self, track_id: i32) -> Option<db::SearchTrack> {
+        self.search_tracks
+            .iter()
+            .find(|track| track.id == track_id)
+            .cloned()
+            .or_else(|| {
+                self.windows.values().find_map(|window| match window {
+                    WindowKind::TrackPicker(picker) => picker
+                        .tracks
+                        .iter()
+                        .find(|track| track.id == track_id)
+                        .cloned(),
+                    WindowKind::Main => None,
+                })
+            })
+            .or_else(|| {
+                self.db
+                    .as_ref()
+                    .and_then(|db| db.search_track(track_id).ok().flatten())
+            })
     }
 
     fn load_instant_pages_from_db(&mut self) {
@@ -2164,7 +2322,7 @@ impl App {
         let Some(track_id) = self.selected_search_track_id else {
             return;
         };
-        let Some(track) = self.search_tracks.iter().find(|t| t.id == track_id) else {
+        let Some(track) = self.search_track(track_id) else {
             return;
         };
         let new_entry = db::QueueEntry {
@@ -2212,7 +2370,7 @@ impl App {
         let Some(queue_index) = self.selected_queue_index else {
             return;
         };
-        let Some(track) = self.search_tracks.iter().find(|t| t.id == track_id) else {
+        let Some(track) = self.search_track(track_id) else {
             return;
         };
         let (new_artist, new_title, new_duration, new_intro, new_cue_out) = (
@@ -2361,34 +2519,6 @@ impl App {
         }
     }
 
-    pub(crate) fn search_track_matches(&self, track: &db::SearchTrack) -> bool {
-        let query = self.search_query.trim().to_lowercase();
-        let matches_query = query.is_empty()
-            || track.artist_name.to_lowercase().contains(&query)
-            || track.title.to_lowercase().contains(&query);
-
-        matches_query
-            && self.search_category.matches_id(track.category_id)
-            && self.search_subcategory.matches_id(track.subcategory_id)
-            && self.search_genre.matches_id(track.genre_id)
-    }
-
-    pub(crate) fn picker_track_matches(
-        &self,
-        picker: &TrackPickerState,
-        track: &db::SearchTrack,
-    ) -> bool {
-        let query = picker.search_query.trim().to_lowercase();
-        let matches_query = query.is_empty()
-            || track.artist_name.to_lowercase().contains(&query)
-            || track.title.to_lowercase().contains(&query);
-
-        matches_query
-            && picker.search_category.matches_id(track.category_id)
-            && picker.search_subcategory.matches_id(track.subcategory_id)
-            && picker.search_genre.matches_id(track.genre_id)
-    }
-
     pub(crate) fn visible_subcategories(&self) -> Vec<db::FilterOption> {
         self.search_subcategories
             .iter()
@@ -2412,36 +2542,12 @@ impl App {
             .collect()
     }
 
-    pub(crate) fn filtered_search_total(&self) -> usize {
-        self.search_tracks
-            .iter()
-            .filter(|track| self.search_track_matches(track))
-            .count()
-    }
-
-    pub(crate) fn filtered_picker_total(&self, picker: &TrackPickerState) -> usize {
-        self.search_tracks
-            .iter()
-            .filter(|track| self.picker_track_matches(picker, track))
-            .count()
-    }
-
     fn last_search_page_start(&self) -> usize {
-        let total = self.filtered_search_total();
-        if total == 0 {
-            0
-        } else {
-            ((total - 1) / SEARCH_PAGE_SIZE) * SEARCH_PAGE_SIZE
-        }
+        page_start_for_total(self.search_total_rows)
     }
 
     fn last_picker_page_start(&self, picker: &TrackPickerState) -> usize {
-        let total = self.filtered_picker_total(picker);
-        if total == 0 {
-            0
-        } else {
-            ((total - 1) / SEARCH_PAGE_SIZE) * SEARCH_PAGE_SIZE
-        }
+        page_start_for_total(picker.total_rows)
     }
 }
 

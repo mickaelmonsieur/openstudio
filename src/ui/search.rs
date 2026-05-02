@@ -1,5 +1,5 @@
 use super::styles::*;
-use crate::{db, App, Message, SEARCH_PAGE_SIZE};
+use crate::{db, App, Message};
 use iced::alignment::{Horizontal, Vertical};
 use iced::widget::text::Wrapping;
 use iced::widget::{button, column, container, pick_list, row, scrollable, text, text_input};
@@ -48,14 +48,8 @@ impl App {
             0,
         );
 
-        let visible_tracks: Vec<_> = self
-            .search_tracks
-            .iter()
-            .filter(|track| self.search_track_matches(track))
-            .skip(self.search_page_start)
-            .take(SEARCH_PAGE_SIZE)
-            .collect();
-        let total_rows = self.filtered_search_total();
+        let visible_tracks = &self.search_tracks;
+        let total_rows = self.search_total_rows;
         let visible_end = (self.search_page_start + visible_tracks.len()).min(total_rows);
         let mut rows = column![header].spacing(0);
         for (row_offset, track) in visible_tracks.iter().enumerate() {

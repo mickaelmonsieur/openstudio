@@ -4,7 +4,7 @@ use std::path::Path;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
-use postgres::{Client, Config, NoTls};
+use postgres::{Client, Config, NoTls, Row};
 use serde::{Deserialize, Serialize};
 
 pub type SharedDatabase = Arc<Database>;
@@ -62,9 +62,6 @@ impl fmt::Display for FilterOption {
 #[derive(Debug, Clone)]
 pub struct SearchTrack {
     pub id: i32,
-    pub category_id: Option<i32>,
-    pub subcategory_id: Option<i32>,
-    pub genre_id: Option<i32>,
     pub artist_name: String,
     pub title: String,
     pub path: String,
@@ -197,15 +194,40 @@ impl Database {
         Ok(())
     }
 
-    pub fn search_tracks(&self) -> Result<Vec<SearchTrack>, DbError> {
+    pub fn search_tracks_page(
+        &self,
+        query: &str,
+        category_id: Option<i32>,
+        subcategory_id: Option<i32>,
+        genre_id: Option<i32>,
+        offset: usize,
+        limit: usize,
+    ) -> Result<(Vec<SearchTrack>, usize), DbError> {
         let mut client = self.client.lock().map_err(|_| DbError::LockPoisoned)?;
+        let query = query.trim();
+        let offset = offset as i64;
+        let limit = limit as i64;
+
+        let count_row = client.query_one(
+            "
+            SELECT COUNT(*)
+            FROM tracks t
+            LEFT JOIN artists a ON a.id = t.artist_id
+            LEFT JOIN subcategories s ON s.id = t.subcategory_id
+            WHERE t.active = TRUE
+              AND ($1 = '' OR CONCAT_WS(' ', COALESCE(a.name, ''), t.title) ILIKE '%' || $1 || '%')
+              AND ($2::integer IS NULL OR s.category_id = $2)
+              AND ($3::integer IS NULL OR t.subcategory_id = $3)
+              AND ($4::integer IS NULL OR t.genre_id = $4)
+            ",
+            &[&query, &category_id, &subcategory_id, &genre_id],
+        )?;
+        let total: i64 = count_row.get(0);
+
         let rows = client.query(
             "
             SELECT
                 t.id,
-                s.category_id,
-                t.subcategory_id,
-                t.genre_id,
                 COALESCE(a.name, '') AS artist_name,
                 t.title,
                 t.path,
@@ -220,37 +242,54 @@ impl Database {
             LEFT JOIN artists a ON a.id = t.artist_id
             LEFT JOIN subcategories s ON s.id = t.subcategory_id
             WHERE t.active = TRUE
+              AND ($1 = '' OR CONCAT_WS(' ', COALESCE(a.name, ''), t.title) ILIKE '%' || $1 || '%')
+              AND ($2::integer IS NULL OR s.category_id = $2)
+              AND ($3::integer IS NULL OR t.subcategory_id = $3)
+              AND ($4::integer IS NULL OR t.genre_id = $4)
             ORDER BY a.name NULLS LAST, t.title
+            LIMIT $5 OFFSET $6
             ",
-            &[],
+            &[
+                &query,
+                &category_id,
+                &subcategory_id,
+                &genre_id,
+                &limit,
+                &offset,
+            ],
         )?;
 
-        Ok(rows
-            .into_iter()
-            .map(|row| {
-                let duration: f64 = row.get("duration");
-                let intro: f64 = row.get("intro");
-                let outro: f64 = row.get("outro");
-                let cue_in: f64 = row.get("cue_in");
-                let cue_out: f64 = row.get("cue_out");
-                SearchTrack {
-                    id: row.get("id"),
-                    category_id: row.get("category_id"),
-                    subcategory_id: row.get("subcategory_id"),
-                    genre_id: row.get("genre_id"),
-                    artist_name: row.get("artist_name"),
-                    title: row.get("title"),
-                    path: row.get("path"),
-                    duration: seconds_to_duration(duration),
-                    intro: seconds_to_duration(intro),
-                    outro: seconds_to_duration(outro),
-                    cue_in: seconds_to_duration(cue_in),
-                    cue_out: seconds_to_duration(cue_out),
-                    updated_at: row.get("updated_at"),
-                    created_at: row.get("created_at"),
-                }
-            })
-            .collect())
+        Ok((
+            rows.into_iter().map(search_track_from_row).collect(),
+            total.max(0) as usize,
+        ))
+    }
+
+    pub fn search_track(&self, track_id: i32) -> Result<Option<SearchTrack>, DbError> {
+        let mut client = self.client.lock().map_err(|_| DbError::LockPoisoned)?;
+        let rows = client.query(
+            "
+            SELECT
+                t.id,
+                COALESCE(a.name, '') AS artist_name,
+                t.title,
+                t.path,
+                t.duration::double precision AS duration,
+                t.intro::double precision AS intro,
+                t.outro::double precision AS outro,
+                t.cue_in::double precision AS cue_in,
+                COALESCE(t.cue_out, t.duration)::double precision AS cue_out,
+                to_char(t.updated_at, 'FMMM/FMDD/YYYY HH24:MI:SS') AS updated_at,
+                to_char(t.created_at, 'FMMM/FMDD/YYYY HH24:MI:SS') AS created_at
+            FROM tracks t
+            LEFT JOIN artists a ON a.id = t.artist_id
+            LEFT JOIN subcategories s ON s.id = t.subcategory_id
+            WHERE t.active = TRUE AND t.id = $1
+            ",
+            &[&track_id],
+        )?;
+
+        Ok(rows.into_iter().next().map(search_track_from_row))
     }
 
     pub fn categories(&self) -> Result<Vec<FilterOption>, DbError> {
@@ -562,5 +601,27 @@ fn seconds_to_duration(seconds: f64) -> Duration {
         Duration::from_secs_f64(seconds.max(0.0))
     } else {
         Duration::ZERO
+    }
+}
+
+fn search_track_from_row(row: Row) -> SearchTrack {
+    let duration: f64 = row.get("duration");
+    let intro: f64 = row.get("intro");
+    let outro: f64 = row.get("outro");
+    let cue_in: f64 = row.get("cue_in");
+    let cue_out: f64 = row.get("cue_out");
+
+    SearchTrack {
+        id: row.get("id"),
+        artist_name: row.get("artist_name"),
+        title: row.get("title"),
+        path: row.get("path"),
+        duration: seconds_to_duration(duration),
+        intro: seconds_to_duration(intro),
+        outro: seconds_to_duration(outro),
+        cue_in: seconds_to_duration(cue_in),
+        cue_out: seconds_to_duration(cue_out),
+        updated_at: row.get("updated_at"),
+        created_at: row.get("created_at"),
     }
 }
