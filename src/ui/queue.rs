@@ -260,9 +260,9 @@ impl App {
             scheduled_at.to_string(),
             format!("Intro {}", fmt_dur(entry.intro)),
             format!(
-                "Fade {}/{}",
-                fmt_dur(entry.fade_in),
-                fmt_dur(entry.fade_out)
+                "Cue {}/{}",
+                fmt_dur(entry.cue_in),
+                fmt_dur(entry.cue_out)
             ),
         ];
 

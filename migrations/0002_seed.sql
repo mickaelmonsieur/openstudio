@@ -155,16 +155,16 @@ SELECT setval('artists_id_seq', 8);
 
 INSERT INTO tracks (
     id, artist_id, genre_id, title, album, year, duration, sample_rate,
-    bpm, intro, fade_in, fade_out, path, subcategory_id, active
+    cue_in, cue_out, intro, outro, hook_in, hook_out, loop_in, loop_out, path, subcategory_id, active
 ) OVERRIDING SYSTEM VALUE VALUES
-    (1, 1,  99, 'XXL',                    'Anamorphosee',      1995, 260.388571, 44100, 0, 0, 0, NULL, '/Users/mickael/Music/Mylène Farmer - XXL.flac',                     19, TRUE),
-    (2, 2, 333, 'The Look Of Love, Pt.1', 'The Lexicon Of Love',1982, 209.533333, 44100, 0, 0, 0, NULL, '/Users/mickael/Music/ABC - The Look Of Love, Pt.1.flac',             19, TRUE),
-    (3, 3,  99, 'Cruel Summer',           'Lover',             2019, 178.426667, 44100, 0, 0, 0, NULL, '/Users/mickael/Music/Taylor Swift - Cruel Summer.flac',              19, TRUE),
-    (4, 4,  99, 'Getaway',                'Red Book',          2005, 233.640000, 44100, 0, 0, 0, NULL, '/Users/mickael/Music/Texas - Getaway.flac',                          19, TRUE),
-    (5, 5,  99, 'Frozen',                 'Ray Of Light',      1998, 367.333333, 44100, 0, 0, 0, NULL, '/Users/mickael/Music/Madonna - Frozen.flac',                         19, TRUE),
-    (6, 6,  99, 'Never Be The Same Again','Northern Star',     2000, 294.200000, 44100, 0, 0, 0, NULL, '/Users/mickael/Music/Melanie C - Never Be The Same Again.flac',      19, TRUE),
-    (7, 7,  99, 'The Look',               'Look Sharp!',       1988, 237.320000, 44100, 0, 0, 0, NULL, '/Users/mickael/Music/Roxette - The Look.flac',                       19, TRUE),
-    (8, 8, 332, 'Lullaby',                'Disintegration',    1989, 248.973333, 44100, 0, 0, 0, NULL, '/Users/mickael/Music/The Cure - Lullaby.flac',                       19, TRUE);
+    (1, 1,  99, 'XXL',                    'Anamorphosee',      1995, 260.388571, 44100, 0, NULL, 0, 0, 0, 0, 0, 0, '/Users/mickael/Music/Mylène Farmer - XXL.flac',                     19, TRUE),
+    (2, 2, 333, 'The Look Of Love, Pt.1', 'The Lexicon Of Love',1982, 209.533333, 44100, 0, NULL, 0, 0, 0, 0, 0, 0, '/Users/mickael/Music/ABC - The Look Of Love, Pt.1.flac',             19, TRUE),
+    (3, 3,  99, 'Cruel Summer',           'Lover',             2019, 178.426667, 44100, 0, NULL, 0, 0, 0, 0, 0, 0, '/Users/mickael/Music/Taylor Swift - Cruel Summer.flac',              19, TRUE),
+    (4, 4,  99, 'Getaway',                'Red Book',          2005, 233.640000, 44100, 0, NULL, 0, 0, 0, 0, 0, 0, '/Users/mickael/Music/Texas - Getaway.flac',                          19, TRUE),
+    (5, 5,  99, 'Frozen',                 'Ray Of Light',      1998, 367.333333, 44100, 0, NULL, 0, 0, 0, 0, 0, 0, '/Users/mickael/Music/Madonna - Frozen.flac',                         19, TRUE),
+    (6, 6,  99, 'Never Be The Same Again','Northern Star',     2000, 294.200000, 44100, 0, NULL, 0, 0, 0, 0, 0, 0, '/Users/mickael/Music/Melanie C - Never Be The Same Again.flac',      19, TRUE),
+    (7, 7,  99, 'The Look',               'Look Sharp!',       1988, 237.320000, 44100, 0, NULL, 0, 0, 0, 0, 0, 0, '/Users/mickael/Music/Roxette - The Look.flac',                       19, TRUE),
+    (8, 8, 332, 'Lullaby',                'Disintegration',    1989, 248.973333, 44100, 0, NULL, 0, 0, 0, 0, 0, 0, '/Users/mickael/Music/The Cure - Lullaby.flac',                       19, TRUE);
 SELECT setval('tracks_id_seq', 8);
 
 WITH RECURSIVE seed_start (scheduled_at) AS (
@@ -191,13 +191,10 @@ seeded_queue (position, track_id, scheduled_at, next_scheduled_at) AS (
     JOIN seed_start s ON TRUE
     WHERE q.next_scheduled_at < s.scheduled_at + INTERVAL '2 hours'
 )
-INSERT INTO queue (track_id, sample_rate, bpm, intro, fade_in, fade_out, scheduled_at)
+INSERT INTO queue (track_id, cue_in, cue_out, scheduled_at)
 SELECT
     t.id,
-    t.sample_rate,
-    t.bpm,
-    t.intro,
-    t.fade_in,
+    t.cue_in,
     GREATEST(t.duration - 5, 0),
     q.scheduled_at
 FROM seeded_queue q
@@ -351,5 +348,5 @@ INSERT INTO users (id, login, password_hash, active, role) OVERRIDING SYSTEM VAL
     (1, 'admin', crypt('admin123', gen_salt('bf')), TRUE, 1);
 SELECT setval('users_id_seq', 1);
 
-INSERT INTO configurations (auto_mix_on_start, auto_play_on_start, preload, fade_out_duration_ms)
-VALUES (false, false, 10, 2500);
+INSERT INTO configurations (auto_mix_on_start, auto_play_on_start, preload, fade_out_duration_ms, stop_fade_duration_ms)
+VALUES (false, false, 10, 2500, 1000);

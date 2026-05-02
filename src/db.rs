@@ -68,7 +68,7 @@ pub struct SearchTrack {
     pub path: String,
     pub duration: Duration,
     pub intro: Duration,
-    pub fade_out: Duration,
+    pub cue_out: Duration,
     pub updated_at: String,
     pub created_at: String,
 }
@@ -93,8 +93,8 @@ pub struct QueueEntry {
     pub title: String,
     pub duration: Duration,
     pub intro: Duration,
-    pub fade_in: Duration,
-    pub fade_out: Duration,
+    pub cue_in: Duration,
+    pub cue_out: Duration,
     pub scheduled_at: Option<String>,
     pub priority: i16,
     pub fixed_time: bool,
@@ -203,7 +203,7 @@ impl Database {
                 t.path,
                 t.duration::double precision AS duration,
                 t.intro::double precision AS intro,
-                COALESCE(t.fade_out, t.duration)::double precision AS fade_out,
+                COALESCE(t.cue_out, t.duration)::double precision AS cue_out,
                 to_char(t.updated_at, 'FMMM/FMDD/YYYY HH24:MI:SS') AS updated_at,
                 to_char(t.created_at, 'FMMM/FMDD/YYYY HH24:MI:SS') AS created_at
             FROM tracks t
@@ -220,7 +220,7 @@ impl Database {
             .map(|row| {
                 let duration: f64 = row.get("duration");
                 let intro: f64 = row.get("intro");
-                let fade_out: f64 = row.get("fade_out");
+                let cue_out: f64 = row.get("cue_out");
                 SearchTrack {
                     id: row.get("id"),
                     category_id: row.get("category_id"),
@@ -231,7 +231,7 @@ impl Database {
                     path: row.get("path"),
                     duration: seconds_to_duration(duration),
                     intro: seconds_to_duration(intro),
-                    fade_out: seconds_to_duration(fade_out),
+                    cue_out: seconds_to_duration(cue_out),
                     updated_at: row.get("updated_at"),
                     created_at: row.get("created_at"),
                 }
@@ -295,9 +295,9 @@ impl Database {
                 q.track_id,
                 q.priority,
                 q.fixed_time,
-                q.intro::double precision AS intro,
-                q.fade_in::double precision AS fade_in,
-                q.fade_out::double precision AS fade_out,
+                q.cue_in::double precision AS cue_in,
+                q.cue_out::double precision AS cue_out,
+                COALESCE(t.intro, 0)::double precision AS intro,
                 COALESCE(a.name, '') AS artist_name,
                 COALESCE(t.title, '') AS title,
                 COALESCE(t.duration, 0)::double precision AS duration,
@@ -314,9 +314,9 @@ impl Database {
             .into_iter()
             .map(|row| {
                 let duration: f64 = row.get("duration");
+                let cue_in: f64 = row.get("cue_in");
+                let cue_out: f64 = row.get("cue_out");
                 let intro: f64 = row.get("intro");
-                let fade_in: f64 = row.get("fade_in");
-                let fade_out: f64 = row.get("fade_out");
                 QueueEntry {
                     id: row.get("id"),
                     track_id: row.get("track_id"),
@@ -324,8 +324,8 @@ impl Database {
                     title: row.get("title"),
                     duration: seconds_to_duration(duration),
                     intro: seconds_to_duration(intro),
-                    fade_in: seconds_to_duration(fade_in),
-                    fade_out: seconds_to_duration(fade_out),
+                    cue_in: seconds_to_duration(cue_in),
+                    cue_out: seconds_to_duration(cue_out),
                     scheduled_at: row.get("scheduled_at"),
                     priority: row.get("priority"),
                     fixed_time: row.get("fixed_time"),
@@ -403,8 +403,8 @@ impl Database {
         let mut client = self.client.lock().map_err(|_| DbError::LockPoisoned)?;
         let row = client.query_one(
             "
-            INSERT INTO queue (track_id, sample_rate, bpm, intro, fade_in, fade_out)
-            SELECT id, sample_rate, bpm, intro, fade_in, COALESCE(fade_out, duration)
+            INSERT INTO queue (track_id, cue_in, cue_out)
+            SELECT id, cue_in, COALESCE(cue_out, duration)
             FROM tracks WHERE id = $1
             RETURNING id
             ",
@@ -419,11 +419,8 @@ impl Database {
             "
             UPDATE queue SET
                 track_id = t.id,
-                sample_rate = t.sample_rate,
-                bpm = t.bpm,
-                intro = t.intro,
-                fade_in = t.fade_in,
-                fade_out = COALESCE(t.fade_out, t.duration),
+                cue_in = t.cue_in,
+                cue_out = COALESCE(t.cue_out, t.duration),
                 updated_at = NOW()
             FROM tracks t
             WHERE t.id = $1 AND queue.id = $2

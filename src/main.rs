@@ -86,8 +86,8 @@ fn smooth_meter(current: f32, target: f32) -> f32 {
 }
 
 fn auto_mix_trigger(entry: &db::QueueEntry) -> std::time::Duration {
-    if entry.fade_out > std::time::Duration::ZERO && entry.fade_out < entry.duration {
-        entry.fade_out
+    if entry.cue_out > std::time::Duration::ZERO && entry.cue_out < entry.duration {
+        entry.cue_out
     } else {
         entry.duration
     }
@@ -2100,8 +2100,8 @@ impl App {
             title: track.title.clone(),
             duration: track.duration,
             intro: track.intro,
-            fade_in: std::time::Duration::ZERO,
-            fade_out: track.fade_out,
+            cue_in: std::time::Duration::ZERO,
+            cue_out: track.cue_out,
             scheduled_at: None,
             priority: 0,
             fixed_time: false,
@@ -2140,12 +2140,12 @@ impl App {
         let Some(track) = self.search_tracks.iter().find(|t| t.id == track_id) else {
             return;
         };
-        let (new_artist, new_title, new_duration, new_intro, new_fade_out) = (
+        let (new_artist, new_title, new_duration, new_intro, new_cue_out) = (
             track.artist_name.clone(),
             track.title.clone(),
             track.duration,
             track.intro,
-            track.fade_out,
+            track.cue_out,
         );
         self.clear_preloaded_queue_status();
         let Some(entry) = self.queue_entries.get_mut(queue_index) else {
@@ -2163,8 +2163,8 @@ impl App {
                 entry.title = new_title;
                 entry.duration = new_duration;
                 entry.intro = new_intro;
-                entry.fade_in = std::time::Duration::ZERO;
-                entry.fade_out = new_fade_out;
+                entry.cue_in = std::time::Duration::ZERO;
+                entry.cue_out = new_cue_out;
             }
             Err(e) => self.status = format!("Queue replace failed: {e}"),
         }
