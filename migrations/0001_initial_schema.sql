@@ -224,6 +224,16 @@ CREATE INDEX idx_play_log_played_at ON play_log (played_at);
 CREATE INDEX idx_play_log_track     ON play_log (track_id);
 CREATE INDEX idx_play_log_station   ON play_log (station_id, played_at);
 
+-- ── Auto mix log — status messages shown in the footer ─────────────────────
+
+CREATE TABLE automix_log (
+    id        INTEGER     GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+    message   TEXT        NOT NULL,
+    logged_at TIMESTAMPTZ NOT NULL DEFAULT clock_timestamp()
+);
+
+CREATE INDEX idx_automix_log_logged_at ON automix_log (logged_at);
+
 -- ── Users ───────────────────────────────────────────────────────────────────
 
 CREATE TABLE users (

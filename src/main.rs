@@ -344,6 +344,8 @@ impl Default for App {
             dialog: None,
         };
         app.load_instant_pages_from_db();
+        let auto_mix_status = app.auto_mix_status.clone();
+        app.log_auto_mix_status(&auto_mix_status);
         app
     }
 }
@@ -855,10 +857,10 @@ impl App {
             Message::ToggleAutoDj => {
                 self.autodj_enabled = !self.autodj_enabled;
                 if self.autodj_enabled {
-                    self.auto_mix_status = String::from("Waiting");
+                    self.set_auto_mix_status("Waiting");
                 } else {
                     self.preloaded_queue_entry = None;
-                    self.auto_mix_status = String::from("Disabled");
+                    self.set_auto_mix_status("Disabled");
                 }
                 Task::none()
             }
@@ -1098,6 +1100,8 @@ impl App {
                     Ok(db) => {
                         self.status = "Connected".into();
                         self.db = Some(db);
+                        let auto_mix_status = self.auto_mix_status.clone();
+                        self.log_auto_mix_status(&auto_mix_status);
                     }
                     Err(e) => {
                         self.db = None;
@@ -1326,6 +1330,22 @@ impl App {
         }
     }
 
+    fn set_auto_mix_status(&mut self, status: impl Into<String>) {
+        let status = status.into();
+        self.auto_mix_status = status.clone();
+        self.log_auto_mix_status(&status);
+    }
+
+    fn log_auto_mix_status(&mut self, status: &str) {
+        let Some(db) = &self.db else {
+            return;
+        };
+
+        if let Err(error) = db.insert_automix_log(status) {
+            self.status = format!("AUTO MIX log insert failed: {error}");
+        }
+    }
+
     fn active_queue_play_log_positions(&self) -> HashMap<audio::PlayerId, std::time::Duration> {
         self.active_queue_play_logs
             .keys()
@@ -1425,7 +1445,7 @@ impl App {
 
     fn clear_preloaded_queue_status(&mut self) {
         if self.preloaded_queue_entry.take().is_some() && self.autodj_enabled {
-            self.auto_mix_status = String::from("Waiting");
+            self.set_auto_mix_status("Waiting");
         }
     }
 
@@ -1457,10 +1477,10 @@ impl App {
 
         self.audio
             .handle(player_id, audio::PlayerCommand::Load(path));
-        self.auto_mix_status = format!(
+        self.set_auto_mix_status(format!(
             "Track {} has been preloaded.",
             Self::queue_entry_label(&entry)
-        );
+        ));
         self.preloaded_queue_entry = Some(PreloadedQueueEntry { player_id, entry });
     }
 
@@ -1487,10 +1507,10 @@ impl App {
         if let Some(track_id) = preloaded.entry.track_id {
             self.begin_queue_play_log(player_id, track_id);
         }
-        self.auto_mix_status = format!(
+        self.set_auto_mix_status(format!(
             "Track {} has started.",
             Self::queue_entry_label(&preloaded.entry)
-        );
+        ));
         self.finalize_queue_entry_launch(player_id, preloaded.entry);
         self.preloaded_queue_entry = None;
         true
@@ -1573,11 +1593,11 @@ impl App {
         }
         self.queue_player_entries.clear();
         self.preloaded_queue_entry = None;
-        self.auto_mix_status = if self.autodj_enabled {
-            String::from("Stopped")
+        if self.autodj_enabled {
+            self.set_auto_mix_status("Stopped");
         } else {
-            String::from("Disabled")
-        };
+            self.set_auto_mix_status("Disabled");
+        }
         self.current_queue_entry = None;
         self.current_queue_player_id = audio::PlayerId::QueueA;
     }

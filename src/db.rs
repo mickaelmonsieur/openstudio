@@ -164,7 +164,16 @@ impl Database {
         client.batch_execute(
             "
             ALTER TABLE configurations
-            ADD COLUMN IF NOT EXISTS preload INTEGER NOT NULL DEFAULT 10
+            ADD COLUMN IF NOT EXISTS preload INTEGER NOT NULL DEFAULT 10;
+
+            CREATE TABLE IF NOT EXISTS automix_log (
+                id        INTEGER     GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+                message   TEXT        NOT NULL,
+                logged_at TIMESTAMPTZ NOT NULL DEFAULT clock_timestamp()
+            );
+
+            CREATE INDEX IF NOT EXISTS idx_automix_log_logged_at
+            ON automix_log (logged_at);
             ",
         )?;
         Ok(())
@@ -435,6 +444,18 @@ impl Database {
             VALUES ($1, $2)
             ",
             &[&track_id, &played_duration],
+        )?;
+        Ok(())
+    }
+
+    pub fn insert_automix_log(&self, message: &str) -> Result<(), DbError> {
+        let mut client = self.client.lock().map_err(|_| DbError::LockPoisoned)?;
+        client.execute(
+            "
+            INSERT INTO automix_log (message)
+            VALUES ($1)
+            ",
+            &[&message],
         )?;
         Ok(())
     }
