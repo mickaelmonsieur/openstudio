@@ -275,7 +275,7 @@ INSERT INTO templates (id, format_id, category_id, subcategory_id, comment, trac
 SELECT setval('templates_id_seq', 35);
 
 -- row 121 (hour=0 min=0 sec=0) is a catch-all sentinel; template_id NULL
-INSERT INTO ad_schedule (id, hour, minute, second, template_id, priority, duration) OVERRIDING SYSTEM VALUE VALUES
+INSERT INTO clock_events (id, hour, minute, second, template_id, priority, duration) OVERRIDING SYSTEM VALUE VALUES
     (1,   0, 59, 45, 2, 0, 10),
     (2,   1, 59, 45, 2, 0, 10),
     (3,   2, 59, 45, 2, 0, 10),
@@ -373,7 +373,7 @@ INSERT INTO ad_schedule (id, hour, minute, second, template_id, priority, durati
     (118,23, 27,  0, 1, 0, 60),
     (120,23, 47,  0, 1, 0, 60),
     (121, 0,  0,  0, NULL, 0, 0);
-SELECT setval('ad_schedule_id_seq', 121);
+SELECT setval('clock_events_id_seq', 121);
 
 INSERT INTO schedules (id, from_hour, to_hour, monday, tuesday, wednesday, thursday, friday, saturday, sunday, template_id) OVERRIDING SYSTEM VALUE VALUES
     (1, 0, 23, TRUE, TRUE, TRUE, TRUE, TRUE, TRUE, TRUE, 3);

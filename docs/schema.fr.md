@@ -6,7 +6,7 @@ Le schéma est organisé en couches : données de référence → médiathèque 
 
 ```
 formats ──┐
-           ├──► templates ──► ad_schedule
+           ├──► templates ──► clock_events
 categories ┤              └──► schedules
            │
 subcategories ──► tracks ──► queue
@@ -94,7 +94,7 @@ Référentiel des genres musicaux. Chaque piste peut optionnellement être liée
 ## Templates de programmation
 
 ### `templates`
-Un template (anciennement « canvas ») définit un créneau de programmation : quelle catégorie/sous-catégorie de contenu diffuser, et combien de temps attendre avant de rediffuser la même piste ou le même artiste. Les templates sont référencés par la grille de diffusion et la grille publicitaire.
+Un template (anciennement « canvas ») définit un créneau de programmation : quelle catégorie/sous-catégorie de contenu diffuser, et combien de temps attendre avant de rediffuser la même piste ou le même artiste. Les templates sont référencés par la grille de diffusion et les événements horloge.
 
 | Colonne | Type | Description |
 |---------|------|-------------|
@@ -219,8 +219,8 @@ Table de jointure entre une campagne et ses spots. `position` définit l'ordre d
 
 ## Grilles
 
-### `ad_schedule`
-Définit à quelle heure exacte chaque heure les écrans publicitaires sont déclenchés. Chaque ligne spécifie une heure (`hour:minute:second`) et le template à utiliser pour ce créneau. Le champ `duration` donne la durée prévue de l'écran en minutes. Le planificateur lit cette table pour savoir quand interrompre la programmation musicale.
+### `clock_events`
+Définit les déclenchements fixes de l'horloge radio, comme les tops horaires et les écrans publicitaires. Chaque ligne spécifie une heure (`hour:minute:second`) et le template à utiliser pour ce créneau. Le champ `duration` donne la durée prévue de l'événement en secondes.
 
 | Colonne | Type | Description |
 |---------|------|-------------|

@@ -145,9 +145,9 @@ CREATE TABLE campaign_tracks (
 CREATE INDEX idx_campaign_tracks_campaign ON campaign_tracks (campaign_id);
 CREATE INDEX idx_campaign_tracks_track    ON campaign_tracks (track_id);
 
--- ── Ad schedule grid ────────────────────────────────────────────────────────
+-- ── Clock events ────────────────────────────────────────────────────────────
 
-CREATE TABLE ad_schedule (
+CREATE TABLE clock_events (
     id          INTEGER  GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
     hour        SMALLINT NOT NULL DEFAULT 0  CHECK (hour   BETWEEN 0 AND 23),
     minute      SMALLINT NOT NULL DEFAULT 0  CHECK (minute BETWEEN 0 AND 59),
@@ -157,7 +157,7 @@ CREATE TABLE ad_schedule (
     duration    REAL     NOT NULL DEFAULT 0
 );
 
-CREATE INDEX idx_ad_schedule_hour ON ad_schedule (hour);
+CREATE INDEX idx_clock_events_hour ON clock_events (hour);
 
 -- ── Programming schedule ────────────────────────────────────────────────────
 

@@ -6,7 +6,7 @@ The schema is organized in layers: reference data → media library → scheduli
 
 ```
 formats ──┐
-           ├──► templates ──► ad_schedule
+           ├──► templates ──► clock_events
 categories ┤              └──► schedules
            │
 subcategories ──► tracks ──► queue
@@ -94,7 +94,7 @@ Musical genre reference list. Each track can optionally be linked to a genre. Th
 ## Programming templates
 
 ### `templates`
-A template (formerly "canvas") defines a programming slot: what category/subcategory of content to play, and how long to wait before replaying the same track or the same artist. Templates are referenced by the schedule and the ad schedule.
+A template (formerly "canvas") defines a programming slot: what category/subcategory of content to play, and how long to wait before replaying the same track or the same artist. Templates are referenced by the schedule and clock events.
 
 | Column | Type | Description |
 |--------|------|-------------|
@@ -219,8 +219,8 @@ Junction table between a campaign and its spots. `position` defines the rotation
 
 ## Scheduling
 
-### `ad_schedule`
-Defines at which exact time each hour ad breaks are triggered. Each row specifies a clock time (`hour:minute:second`) and the template to use for that slot. The `duration` field gives the planned length of the break in minutes. The scheduler reads this table to know when to interrupt music programming.
+### `clock_events`
+Defines fixed clock triggers such as top-of-hour events and ad breaks. Each row specifies a clock time (`hour:minute:second`) and the template to use for that slot. The `duration` field gives the planned length of the event in seconds.
 
 | Column | Type | Description |
 |--------|------|-------------|
