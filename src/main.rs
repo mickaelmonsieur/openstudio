@@ -8,7 +8,8 @@ use std::path::PathBuf;
 use iced::keyboard::key::Named;
 use iced::keyboard::Key;
 use iced::widget::{
-    button, checkbox, column, container, responsive, row, stack, text, text_input, Space,
+    button, checkbox, column, container, mouse_area, responsive, row, stack, text, text_input,
+    Space,
 };
 use iced::{
     window, Alignment, Background, Border, Color, Element, Length, Size, Subscription, Task, Theme,
@@ -2727,16 +2728,23 @@ impl App {
             None => container(Space::new(Length::Shrink, Length::Shrink)),
         };
 
-        container(dialog)
-            .width(Length::Fill)
-            .height(Length::Fill)
-            .center_x(Length::Fill)
-            .center_y(Length::Fill)
-            .style(|_| container::Style {
-                background: Some(Background::Color(Color::from_rgba(0.0, 0.0, 0.0, 0.55))),
-                ..Default::default()
-            })
-            .into()
+        if self.dialog.is_none() {
+            return Space::new(Length::Shrink, Length::Shrink).into();
+        }
+
+        mouse_area(
+            container(dialog)
+                .width(Length::Fill)
+                .height(Length::Fill)
+                .center_x(Length::Fill)
+                .center_y(Length::Fill)
+                .style(|_| container::Style {
+                    background: Some(Background::Color(Color::from_rgba(0.0, 0.0, 0.0, 0.55))),
+                    ..Default::default()
+                }),
+        )
+        .on_press(Message::DialogCancel)
+        .into()
     }
 
     fn dialog_button(
