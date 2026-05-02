@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 use std::path::PathBuf;
-use std::sync::atomic::{AtomicU32, AtomicU64, AtomicUsize, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU32, AtomicU64, AtomicUsize, Ordering};
 use std::sync::mpsc::{self, Sender, SyncSender, TrySendError};
 use std::sync::Arc;
 use std::time::Duration;
@@ -48,6 +48,7 @@ pub enum PlayerCommand {
     Resume,
     TogglePause,
     Stop,
+    FadeOut(Duration),
     Restart,
     SeekRelative(i64),
 }
@@ -125,6 +126,7 @@ pub struct AudioPlayer {
     stop_tx: Option<Sender<()>>,
     seek_tx: Option<Sender<SeekRequest>>,
     pause_tx: Option<Sender<bool>>,
+    fade_tx: Option<Sender<FadeRequest>>,
     done_rx: Option<mpsc::Receiver<()>>,
     preload_rx: Option<mpsc::Receiver<Option<Preloaded>>>,
     position_ms: Option<Arc<AtomicU64>>,
@@ -141,6 +143,7 @@ impl AudioPlayer {
             stop_tx: None,
             seek_tx: None,
             pause_tx: None,
+            fade_tx: None,
             done_rx: None,
             preload_rx: None,
             position_ms: None,
@@ -156,6 +159,7 @@ impl AudioPlayer {
             PlayerCommand::Resume => self.resume(),
             PlayerCommand::TogglePause => self.toggle_pause(),
             PlayerCommand::Stop => self.stop(),
+            PlayerCommand::FadeOut(duration) => self.fade_out(duration),
             PlayerCommand::Restart => self.restart(),
             PlayerCommand::SeekRelative(offset_ms) => self.seek_relative(offset_ms),
         }
@@ -180,11 +184,12 @@ impl AudioPlayer {
             .and_then(|rx| rx.try_recv().ok().flatten());
         self.preload_rx = None;
 
-        let (stop_tx, seek_tx, pause_tx, position_ms, done_rx) =
+        let (stop_tx, seek_tx, pause_tx, fade_tx, position_ms, done_rx) =
             play(path, preloaded, Arc::clone(&self.levels));
         self.stop_tx = Some(stop_tx);
         self.seek_tx = Some(seek_tx);
         self.pause_tx = Some(pause_tx);
+        self.fade_tx = Some(fade_tx);
         self.position_ms = Some(position_ms);
         self.done_rx = Some(done_rx);
         self.paused = false;
@@ -220,6 +225,19 @@ impl AudioPlayer {
         self.preload_rx = self.loaded_path.as_ref().map(|path| preload(path.clone()));
     }
 
+    pub fn fade_out(&mut self, duration: Duration) {
+        if duration.is_zero() || self.paused {
+            self.stop();
+            return;
+        }
+
+        if let Some(tx) = &self.fade_tx {
+            let _ = tx.send(FadeRequest { duration });
+        } else {
+            self.stop();
+        }
+    }
+
     pub fn seek_relative(&mut self, offset_ms: i64) {
         if let Some(tx) = &self.seek_tx {
             let _ = tx.send(SeekRequest::Relative(offset_ms));
@@ -244,6 +262,7 @@ impl AudioPlayer {
             self.stop_tx = None;
             self.seek_tx = None;
             self.pause_tx = None;
+            self.fade_tx = None;
             self.done_rx = None;
             self.position_ms = None;
             self.paused = false;
@@ -299,6 +318,7 @@ impl AudioPlayer {
         }
         self.seek_tx = None;
         self.pause_tx = None;
+        self.fade_tx = None;
         self.done_rx = None;
         self.position_ms = None;
         self.paused = false;
@@ -349,6 +369,50 @@ struct AudioChunk {
 enum SeekRequest {
     Relative(i64),
     Absolute(Duration),
+}
+
+struct FadeRequest {
+    duration: Duration,
+}
+
+#[derive(Default)]
+struct FadeState {
+    active: bool,
+    completed: bool,
+    total_frames: u64,
+    elapsed_frames: u64,
+    start_gain: f32,
+}
+
+impl FadeState {
+    fn start(&mut self, duration: Duration, sample_rate: u32) {
+        let total_frames = (duration.as_secs_f64() * sample_rate as f64).ceil() as u64;
+        if total_frames == 0 {
+            self.active = false;
+            self.completed = true;
+            self.total_frames = 0;
+            self.elapsed_frames = 0;
+            self.start_gain = 0.0;
+            return;
+        }
+
+        self.start_gain = self.current_gain();
+        self.active = true;
+        self.completed = false;
+        self.total_frames = total_frames;
+        self.elapsed_frames = 0;
+    }
+
+    fn current_gain(&self) -> f32 {
+        if self.completed {
+            0.0
+        } else if self.active && self.total_frames > 0 {
+            let progress = self.elapsed_frames as f32 / self.total_frames as f32;
+            self.start_gain * (1.0 - progress).clamp(0.0, 1.0)
+        } else {
+            1.0
+        }
+    }
 }
 
 /// Lit uniquement les métadonnées pour obtenir la durée totale du fichier.
@@ -447,12 +511,14 @@ fn play(
     Sender<()>,
     Sender<SeekRequest>,
     Sender<bool>,
+    Sender<FadeRequest>,
     Arc<AtomicU64>,
     mpsc::Receiver<()>,
 ) {
     let (stop_tx, stop_rx) = mpsc::channel::<()>();
     let (seek_tx, seek_rx) = mpsc::channel::<SeekRequest>();
     let (pause_tx, pause_rx) = mpsc::channel::<bool>();
+    let (fade_tx, fade_rx) = mpsc::channel::<FadeRequest>();
     let (done_tx, done_rx) = mpsc::channel::<()>();
     let position_ms = Arc::new(AtomicU64::new(0));
     let position_ms_thread = Arc::clone(&position_ms);
@@ -463,6 +529,7 @@ fn play(
             stop_rx,
             seek_rx,
             pause_rx,
+            fade_rx,
             position_ms_thread,
             levels,
         ) {
@@ -470,7 +537,7 @@ fn play(
         }
         let _ = done_tx.send(());
     });
-    (stop_tx, seek_tx, pause_tx, position_ms, done_rx)
+    (stop_tx, seek_tx, pause_tx, fade_tx, position_ms, done_rx)
 }
 
 fn run(
@@ -479,6 +546,7 @@ fn run(
     stop_rx: mpsc::Receiver<()>,
     seek_rx: mpsc::Receiver<SeekRequest>,
     pause_rx: mpsc::Receiver<bool>,
+    fade_rx: mpsc::Receiver<FadeRequest>,
     position_ms: Arc<AtomicU64>,
     levels: Arc<AudioLevels>,
 ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
@@ -517,16 +585,20 @@ fn run(
         .ok_or("No audio output device available")?;
     let config = config_for(&device, source_sample_rate)?;
     let out_channels = config.channels() as usize;
+    let output_sample_rate = config.sample_rate().0;
     let (chunk_tx, chunk_rx) = mpsc::sync_channel::<AudioChunk>(64);
     let buffered_samples = Arc::new(AtomicUsize::new(preloaded_samples.len()));
     let playback_generation = Arc::new(AtomicU64::new(0));
+    let fade_finished = Arc::new(AtomicBool::new(false));
 
     let levels_cb = Arc::clone(&levels);
     let buffered_samples_cb = Arc::clone(&buffered_samples);
     let playback_generation_cb = Arc::clone(&playback_generation);
+    let fade_finished_cb = Arc::clone(&fade_finished);
     let mut current_chunk = preloaded_samples;
     let mut current_offset = 0;
     let mut callback_generation = 0;
+    let mut fade_state = FadeState::default();
     let stream = device.build_output_stream(
         &config.into(),
         move |data: &mut [f32], _| {
@@ -538,6 +610,14 @@ fn run(
                 &mut current_chunk,
                 &mut current_offset,
                 &mut callback_generation,
+            );
+            apply_fade_out(
+                data,
+                out_channels,
+                output_sample_rate,
+                &fade_rx,
+                &mut fade_state,
+                &fade_finished_cb,
             );
             update_levels(&levels_cb, data, out_channels);
         },
@@ -551,7 +631,7 @@ fn run(
     let mut paused = false;
 
     loop {
-        if stop_rx.try_recv().is_ok() {
+        if stop_rx.try_recv().is_ok() || fade_finished.load(Ordering::Relaxed) {
             return Ok(());
         }
 
@@ -628,7 +708,14 @@ fn run(
             samples,
         };
 
-        if !send_audio_chunk(&chunk_tx, chunk, &stop_rx, &buffered_samples, sample_count) {
+        if !send_audio_chunk(
+            &chunk_tx,
+            chunk,
+            &stop_rx,
+            &fade_finished,
+            &buffered_samples,
+            sample_count,
+        ) {
             return Ok(());
         }
 
@@ -649,7 +736,7 @@ fn run(
 
     // Fin naturelle : attendre que le callback cpal ait consommé tous les blocs envoyés.
     loop {
-        if stop_rx.try_recv().is_ok() {
+        if stop_rx.try_recv().is_ok() || fade_finished.load(Ordering::Relaxed) {
             return Ok(());
         }
         let remaining = buffered_samples.load(Ordering::Relaxed);
@@ -669,7 +756,7 @@ fn run(
     // Laisser le ring buffer hardware (CoreAudio / WASAPI) terminer sa lecture
     // avant de dropper le stream — sinon les dernières ~100 ms sont coupées
     for _ in 0..20 {
-        if stop_rx.try_recv().is_ok() {
+        if stop_rx.try_recv().is_ok() || fade_finished.load(Ordering::Relaxed) {
             return Ok(());
         }
         std::thread::sleep(std::time::Duration::from_millis(10));
@@ -727,6 +814,57 @@ fn fill_output_from_chunks(
     }
 }
 
+fn apply_fade_out(
+    data: &mut [f32],
+    channels: usize,
+    sample_rate: u32,
+    fade_rx: &mpsc::Receiver<FadeRequest>,
+    fade_state: &mut FadeState,
+    fade_finished: &AtomicBool,
+) {
+    while let Ok(request) = fade_rx.try_recv() {
+        fade_state.start(request.duration, sample_rate);
+    }
+
+    if fade_state.completed {
+        data.fill(0.0);
+        fade_finished.store(true, Ordering::Relaxed);
+        return;
+    }
+
+    if !fade_state.active {
+        return;
+    }
+
+    let channels = channels.max(1);
+    let frame_count = data.len() / channels;
+
+    for frame_index in 0..frame_count {
+        if fade_state.completed {
+            data[frame_index * channels..].fill(0.0);
+            fade_finished.store(true, Ordering::Relaxed);
+            return;
+        }
+
+        let gain = fade_state.current_gain();
+        let frame_start = frame_index * channels;
+        let frame_end = frame_start + channels;
+        for sample in &mut data[frame_start..frame_end] {
+            *sample *= gain;
+        }
+
+        fade_state.elapsed_frames += 1;
+        if fade_state.elapsed_frames >= fade_state.total_frames {
+            fade_state.active = false;
+            fade_state.completed = true;
+        }
+    }
+
+    if fade_state.completed {
+        fade_finished.store(true, Ordering::Relaxed);
+    }
+}
+
 fn decrement_buffered_samples(buffered_samples: &AtomicUsize, consumed: usize) {
     let _ = buffered_samples.fetch_update(Ordering::Relaxed, Ordering::Relaxed, |current| {
         Some(current.saturating_sub(consumed))
@@ -737,16 +875,21 @@ fn send_audio_chunk(
     chunk_tx: &SyncSender<AudioChunk>,
     mut chunk: AudioChunk,
     stop_rx: &mpsc::Receiver<()>,
+    fade_finished: &AtomicBool,
     buffered_samples: &AtomicUsize,
     sample_count: usize,
 ) -> bool {
     loop {
+        if fade_finished.load(Ordering::Relaxed) {
+            return false;
+        }
+
         buffered_samples.fetch_add(sample_count, Ordering::Relaxed);
         match chunk_tx.try_send(chunk) {
             Ok(()) => return true,
             Err(TrySendError::Full(returned_chunk)) => {
                 decrement_buffered_samples(buffered_samples, sample_count);
-                if stop_rx.try_recv().is_ok() {
+                if stop_rx.try_recv().is_ok() || fade_finished.load(Ordering::Relaxed) {
                     return false;
                 }
                 chunk = returned_chunk;

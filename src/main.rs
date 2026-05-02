@@ -446,6 +446,7 @@ enum Dialog {
         auto_mix_on_start: bool,
         auto_play_on_start: bool,
         preload: String,
+        fade_out_duration_ms: String,
     },
     EditDbConfig {
         host: String,
@@ -544,6 +545,7 @@ enum Message {
     ConfigOpen,
     ConfigToggle(ConfigField),
     ConfigPreloadChanged(String),
+    ConfigFadeOutDurationChanged(String),
     ConfigSave,
     ConfigSaved(Result<(), String>),
 }
@@ -1116,6 +1118,7 @@ impl App {
                     auto_mix_on_start: self.app_config.auto_mix_on_start,
                     auto_play_on_start: self.app_config.auto_play_on_start,
                     preload: self.app_config.preload.to_string(),
+                    fade_out_duration_ms: self.app_config.fade_out_duration_ms.to_string(),
                 });
                 Task::none()
             }
@@ -1142,17 +1145,34 @@ impl App {
                 Task::none()
             }
 
+            Message::ConfigFadeOutDurationChanged(value) => {
+                if let Some(Dialog::EditConfig {
+                    fade_out_duration_ms,
+                    ..
+                }) = &mut self.dialog
+                {
+                    *fade_out_duration_ms = value;
+                }
+                Task::none()
+            }
+
             Message::ConfigSave => {
                 if let Some(Dialog::EditConfig {
                     auto_mix_on_start,
                     auto_play_on_start,
                     preload,
+                    fade_out_duration_ms,
                 }) = &self.dialog
                 {
                     let cfg = db::AppConfig {
                         auto_mix_on_start: *auto_mix_on_start,
                         auto_play_on_start: *auto_play_on_start,
                         preload: preload.trim().parse::<i32>().unwrap_or(10).max(0),
+                        fade_out_duration_ms: fade_out_duration_ms
+                            .trim()
+                            .parse::<i32>()
+                            .unwrap_or(2500)
+                            .max(0),
                     };
                     self.app_config = cfg.clone();
                     self.dialog = None;
@@ -1542,6 +1562,7 @@ impl App {
         let entry = self.queue_entries.remove(index);
         self.adjust_selected_queue_index_after_remove(index);
         self.play_queue_entry(player_id, entry);
+        self.fade_out_previous_queue_players(player_id);
     }
 
     fn any_queue_active(&self) -> bool {
@@ -1563,10 +1584,45 @@ impl App {
     }
 
     fn queue_player_id_for_immediate_launch(&self) -> audio::PlayerId {
-        if self.any_queue_active() {
-            self.next_queue_player_id(self.current_queue_player_id)
-        } else {
+        if !self.any_queue_active() {
             self.current_queue_player_id
+        } else {
+            let next_player_id = self.next_queue_player_id(self.current_queue_player_id);
+            if !self.audio.player(next_player_id).is_active() {
+                next_player_id
+            } else if !self.audio.player(self.current_queue_player_id).is_active() {
+                self.current_queue_player_id
+            } else {
+                next_player_id
+            }
+        }
+    }
+
+    fn configured_fade_out_duration(&self) -> std::time::Duration {
+        std::time::Duration::from_millis(self.app_config.fade_out_duration_ms.max(0) as u64)
+    }
+
+    fn fade_out_previous_queue_players(&mut self, keep_player_id: audio::PlayerId) {
+        let fade_out_duration = self.configured_fade_out_duration();
+        let players_to_fade: Vec<_> = QUEUE_PLAYER_IDS
+            .into_iter()
+            .filter(|&player_id| {
+                player_id != keep_player_id && self.audio.player(player_id).is_active()
+            })
+            .collect();
+
+        for player_id in players_to_fade {
+            if fade_out_duration.is_zero() {
+                self.close_queue_play_log(
+                    player_id,
+                    self.audio.player(player_id).snapshot().position,
+                );
+                self.audio.handle(player_id, audio::PlayerCommand::Stop);
+                self.queue_player_entries.remove(&player_id);
+            } else {
+                self.audio
+                    .handle(player_id, audio::PlayerCommand::FadeOut(fade_out_duration));
+            }
         }
     }
 
@@ -2517,6 +2573,7 @@ impl App {
                 auto_mix_on_start,
                 auto_play_on_start,
                 preload,
+                fade_out_duration_ms,
             }) => {
                 let fieldset_label = container(
                     text("AUTO MIX")
@@ -2545,6 +2602,20 @@ impl App {
                             .size(13)
                             .width(Length::Fixed(70.0)),
                         text("s").size(13).style(text_color(rgb(160, 180, 195))),
+                    ]
+                    .spacing(6)
+                    .align_y(Alignment::Center),
+                    row![
+                        text("Fade Out Duration")
+                            .size(13)
+                            .style(text_color(rgb(226, 238, 245))),
+                        Space::with_width(Length::Fill),
+                        text_input("", fade_out_duration_ms)
+                            .on_input(Message::ConfigFadeOutDurationChanged)
+                            .padding(6)
+                            .size(13)
+                            .width(Length::Fixed(70.0)),
+                        text("ms").size(13).style(text_color(rgb(160, 180, 195))),
                     ]
                     .spacing(6)
                     .align_y(Alignment::Center),

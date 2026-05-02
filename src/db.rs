@@ -14,6 +14,7 @@ pub struct AppConfig {
     pub auto_mix_on_start: bool,
     pub auto_play_on_start: bool,
     pub preload: i32,
+    pub fade_out_duration_ms: i32,
 }
 
 impl Default for AppConfig {
@@ -22,6 +23,7 @@ impl Default for AppConfig {
             auto_mix_on_start: false,
             auto_play_on_start: false,
             preload: 10,
+            fade_out_duration_ms: 2500,
         }
     }
 }
@@ -165,6 +167,9 @@ impl Database {
             "
             ALTER TABLE configurations
             ADD COLUMN IF NOT EXISTS preload INTEGER NOT NULL DEFAULT 10;
+
+            ALTER TABLE configurations
+            ADD COLUMN IF NOT EXISTS fade_out_duration_ms INTEGER NOT NULL DEFAULT 2500;
 
             CREATE TABLE IF NOT EXISTS automix_log (
                 id        INTEGER     GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
@@ -463,21 +468,27 @@ impl Database {
     pub fn load_config(&self) -> Result<AppConfig, DbError> {
         let mut client = self.client.lock().map_err(|_| DbError::LockPoisoned)?;
         let row = client.query_one(
-            "SELECT auto_mix_on_start, auto_play_on_start, preload FROM configurations LIMIT 1",
+            "SELECT auto_mix_on_start, auto_play_on_start, preload, fade_out_duration_ms FROM configurations LIMIT 1",
             &[],
         )?;
         Ok(AppConfig {
             auto_mix_on_start: row.get(0),
             auto_play_on_start: row.get(1),
             preload: row.get(2),
+            fade_out_duration_ms: row.get(3),
         })
     }
 
     pub fn save_config(&self, cfg: &AppConfig) -> Result<(), DbError> {
         let mut client = self.client.lock().map_err(|_| DbError::LockPoisoned)?;
         client.execute(
-            "UPDATE configurations SET auto_mix_on_start = $1, auto_play_on_start = $2, preload = $3",
-            &[&cfg.auto_mix_on_start, &cfg.auto_play_on_start, &cfg.preload],
+            "UPDATE configurations SET auto_mix_on_start = $1, auto_play_on_start = $2, preload = $3, fade_out_duration_ms = $4",
+            &[
+                &cfg.auto_mix_on_start,
+                &cfg.auto_play_on_start,
+                &cfg.preload,
+                &cfg.fade_out_duration_ms,
+            ],
         )?;
         Ok(())
     }
