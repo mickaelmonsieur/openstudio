@@ -1,15 +1,38 @@
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
+import { randomUUID } from 'node:crypto';
+import multer from 'multer';
 import { withDatabase } from '../db/client.js';
 import {
   countTracks,
+  createTrack,
   deleteTrack,
   hasScheduledQueue,
+  listGenres,
   listSubcategoriesWithCategory,
   listTracks,
   updateTrack
 } from '../repositories/tracks.js';
+import { importFlacTrack } from '../services/import-flac.js';
 
 const DEFAULT_LIMIT = 100;
 const MAX_LIMIT = 500;
+const uploadDir = path.join(os.tmpdir(), 'openstudio-admin-uploads');
+fs.mkdirSync(uploadDir, { recursive: true });
+
+const upload = multer({
+  storage: multer.diskStorage({
+    destination: uploadDir,
+    filename(_req, file, callback) {
+      const ext = path.extname(file.originalname).toLowerCase() || '.upload';
+      callback(null, `${randomUUID()}${ext}`);
+    }
+  }),
+  limits: {
+    fileSize: 2 * 1024 * 1024 * 1024
+  }
+});
 
 function parseId(value) {
   const id = Number(value);
@@ -22,7 +45,7 @@ function parsePagination(query) {
   return { page, limit, offset: (page - 1) * limit };
 }
 
-function validateTrack(data) {
+function validateTrack(data, options = {}) {
   const title = String(data?.title || '').trim();
   if (!title) {
     return { ok: false, error: 'Title is required.' };
@@ -36,12 +59,91 @@ function validateTrack(data) {
     return { ok: false, error: 'Album must be 64 characters or less.' };
   }
 
-  const artist_id      = data?.artist_id      ? parseInt(data.artist_id,      10) : null;
-  const subcategory_id = data?.subcategory_id  ? parseInt(data.subcategory_id, 10) : null;
-  const year           = data?.year            ? parseInt(data.year,           10) : null;
+  const artist_id      = parseOptionalPositiveInteger(data?.artist_id);
+  const genre_id       = parseOptionalPositiveInteger(data?.genre_id);
+  const subcategory_id = parseOptionalPositiveInteger(data?.subcategory_id);
+  const year           = parseOptionalYear(data?.year);
   const active         = Boolean(data?.active);
 
-  return { ok: true, value: { title, album, artist_id, subcategory_id, year, active } };
+  if (artist_id === false) {
+    return { ok: false, error: 'Artist is invalid.' };
+  }
+
+  if (subcategory_id === false) {
+    return { ok: false, error: 'Category is invalid.' };
+  }
+
+  if (genre_id === false) {
+    return { ok: false, error: 'Genre is invalid.' };
+  }
+
+  if (!genre_id) {
+    return { ok: false, error: 'Genre is required.' };
+  }
+
+  if (!subcategory_id) {
+    return { ok: false, error: 'Category is required.' };
+  }
+
+  if (year === false) {
+    return { ok: false, error: 'Year is invalid.' };
+  }
+
+  if (!options.requirePath) {
+    return { ok: true, value: { title, album, artist_id, genre_id, subcategory_id, year, active } };
+  }
+
+  const trackPath = String(data?.path || '').trim();
+  if (!trackPath) {
+    return { ok: false, error: 'Imported file path is missing.' };
+  }
+
+  const duration = parseOptionalFloat(data?.duration, 0);
+  const parsedSampleRate = parseOptionalPositiveInteger(data?.sample_rate);
+
+  if (duration === false) {
+    return { ok: false, error: 'Duration is invalid.' };
+  }
+
+  if (parsedSampleRate === false) {
+    return { ok: false, error: 'Sample rate is invalid.' };
+  }
+
+  const sample_rate = parsedSampleRate || 44100;
+
+  return {
+    ok: true,
+    value: {
+      title,
+      album,
+      artist_id,
+      genre_id,
+      subcategory_id,
+      year,
+      active,
+      duration,
+      sample_rate,
+      path: trackPath
+    }
+  };
+}
+
+function parseOptionalPositiveInteger(value) {
+  if (value === undefined || value === null || value === '') return null;
+  const number = Number(value);
+  return Number.isInteger(number) && number > 0 ? number : false;
+}
+
+function parseOptionalYear(value) {
+  if (value === undefined || value === null || value === '') return null;
+  const year = Number(value);
+  return Number.isInteger(year) && year >= 1900 && year <= 2100 ? year : false;
+}
+
+function parseOptionalFloat(value, fallback) {
+  if (value === undefined || value === null || value === '') return fallback;
+  const number = Number(value);
+  return Number.isFinite(number) && number >= 0 ? number : false;
 }
 
 function asyncRoute(handler) {
@@ -67,8 +169,39 @@ export function registerTrackRoutes(app, getDatabaseConfig) {
 
   // Must be declared before /api/tracks/:id to avoid "options" being parsed as an id
   app.get('/api/tracks/options', asyncRoute(async (_req, res) => {
-    const subcategories = await withDatabase(getDatabaseConfig(), listSubcategoriesWithCategory);
-    res.json({ subcategories });
+    const [genres, subcategories] = await withDatabase(getDatabaseConfig(), (db) =>
+      Promise.all([listGenres(db), listSubcategoriesWithCategory(db)])
+    );
+    res.json({ genres, subcategories });
+  }));
+
+  app.post('/api/tracks/import-flac/preview', upload.single('file'), asyncRoute(async (req, res) => {
+    try {
+      const draft = await withDatabase(getDatabaseConfig(), (db) =>
+        importFlacTrack(db, req.file)
+      );
+
+      res.json({ draft });
+    } catch (error) {
+      if (req.file?.path) {
+        fs.promises.unlink(req.file.path).catch(() => {});
+      }
+      res.status(400).json({ error: error.message });
+    }
+  }));
+
+  app.post('/api/tracks', asyncRoute(async (req, res) => {
+    const track = validateTrack(req.body, { requirePath: true });
+    if (!track.ok) {
+      res.status(400).json({ error: track.error });
+      return;
+    }
+
+    const row = await withDatabase(getDatabaseConfig(), (db) =>
+      createTrack(db, track.value)
+    );
+
+    res.status(201).json({ row });
   }));
 
   app.put('/api/tracks/:id', asyncRoute(async (req, res) => {

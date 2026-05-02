@@ -1,10 +1,11 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { ConfirmDialog } from '../crud/ConfirmDialog.jsx';
 import { TrackEditModal } from './TrackEditModal.jsx';
 
 const LIMIT = 100;
 
 export function TracksPage() {
+  const fileInputRef = useRef(null);
   const [rows, setRows] = useState([]);
   const [total, setTotal] = useState(0);
   const [page, setPage] = useState(1);
@@ -12,9 +13,12 @@ export function TracksPage() {
   const [error, setError] = useState(null);
 
   const [artists, setArtists] = useState([]);
+  const [genres, setGenres] = useState([]);
   const [subcategories, setSubcategories] = useState([]);
 
   const [editTrack, setEditTrack] = useState(null);
+  const [importDraft, setImportDraft] = useState(null);
+  const [importing, setImporting] = useState(false);
   const [saving, setSaving] = useState(false);
   const [formError, setFormError] = useState(null);
 
@@ -24,18 +28,26 @@ export function TracksPage() {
   const totalPages = Math.max(1, Math.ceil(total / LIMIT));
 
   useEffect(() => {
-    Promise.all([
-      fetchJson('/api/artists'),
-      fetchJson('/api/tracks/options')
-    ]).then(([artistsPayload, optionsPayload]) => {
-      setArtists(artistsPayload.rows || []);
-      setSubcategories(optionsPayload.subcategories || []);
-    }).catch(() => {});
+    loadOptions();
   }, []);
 
   useEffect(() => {
     loadTracks();
   }, [page]);
+
+  async function loadOptions() {
+    try {
+      const [artistsPayload, optionsPayload] = await Promise.all([
+        fetchJson('/api/artists'),
+        fetchJson('/api/tracks/options')
+      ]);
+      setArtists(artistsPayload.rows || []);
+      setGenres(optionsPayload.genres || []);
+      setSubcategories(optionsPayload.subcategories || []);
+    } catch (err) {
+      setError(err.message);
+    }
+  }
 
   async function loadTracks() {
     setLoading(true);
@@ -68,6 +80,55 @@ export function TracksPage() {
     }
   }
 
+  async function importFile(file) {
+    if (!file) return;
+
+    setImporting(true);
+    setFormError(null);
+    setError(null);
+
+    try {
+      const body = new FormData();
+      body.append('file', file);
+
+      const payload = await fetchJson('/api/tracks/import-flac/preview', {
+        method: 'POST',
+        body
+      });
+
+      await loadOptions();
+      setImportDraft(payload.draft);
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setImporting(false);
+      if (fileInputRef.current) fileInputRef.current.value = '';
+    }
+  }
+
+  async function saveImportedTrack(data) {
+    setSaving(true);
+    setFormError(null);
+
+    try {
+      await fetchJson('/api/tracks', {
+        method: 'POST',
+        body: JSON.stringify(data)
+      });
+      setImportDraft(null);
+      await loadOptions();
+      if (page !== 1) {
+        setPage(1);
+      } else {
+        await loadTracks();
+      }
+    } catch (err) {
+      setFormError(err.message);
+    } finally {
+      setSaving(false);
+    }
+  }
+
   async function confirmDelete() {
     if (!deleteTarget) return;
     setDeleting(true);
@@ -90,7 +151,24 @@ export function TracksPage() {
           <p className="panel-kicker">Library</p>
           <h2>Tracks</h2>
         </div>
-        <span className="log-total">{total.toLocaleString()} tracks</span>
+        <div className="header-actions">
+          <input
+            ref={fileInputRef}
+            accept=".flac,audio/flac"
+            className="hidden-file-input"
+            type="file"
+            onChange={(event) => importFile(event.target.files?.[0])}
+          />
+          <button
+            className="primary-button"
+            disabled={importing}
+            type="button"
+            onClick={() => fileInputRef.current?.click()}
+          >
+            {importing ? 'Importing...' : 'Add File'}
+          </button>
+          <span className="log-total">{total.toLocaleString()} tracks</span>
+        </div>
       </header>
 
       {error ? <div className="table-error">{error}</div> : null}
@@ -106,6 +184,7 @@ export function TracksPage() {
                   <th style={{ width: '70px' }}>ID</th>
                   <th style={{ width: '170px' }}>Artist</th>
                   <th>Title</th>
+                  <th style={{ width: '150px' }}>Genre</th>
                   <th style={{ width: '170px' }}>Album</th>
                   <th style={{ width: '60px' }}>Year</th>
                   <th style={{ width: '80px' }}>Duration</th>
@@ -115,7 +194,7 @@ export function TracksPage() {
               <tbody>
                 {rows.length === 0 ? (
                   <tr>
-                    <td className="empty-cell" colSpan={7}>No tracks.</td>
+                    <td className="empty-cell" colSpan={8}>No tracks.</td>
                   </tr>
                 ) : (
                   rows.map((row) => (
@@ -123,6 +202,7 @@ export function TracksPage() {
                       <td>{row.id}</td>
                       <td>{row.artist || '—'}</td>
                       <td>{row.title || '—'}</td>
+                      <td>{row.genre || '—'}</td>
                       <td>{row.album || '—'}</td>
                       <td>{row.year || '—'}</td>
                       <td>{formatDuration(row.duration)}</td>
@@ -177,11 +257,26 @@ export function TracksPage() {
         <TrackEditModal
           artists={artists}
           error={formError}
+          genres={genres}
           saving={saving}
           subcategories={subcategories}
           track={editTrack}
           onClose={() => setEditTrack(null)}
           onSubmit={saveTrack}
+        />
+      ) : null}
+
+      {importDraft ? (
+        <TrackEditModal
+          artists={artists}
+          error={formError}
+          genres={genres}
+          mode="create"
+          saving={saving}
+          subcategories={subcategories}
+          track={importDraft}
+          onClose={() => setImportDraft(null)}
+          onSubmit={saveImportedTrack}
         />
       ) : null}
 
@@ -207,9 +302,12 @@ function formatDuration(seconds) {
 }
 
 async function fetchJson(url, options = {}) {
+  const isFormData = options.body instanceof FormData;
   const response = await fetch(url, {
-    headers: { 'Content-Type': 'application/json', ...(options.headers || {}) },
-    ...options
+    ...options,
+    headers: isFormData
+      ? { ...(options.headers || {}) }
+      : { 'Content-Type': 'application/json', ...(options.headers || {}) }
   });
   if (response.status === 204) return {};
   const payload = await response.json().catch(() => ({}));

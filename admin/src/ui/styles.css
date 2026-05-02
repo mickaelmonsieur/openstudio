@@ -213,6 +213,17 @@ h1 {
   gap: 16px;
 }
 
+.header-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 12px;
+}
+
+.hidden-file-input {
+  display: none;
+}
+
 .data-table-wrap {
   overflow: auto;
   border: 1px solid #354d5c;
@@ -464,7 +475,8 @@ h1 {
   font-size: 13px;
 }
 
-.resource-form input {
+.resource-form input,
+.resource-form select {
   min-height: 36px;
   padding: 8px 10px;
   border: 1px solid #405a69;
@@ -491,9 +503,32 @@ h1 {
   accent-color: #6857d8;
 }
 
-.resource-form input:focus {
+.resource-form input:focus,
+.resource-form select:focus {
   outline: 2px solid rgba(104, 87, 216, 0.45);
   border-color: #6857d8;
+}
+
+.import-summary {
+  display: grid;
+  gap: 5px;
+  padding: 10px 12px;
+  border: 1px solid #354d5c;
+  border-radius: 5px;
+  color: #91a9b7;
+  background: #17242c;
+  font-size: 12px;
+}
+
+.import-summary span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.import-summary strong {
+  color: #e4eef4;
+  font-weight: 700;
 }
 
 .status-bar {

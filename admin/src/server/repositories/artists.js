@@ -43,6 +43,47 @@ export async function createArtist(db, data) {
   return rows[0];
 }
 
+export async function findOrCreateArtist(db, name) {
+  const normalizedName = String(name || '').trim();
+  if (!normalizedName) return null;
+
+  const existing = await db.query(
+    `
+    SELECT
+      id,
+      name,
+      to_char(last_broadcast_at, 'YYYY-MM-DD HH24:MI:SS') AS last_broadcast_at
+    FROM artists
+    WHERE lower(name) = lower($1)
+    LIMIT 1
+    `,
+    [normalizedName]
+  );
+
+  if (existing.rows[0]) return existing.rows[0];
+
+  try {
+    return await createArtist(db, { name: normalizedName });
+  } catch (error) {
+    if (error.code !== '23505') throw error;
+
+    const retry = await db.query(
+      `
+      SELECT
+        id,
+        name,
+        to_char(last_broadcast_at, 'YYYY-MM-DD HH24:MI:SS') AS last_broadcast_at
+      FROM artists
+      WHERE name = $1
+      LIMIT 1
+      `,
+      [normalizedName]
+    );
+
+    return retry.rows[0] || null;
+  }
+}
+
 export async function updateArtist(db, id, data) {
   const { rows } = await db.query(
     `

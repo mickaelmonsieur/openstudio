@@ -1,13 +1,17 @@
 import { useState } from 'react';
 
-export function TrackEditModal({ track, artists, subcategories, error, saving, onClose, onSubmit }) {
+export function TrackEditModal({ mode = 'edit', track, artists, genres, subcategories, error, saving, onClose, onSubmit }) {
   const [formData, setFormData] = useState({
     artist_id:      track.artist_id      ?? '',
+    genre_id:       track.genre_id       ?? '',
     title:          track.title          ?? '',
     album:          track.album          ?? '',
     year:           track.year           ?? '',
+    duration:       track.duration       ?? 0,
+    sample_rate:    track.sample_rate    ?? 44100,
+    path:           track.path           ?? '',
     subcategory_id: track.subcategory_id ?? '',
-    active:         Boolean(track.active)
+    active:         track.active ?? true
   });
 
   const grouped = groupByCategory(subcategories);
@@ -26,7 +30,7 @@ export function TrackEditModal({ track, artists, subcategories, error, saving, o
       <section className="modal-panel" role="dialog" aria-modal="true">
         <header className="modal-header">
           <div>
-            <p className="panel-kicker">Edit</p>
+            <p className="panel-kicker">{mode === 'create' ? 'Add' : 'Edit'}</p>
             <h2>Track</h2>
           </div>
           <button className="icon-button" onClick={onClose} type="button">×</button>
@@ -58,6 +62,20 @@ export function TrackEditModal({ track, artists, subcategories, error, saving, o
           </label>
 
           <label>
+            <span>Genre</span>
+            <select
+              required
+              value={formData.genre_id}
+              onChange={(e) => update('genre_id', e.target.value)}
+            >
+              <option value="">Select a genre...</option>
+              {genres.map((genre) => (
+                <option key={genre.id} value={genre.id}>{genre.name}</option>
+              ))}
+            </select>
+          </label>
+
+          <label>
             <span>Album</span>
             <input
               maxLength={64}
@@ -81,10 +99,11 @@ export function TrackEditModal({ track, artists, subcategories, error, saving, o
           <label>
             <span>Category</span>
             <select
+              required
               value={formData.subcategory_id}
               onChange={(e) => update('subcategory_id', e.target.value)}
             >
-              <option value="">— None —</option>
+              <option value="">Select a category...</option>
               {grouped.map((group) => (
                 <optgroup key={group.category} label={group.category}>
                   {group.items.map((sc) => (
@@ -104,6 +123,13 @@ export function TrackEditModal({ track, artists, subcategories, error, saving, o
             />
           </label>
 
+          {mode === 'create' ? (
+            <div className="import-summary">
+              <span>{formData.path}</span>
+              <strong>{formatDuration(formData.duration)} - {formData.sample_rate || 44100} Hz</strong>
+            </div>
+          ) : null}
+
           {error ? <div className="form-error">{error}</div> : null}
 
           <div className="form-actions">
@@ -116,6 +142,14 @@ export function TrackEditModal({ track, artists, subcategories, error, saving, o
       </section>
     </div>
   );
+}
+
+function formatDuration(seconds) {
+  const value = Number(seconds || 0);
+  const total = Math.max(0, Math.round(value));
+  const m = Math.floor(total / 60);
+  const s = total % 60;
+  return `${m}:${s.toString().padStart(2, '0')}`;
 }
 
 function groupByCategory(subcategories) {
