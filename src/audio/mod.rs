@@ -48,6 +48,7 @@ pub enum PlayerCommand {
     Resume,
     TogglePause,
     Stop,
+    SoftStop(Duration),
     FadeOut(Duration),
     Restart,
     SeekRelative(i64),
@@ -159,6 +160,7 @@ impl AudioPlayer {
             PlayerCommand::Resume => self.resume(),
             PlayerCommand::TogglePause => self.toggle_pause(),
             PlayerCommand::Stop => self.stop(),
+            PlayerCommand::SoftStop(duration) => self.soft_stop(duration),
             PlayerCommand::FadeOut(duration) => self.fade_out(duration),
             PlayerCommand::Restart => self.restart(),
             PlayerCommand::SeekRelative(offset_ms) => self.seek_relative(offset_ms),
@@ -223,6 +225,10 @@ impl AudioPlayer {
     pub fn stop(&mut self) {
         self.stop_thread();
         self.preload_rx = self.loaded_path.as_ref().map(|path| preload(path.clone()));
+    }
+
+    pub fn soft_stop(&mut self, duration: Duration) {
+        self.fade_out(duration);
     }
 
     pub fn fade_out(&mut self, duration: Duration) {

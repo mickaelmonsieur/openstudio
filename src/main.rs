@@ -216,6 +216,7 @@ struct App {
     current_queue_player_id: audio::PlayerId,
     selected_queue_index: Option<usize>,
     autodj_enabled: bool,
+    deck_soft_stopping: bool,
     previewing_queue_id: Option<i32>,
     search_tracks: Vec<db::SearchTrack>,
     search_categories: Vec<db::FilterOption>,
@@ -318,6 +319,7 @@ impl Default for App {
             current_queue_player_id: audio::PlayerId::QueueA,
             selected_queue_index: None,
             autodj_enabled: app_config.auto_mix_on_start,
+            deck_soft_stopping: false,
             previewing_queue_id: None,
             search_tracks,
             search_categories,
@@ -447,6 +449,7 @@ enum Dialog {
         auto_play_on_start: bool,
         preload: String,
         fade_out_duration_ms: String,
+        stop_fade_duration_ms: String,
     },
     EditDbConfig {
         host: String,
@@ -546,6 +549,7 @@ enum Message {
     ConfigToggle(ConfigField),
     ConfigPreloadChanged(String),
     ConfigFadeOutDurationChanged(String),
+    ConfigStopFadeDurationChanged(String),
     ConfigSave,
     ConfigSaved(Result<(), String>),
 }
@@ -595,7 +599,20 @@ impl App {
             }
 
             Message::Stop => {
-                self.stop_queue_players();
+                let duration = std::time::Duration::from_millis(
+                    self.app_config.stop_fade_duration_ms.max(0) as u64,
+                );
+                let had_active = self.any_queue_active();
+                for player_id in QUEUE_PLAYER_IDS {
+                    if self.audio.player(player_id).is_active() {
+                        self.audio
+                            .handle(player_id, audio::PlayerCommand::SoftStop(duration));
+                    }
+                }
+                if had_active {
+                    self.deck_soft_stopping = true;
+                }
+                self.preloaded_queue_entry = None;
                 Task::none()
             }
 
@@ -1119,6 +1136,7 @@ impl App {
                     auto_play_on_start: self.app_config.auto_play_on_start,
                     preload: self.app_config.preload.to_string(),
                     fade_out_duration_ms: self.app_config.fade_out_duration_ms.to_string(),
+                    stop_fade_duration_ms: self.app_config.stop_fade_duration_ms.to_string(),
                 });
                 Task::none()
             }
@@ -1156,12 +1174,24 @@ impl App {
                 Task::none()
             }
 
+            Message::ConfigStopFadeDurationChanged(value) => {
+                if let Some(Dialog::EditConfig {
+                    stop_fade_duration_ms,
+                    ..
+                }) = &mut self.dialog
+                {
+                    *stop_fade_duration_ms = value;
+                }
+                Task::none()
+            }
+
             Message::ConfigSave => {
                 if let Some(Dialog::EditConfig {
                     auto_mix_on_start,
                     auto_play_on_start,
                     preload,
                     fade_out_duration_ms,
+                    stop_fade_duration_ms,
                 }) = &self.dialog
                 {
                     let cfg = db::AppConfig {
@@ -1172,6 +1202,11 @@ impl App {
                             .trim()
                             .parse::<i32>()
                             .unwrap_or(2500)
+                            .max(0),
+                        stop_fade_duration_ms: stop_fade_duration_ms
+                            .trim()
+                            .parse::<i32>()
+                            .unwrap_or(1000)
                             .max(0),
                     };
                     self.app_config = cfg.clone();
@@ -1671,7 +1706,21 @@ impl App {
         }
 
         if let Some(player_id) = current_finished {
-            if self.autodj_enabled && !self.any_queue_active() {
+            if self.deck_soft_stopping {
+                self.deck_soft_stopping = false;
+                for pid in QUEUE_PLAYER_IDS {
+                    if self.audio.player(pid).is_active() {
+                        self.audio.handle(pid, audio::PlayerCommand::Stop);
+                    }
+                }
+                self.queue_player_entries.clear();
+                self.current_queue_player_id = audio::PlayerId::QueueA;
+                if self.autodj_enabled {
+                    self.set_auto_mix_status("Stopped");
+                } else {
+                    self.set_auto_mix_status("Disabled");
+                }
+            } else if self.autodj_enabled && !self.any_queue_active() {
                 let next_player_id = self.next_queue_player_id(player_id);
                 self.load_next_from_queue(next_player_id);
             }
@@ -2574,6 +2623,7 @@ impl App {
                 auto_play_on_start,
                 preload,
                 fade_out_duration_ms,
+                stop_fade_duration_ms,
             }) => {
                 let fieldset_label = container(
                     text("AUTO MIX")
@@ -2612,6 +2662,20 @@ impl App {
                         Space::with_width(Length::Fill),
                         text_input("", fade_out_duration_ms)
                             .on_input(Message::ConfigFadeOutDurationChanged)
+                            .padding(6)
+                            .size(13)
+                            .width(Length::Fixed(70.0)),
+                        text("ms").size(13).style(text_color(rgb(160, 180, 195))),
+                    ]
+                    .spacing(6)
+                    .align_y(Alignment::Center),
+                    row![
+                        text("Stop Fade Out Duration")
+                            .size(13)
+                            .style(text_color(rgb(226, 238, 245))),
+                        Space::with_width(Length::Fill),
+                        text_input("", stop_fade_duration_ms)
+                            .on_input(Message::ConfigStopFadeDurationChanged)
                             .padding(6)
                             .size(13)
                             .width(Length::Fixed(70.0)),

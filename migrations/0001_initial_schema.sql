@@ -263,5 +263,6 @@ CREATE TABLE configurations (
     auto_mix_on_start    BOOLEAN NOT NULL DEFAULT false,
     auto_play_on_start   BOOLEAN NOT NULL DEFAULT false,
     preload              INTEGER NOT NULL DEFAULT 10,
-    fade_out_duration_ms INTEGER NOT NULL DEFAULT 2500
+    fade_out_duration_ms INTEGER NOT NULL DEFAULT 2500,
+    stop_fade_duration_ms INTEGER NOT NULL DEFAULT 1000
 );
