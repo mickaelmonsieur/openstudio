@@ -417,39 +417,64 @@ export function registerTrackRoutes(app, getDatabaseConfig) {
 
 function streamAudioFile(req, res, track) {
   const stat = fs.statSync(track.path);
-  const fileSize = stat.size;
+  const flacOffset = readFlacOffset(track.path);
+  const effectiveSize = stat.size - flacOffset;
   const range = req.headers.range;
   const contentDispositionName = safeDownloadName(track);
 
   if (range) {
     const match = range.match(/bytes=(\d*)-(\d*)/);
     const start = match?.[1] ? Number(match[1]) : 0;
-    const end = match?.[2] ? Number(match[2]) : fileSize - 1;
+    const end = match?.[2] ? Number(match[2]) : effectiveSize - 1;
 
-    if (!Number.isFinite(start) || !Number.isFinite(end) || start > end || start >= fileSize) {
-      res.status(416).set('Content-Range', `bytes */${fileSize}`).end();
+    if (!Number.isFinite(start) || !Number.isFinite(end) || start > end || start >= effectiveSize) {
+      res.status(416).set('Content-Range', `bytes */${effectiveSize}`).end();
       return;
     }
 
-    const chunkEnd = Math.min(end, fileSize - 1);
+    const chunkEnd = Math.min(end, effectiveSize - 1);
     res.writeHead(206, {
       'Accept-Ranges': 'bytes',
-      'Content-Range': `bytes ${start}-${chunkEnd}/${fileSize}`,
+      'Content-Range': `bytes ${start}-${chunkEnd}/${effectiveSize}`,
       'Content-Length': chunkEnd - start + 1,
       'Content-Type': 'audio/flac',
       'Content-Disposition': `inline; filename="${contentDispositionName}"`
     });
-    fs.createReadStream(track.path, { start, end: chunkEnd }).pipe(res);
+    fs.createReadStream(track.path, { start: flacOffset + start, end: flacOffset + chunkEnd }).pipe(res);
     return;
   }
 
   res.writeHead(200, {
     'Accept-Ranges': 'bytes',
-    'Content-Length': fileSize,
+    'Content-Length': effectiveSize,
     'Content-Type': 'audio/flac',
     'Content-Disposition': `inline; filename="${contentDispositionName}"`
   });
-  fs.createReadStream(track.path).pipe(res);
+  fs.createReadStream(track.path, { start: flacOffset }).pipe(res);
+}
+
+// ID3v2 tags can be prepended to FLAC files — Chromium rejects them.
+// Read the first 10 bytes and compute the skip offset if an ID3v2 header is present.
+function readFlacOffset(filePath) {
+  const header = Buffer.alloc(10);
+  const fd = fs.openSync(filePath, 'r');
+  fs.readSync(fd, header, 0, 10, 0);
+  fs.closeSync(fd);
+
+  if (header[0] !== 0x49 || header[1] !== 0x44 || header[2] !== 0x33) {
+    return 0;
+  }
+
+  // Synchsafe integer: each byte uses only 7 bits (MSB always 0)
+  const synchsafeSize =
+    ((header[6] & 0x7F) << 21) |
+    ((header[7] & 0x7F) << 14) |
+    ((header[8] & 0x7F) << 7) |
+    (header[9] & 0x7F);
+
+  // 10-byte header + tag payload; optional 10-byte footer if flag bit 4 is set
+  const footerSize = (header[5] & 0x10) ? 10 : 0;
+  return 10 + synchsafeSize + footerSize;
 }
 
 function safeDownloadName(track) {
