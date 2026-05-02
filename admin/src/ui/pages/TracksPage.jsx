@@ -239,7 +239,7 @@ export function TracksPage() {
                   <th style={{ width: '170px' }}>Album</th>
                   <th style={{ width: '60px' }}>Year</th>
                   <th style={{ width: '80px' }}>Duration</th>
-                  <th className="actions-column">Actions</th>
+                  <th className="actions-column wide-actions">Actions</th>
                 </tr>
               </thead>
               <tbody>
@@ -258,6 +258,7 @@ export function TracksPage() {
                       <td>{row.year || '—'}</td>
                       <td>{formatDuration(row.duration)}</td>
                       <td className="row-actions">
+                        <a className="ghost-button" href={`/tracks/cue/${row.id}`}>Cue</a>
                         <button
                           className="ghost-button"
                           type="button"

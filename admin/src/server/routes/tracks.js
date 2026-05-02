@@ -8,10 +8,12 @@ import {
   countTracks,
   createTrack,
   deleteTrack,
+  getTrack,
   hasScheduledQueue,
   listGenres,
   listSubcategoriesWithCategory,
   listTracks,
+  updateTrackCuePoint,
   updateTrack
 } from '../repositories/tracks.js';
 import { importFlacTrack } from '../services/import-flac.js';
@@ -21,9 +23,20 @@ import {
   listDatabaseFolders,
   startFolderImport
 } from '../services/folder-import.js';
+import { generateWaveform } from '../services/waveform.js';
 
 const DEFAULT_LIMIT = 100;
 const MAX_LIMIT = 500;
+const CUE_POINT_FIELDS = new Set([
+  'cue_in',
+  'intro',
+  'hook_in',
+  'hook_out',
+  'loop_in',
+  'loop_out',
+  'outro',
+  'cue_out'
+]);
 const uploadDir = path.join(os.tmpdir(), 'openstudio-admin-uploads');
 fs.mkdirSync(uploadDir, { recursive: true });
 
@@ -266,6 +279,89 @@ export function registerTrackRoutes(app, getDatabaseConfig) {
     res.status(201).json({ row });
   }));
 
+  app.get('/api/tracks/:id/waveform', asyncRoute(async (req, res) => {
+    const id = parseId(req.params.id);
+    if (!id) {
+      res.status(400).json({ error: 'Invalid track id.' });
+      return;
+    }
+
+    const waveform = await withDatabase(getDatabaseConfig(), async (db) => {
+      const track = await getTrack(db, id);
+      if (!track) return null;
+      return generateWaveform(track, { points: req.query.points });
+    });
+
+    if (!waveform) {
+      res.status(404).json({ error: 'Track not found.' });
+      return;
+    }
+
+    res.json(waveform);
+  }));
+
+  app.get('/api/tracks/:id/audio', asyncRoute(async (req, res) => {
+    const id = parseId(req.params.id);
+    if (!id) {
+      res.status(400).json({ error: 'Invalid track id.' });
+      return;
+    }
+
+    const track = await withDatabase(getDatabaseConfig(), (db) => getTrack(db, id));
+    if (!track) {
+      res.status(404).json({ error: 'Track not found.' });
+      return;
+    }
+
+    streamAudioFile(req, res, track);
+  }));
+
+  app.patch('/api/tracks/:id/cue-point', asyncRoute(async (req, res) => {
+    const id = parseId(req.params.id);
+    if (!id) {
+      res.status(400).json({ error: 'Invalid track id.' });
+      return;
+    }
+
+    const field = String(req.body?.field || '');
+    if (!CUE_POINT_FIELDS.has(field)) {
+      res.status(400).json({ error: 'Invalid cue point field.' });
+      return;
+    }
+
+    const value = Number(req.body?.value);
+    if (!Number.isFinite(value) || value < 0) {
+      res.status(400).json({ error: 'Cue point value is invalid.' });
+      return;
+    }
+
+    const cuePointResult = await withDatabase(getDatabaseConfig(), async (db) => {
+      const track = await getTrack(db, id);
+      if (!track) return { missing: true };
+
+      const maxDuration = Number(track.duration || 0);
+      if (maxDuration > 0 && value > maxDuration) {
+        return { error: 'Cue point cannot be after track duration.' };
+      }
+
+      return {
+        cuePoints: await updateTrackCuePoint(db, id, field, value)
+      };
+    });
+
+    if (cuePointResult?.missing) {
+      res.status(404).json({ error: 'Track not found.' });
+      return;
+    }
+
+    if (cuePointResult?.error) {
+      res.status(400).json({ error: cuePointResult.error });
+      return;
+    }
+
+    res.json({ cue_points: cuePointResult.cuePoints });
+  }));
+
   app.put('/api/tracks/:id', asyncRoute(async (req, res) => {
     const id = parseId(req.params.id);
     if (!id) {
@@ -317,4 +413,46 @@ export function registerTrackRoutes(app, getDatabaseConfig) {
 
     res.status(204).send();
   }));
+}
+
+function streamAudioFile(req, res, track) {
+  const stat = fs.statSync(track.path);
+  const fileSize = stat.size;
+  const range = req.headers.range;
+  const contentDispositionName = safeDownloadName(track);
+
+  if (range) {
+    const match = range.match(/bytes=(\d*)-(\d*)/);
+    const start = match?.[1] ? Number(match[1]) : 0;
+    const end = match?.[2] ? Number(match[2]) : fileSize - 1;
+
+    if (!Number.isFinite(start) || !Number.isFinite(end) || start > end || start >= fileSize) {
+      res.status(416).set('Content-Range', `bytes */${fileSize}`).end();
+      return;
+    }
+
+    const chunkEnd = Math.min(end, fileSize - 1);
+    res.writeHead(206, {
+      'Accept-Ranges': 'bytes',
+      'Content-Range': `bytes ${start}-${chunkEnd}/${fileSize}`,
+      'Content-Length': chunkEnd - start + 1,
+      'Content-Type': 'audio/flac',
+      'Content-Disposition': `inline; filename="${contentDispositionName}"`
+    });
+    fs.createReadStream(track.path, { start, end: chunkEnd }).pipe(res);
+    return;
+  }
+
+  res.writeHead(200, {
+    'Accept-Ranges': 'bytes',
+    'Content-Length': fileSize,
+    'Content-Type': 'audio/flac',
+    'Content-Disposition': `inline; filename="${contentDispositionName}"`
+  });
+  fs.createReadStream(track.path).pipe(res);
+}
+
+function safeDownloadName(track) {
+  const raw = [track.artist, track.title].filter(Boolean).join(' - ') || `track-${track.id}`;
+  return `${raw.replace(/[\\"]/g, '').replace(/[/:*?<>|]/g, '-')}.flac`;
 }

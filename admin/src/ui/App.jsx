@@ -5,6 +5,7 @@ import { artistsResource } from './resources/artists.js';
 import { stationsResource } from './resources/stations.js';
 import { usersResource } from './resources/users.js';
 import { TracksPage } from './pages/TracksPage.jsx';
+import { CuePage } from './pages/CuePage.jsx';
 import { LogPage } from './pages/LogPage.jsx';
 import { playLogResource } from './resources/play-log.js';
 import { automixLogResource } from './resources/automix-log.js';
@@ -104,6 +105,10 @@ export function App() {
   }, []);
 
   const activeModule = useMemo(() => {
+    if (currentPath.startsWith('/tracks/cue/')) {
+      return modules.find((module) => module.path === '/tracks') || modules[0];
+    }
+
     return modules.find((module) => module.path === currentPath) || modules[0];
   }, [currentPath]);
 
@@ -179,6 +184,15 @@ export function App() {
     }
 
     if (activeModule.path === '/tracks') {
+      const cueMatch = currentPath.match(/^\/tracks\/cue\/(\d+)$/);
+      if (cueMatch) {
+        return (
+          <section className="content-panel wide-panel">
+            <CuePage trackId={cueMatch[1]} />
+          </section>
+        );
+      }
+
       return (
         <section className="content-panel">
           <TracksPage />

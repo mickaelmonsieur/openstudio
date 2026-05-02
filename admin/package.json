@@ -18,6 +18,8 @@
   },
   "dependencies": {
     "@vitejs/plugin-react": "^5.0.0",
+    "@wasm-audio-decoders/flac": "^0.2.10",
+    "bootstrap-icons": "^1.13.1",
     "electron": "^38.0.0",
     "electron-builder": "^26.0.12",
     "express": "^5.1.0",
@@ -28,7 +30,6 @@
     "react-dom": "^19.1.0",
     "vite": "^7.1.0"
   },
-  "devDependencies": {},
   "build": {
     "appId": "be.mickael.openstudio.admin",
     "productName": "OpenStudio Admin",

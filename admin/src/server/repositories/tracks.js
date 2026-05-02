@@ -7,6 +7,14 @@ const LIST_COLUMNS = `
   t.year,
   t.duration,
   t.sample_rate,
+  t.cue_in,
+  t.intro,
+  t.hook_in,
+  t.hook_out,
+  t.loop_in,
+  t.loop_out,
+  t.outro,
+  t.cue_out,
   t.path,
   t.active,
   t.subcategory_id,
@@ -174,6 +182,38 @@ export async function updateTrack(db, id, data) {
 
   return rowCount > 0;
 }
+
+export async function updateTrackCuePoint(db, id, field, value) {
+  const column = CUE_POINT_COLUMNS[field];
+  if (!column) return null;
+
+  const { rows } = await db.query(
+    `
+    UPDATE tracks
+    SET ${column} = $2
+    WHERE id = $1
+    RETURNING ${cuePointSelectList()}
+    `,
+    [id, value]
+  );
+
+  return rows[0] || null;
+}
+
+export function cuePointSelectList() {
+  return Object.values(CUE_POINT_COLUMNS).join(', ');
+}
+
+const CUE_POINT_COLUMNS = {
+  cue_in: 'cue_in',
+  intro: 'intro',
+  hook_in: 'hook_in',
+  hook_out: 'hook_out',
+  loop_in: 'loop_in',
+  loop_out: 'loop_out',
+  outro: 'outro',
+  cue_out: 'cue_out'
+};
 
 export async function hasScheduledQueue(db, id) {
   const { rows } = await db.query(
