@@ -32,8 +32,8 @@ const FROM_JOIN = `
   LEFT JOIN categories    c  ON c.id  = sc.category_id
 `;
 
-export async function countTracks(db, search = '') {
-  const { where, values } = buildSearchWhere(search);
+export async function countTracks(db, search = '', categoryId = null) {
+  const { where, values } = buildSearchWhere(search, categoryId);
   const { rows } = await db.query(
     `
     SELECT COUNT(*)::integer AS total
@@ -45,8 +45,8 @@ export async function countTracks(db, search = '') {
   return rows[0].total;
 }
 
-export async function listTracks(db, { limit, offset, search = '' }) {
-  const { where, values } = buildSearchWhere(search);
+export async function listTracks(db, { limit, offset, search = '', categoryId = null }) {
+  const { where, values } = buildSearchWhere(search, categoryId);
   const limitParam = values.length + 1;
   const offsetParam = values.length + 2;
 
@@ -64,21 +64,15 @@ export async function listTracks(db, { limit, offset, search = '' }) {
   return rows;
 }
 
-function buildSearchWhere(search) {
-  const terms = String(search || '')
-    .trim()
-    .split(/\s+/)
-    .filter(Boolean)
-    .slice(0, 8);
+function buildSearchWhere(search, categoryId = null) {
+  const terms = String(search || '').trim().split(/\s+/).filter(Boolean).slice(0, 8);
+  const clauses = [];
+  const values = [];
 
-  if (terms.length === 0) {
-    return { where: '', values: [] };
-  }
-
-  const values = terms.map((term) => `%${escapeLike(term)}%`);
-  const clauses = values.map((_, index) => {
-    const param = `$${index + 1}`;
-    return `
+  for (const term of terms) {
+    values.push(`%${escapeLike(term)}%`);
+    const param = `$${values.length}`;
+    clauses.push(`
       (
         t.id::text ILIKE ${param} ESCAPE '\\'
         OR COALESCE(a.name, '') ILIKE ${param} ESCAPE '\\'
@@ -89,11 +83,16 @@ function buildSearchWhere(search) {
         OR COALESCE(sc.name, '') ILIKE ${param} ESCAPE '\\'
         OR COALESCE(t.year::text, '') ILIKE ${param} ESCAPE '\\'
       )
-    `;
-  });
+    `);
+  }
+
+  if (categoryId) {
+    values.push(categoryId);
+    clauses.push(`sc.category_id = $${values.length}`);
+  }
 
   return {
-    where: `WHERE ${clauses.join(' AND ')}`,
+    where: clauses.length > 0 ? `WHERE ${clauses.join(' AND ')}` : '',
     values
   };
 }

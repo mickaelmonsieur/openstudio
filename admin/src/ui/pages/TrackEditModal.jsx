@@ -85,7 +85,6 @@ export function TrackEditModal({ mode = 'edit', track, artists, genres, subcateg
           <label>
             <span>Genre</span>
             <select
-              required
               value={formData.genre_id}
               onChange={(e) => update('genre_id', e.target.value)}
             >
@@ -104,13 +103,17 @@ export function TrackEditModal({ mode = 'edit', track, artists, genres, subcateg
               onChange={(e) => update('subcategory_id', e.target.value)}
             >
               <option value="">Select a category...</option>
-              {grouped.map((group) => (
-                <optgroup key={group.category} label={group.category}>
-                  {group.items.map((sc) => (
-                    <option key={sc.id} value={sc.id}>{sc.name}</option>
-                  ))}
-                </optgroup>
-              ))}
+              {grouped.map((group) =>
+                group.items.length === 1 && group.items[0].name === group.category ? (
+                  <option key={group.items[0].id} value={group.items[0].id}>{group.category}</option>
+                ) : (
+                  <optgroup key={group.category} label={group.category}>
+                    {group.items.map((sc) => (
+                      <option key={sc.id} value={sc.id}>{sc.name}</option>
+                    ))}
+                  </optgroup>
+                )
+              )}
             </select>
           </label>
 

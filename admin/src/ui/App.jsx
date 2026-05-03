@@ -16,6 +16,10 @@ import { CuePage } from './pages/CuePage.jsx';
 import { LogPage } from './pages/LogPage.jsx';
 import { playLogResource } from './resources/play-log.js';
 import { automixLogResource } from './resources/automix-log.js';
+import { AdvertisersPage } from './pages/AdvertisersPage.jsx';
+import { ContactsPage } from './pages/ContactsPage.jsx';
+import { CampaignsPage } from './pages/CampaignsPage.jsx';
+import { CampaignTracksPage } from './pages/CampaignTracksPage.jsx';
 
 const moduleGroups = [
   {
@@ -328,6 +332,38 @@ export function App() {
               </button>
             </div>
           </form>
+        </section>
+      );
+    }
+
+    if (activeModule.path === '/advertisers') {
+      return (
+        <section className="content-panel">
+          <AdvertisersPage />
+        </section>
+      );
+    }
+
+    if (activeModule.path === '/contacts') {
+      return (
+        <section className="content-panel">
+          <ContactsPage />
+        </section>
+      );
+    }
+
+    if (activeModule.path === '/campaigns') {
+      return (
+        <section className="content-panel">
+          <CampaignsPage />
+        </section>
+      );
+    }
+
+    if (activeModule.path === '/campaigns-tracks') {
+      return (
+        <section className="content-panel">
+          <CampaignTracksPage />
         </section>
       );
     }

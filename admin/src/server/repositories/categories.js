@@ -1,6 +1,6 @@
 export async function listCategories(db) {
   const { rows } = await db.query(`
-    SELECT id, name
+    SELECT id, name, protected
     FROM categories
     ORDER BY name
   `);
@@ -11,7 +11,7 @@ export async function listCategories(db) {
 export async function getCategory(db, id) {
   const { rows } = await db.query(
     `
-    SELECT id, name
+    SELECT id, name, protected
     FROM categories
     WHERE id = $1
     `,
@@ -63,7 +63,7 @@ export async function deleteCategory(db, id) {
 export async function listSubcategories(db, categoryId) {
   const { rows } = await db.query(
     `
-    SELECT id, category_id, name, hidden
+    SELECT id, category_id, name, hidden, protected
     FROM subcategories
     WHERE category_id = $1
     ORDER BY hidden, name
@@ -77,7 +77,7 @@ export async function listSubcategories(db, categoryId) {
 export async function getSubcategory(db, id) {
   const { rows } = await db.query(
     `
-    SELECT id, category_id, name, hidden
+    SELECT id, category_id, name, hidden, protected
     FROM subcategories
     WHERE id = $1
     `,

@@ -1029,7 +1029,8 @@ h1 {
 }
 
 .resource-form input,
-.resource-form select {
+.resource-form select,
+.resource-form textarea {
   min-height: 36px;
   padding: 8px 10px;
   border: 1px solid #405a69;
@@ -1056,8 +1057,14 @@ h1 {
   accent-color: #6857d8;
 }
 
+.resource-form textarea {
+  resize: vertical;
+  min-height: 72px;
+}
+
 .resource-form input:focus,
-.resource-form select:focus {
+.resource-form select:focus,
+.resource-form textarea:focus {
   outline: 2px solid rgba(104, 87, 216, 0.45);
   border-color: #6857d8;
 }

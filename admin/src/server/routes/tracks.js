@@ -102,10 +102,6 @@ function validateTrack(data, options = {}) {
     return { ok: false, error: 'Genre is invalid.' };
   }
 
-  if (!genre_id) {
-    return { ok: false, error: 'Genre is required.' };
-  }
-
   if (!subcategory_id) {
     return { ok: false, error: 'Category is required.' };
   }
@@ -191,11 +187,12 @@ export function registerTrackRoutes(app, getDatabaseConfig) {
   app.get('/api/tracks', asyncRoute(async (req, res) => {
     const { page, limit, offset } = parsePagination(req.query);
     const search = parseSearch(req.query);
+    const categoryId = req.query.category_id ? Number(req.query.category_id) : null;
 
     const [total, rows] = await withDatabase(getDatabaseConfig(), (db) =>
       Promise.all([
-        countTracks(db, search),
-        listTracks(db, { limit, offset, search })
+        countTracks(db, search, categoryId),
+        listTracks(db, { limit, offset, search, categoryId })
       ])
     );
 
@@ -230,8 +227,8 @@ export function registerTrackRoutes(app, getDatabaseConfig) {
       return;
     }
 
-    if (!genre_id || genre_id === false) {
-      res.status(400).json({ error: 'Genre is required.' });
+    if (genre_id === false) {
+      res.status(400).json({ error: 'Genre is invalid.' });
       return;
     }
 

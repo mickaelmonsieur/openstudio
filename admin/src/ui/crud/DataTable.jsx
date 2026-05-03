@@ -10,7 +10,8 @@ export function DataTable({
   onSelect,
   reorderable = false,
   onReorder,
-  renderRowActions
+  renderRowActions,
+  isRowLocked
 }) {
   const [draggingId, setDraggingId] = useState(null);
 
@@ -83,26 +84,30 @@ export function DataTable({
                 ))}
                 <td className="row-actions">
                   {renderRowActions?.(row, rowIndex)}
-                  <button
-                    className="ghost-button"
-                    onClick={(event) => {
-                      event.stopPropagation();
-                      onEdit(row);
-                    }}
-                    type="button"
-                  >
-                    Edit
-                  </button>
-                  <button
-                    className="danger-button"
-                    onClick={(event) => {
-                      event.stopPropagation();
-                      onDelete(row);
-                    }}
-                    type="button"
-                  >
-                    Delete
-                  </button>
+                  {!isRowLocked?.(row) && (
+                    <>
+                      <button
+                        className="ghost-button"
+                        onClick={(event) => {
+                          event.stopPropagation();
+                          onEdit(row);
+                        }}
+                        type="button"
+                      >
+                        Edit
+                      </button>
+                      <button
+                        className="danger-button"
+                        onClick={(event) => {
+                          event.stopPropagation();
+                          onDelete(row);
+                        }}
+                        type="button"
+                      >
+                        Delete
+                      </button>
+                    </>
+                  )}
                 </td>
               </tr>
             ))

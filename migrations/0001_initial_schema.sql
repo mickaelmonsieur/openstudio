@@ -8,8 +8,9 @@ CREATE TABLE templates (
 );
 
 CREATE TABLE categories (
-    id   INTEGER GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
-    name VARCHAR(32) NOT NULL
+    id        INTEGER GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+    name      VARCHAR(32) NOT NULL,
+    protected BOOLEAN     NOT NULL DEFAULT FALSE
 );
 
 CREATE TABLE artists (
@@ -38,7 +39,8 @@ CREATE TABLE subcategories (
     id          INTEGER     GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
     category_id INTEGER     NOT NULL REFERENCES categories (id),
     name        VARCHAR(32) NOT NULL,
-    hidden      BOOLEAN     NOT NULL DEFAULT FALSE
+    hidden      BOOLEAN     NOT NULL DEFAULT FALSE,
+    protected   BOOLEAN     NOT NULL DEFAULT FALSE
 );
 
 CREATE INDEX idx_subcategories_category ON subcategories (category_id);

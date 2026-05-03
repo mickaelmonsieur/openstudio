@@ -138,7 +138,7 @@ export function ScanFolderModal({ genres, stationId, subcategories, onClose, onF
 
               <label>
                 <span>Genre</span>
-                <select required value={genreId} onChange={(e) => setGenreId(e.target.value)}>
+                <select value={genreId} onChange={(e) => setGenreId(e.target.value)}>
                   <option value="">Select a genre...</option>
                   {genres.map((genre) => (
                     <option key={genre.id} value={genre.id}>{genre.name}</option>
@@ -150,13 +150,17 @@ export function ScanFolderModal({ genres, stationId, subcategories, onClose, onF
                 <span>Category</span>
                 <select required value={subcategoryId} onChange={(e) => setSubcategoryId(e.target.value)}>
                   <option value="">Select a category...</option>
-                  {grouped.map((group) => (
-                    <optgroup key={group.category} label={group.category}>
-                      {group.items.map((subcategory) => (
-                        <option key={subcategory.id} value={subcategory.id}>{subcategory.name}</option>
-                      ))}
-                    </optgroup>
-                  ))}
+                  {grouped.map((group) =>
+                    group.items.length === 1 && group.items[0].name === group.category ? (
+                      <option key={group.items[0].id} value={group.items[0].id}>{group.category}</option>
+                    ) : (
+                      <optgroup key={group.category} label={group.category}>
+                        {group.items.map((subcategory) => (
+                          <option key={subcategory.id} value={subcategory.id}>{subcategory.name}</option>
+                        ))}
+                      </optgroup>
+                    )
+                  )}
                 </select>
               </label>
 

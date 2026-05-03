@@ -107,84 +107,78 @@ INSERT INTO stations (id, name, library_path) OVERRIDING SYSTEM VALUE VALUES
     (1, 'DEMO', '/Users/Shared/OpenStudio/Library/demo');
 SELECT setval('stations_id_seq', 1);
 
-INSERT INTO categories (id, name) OVERRIDING SYSTEM VALUE VALUES
-    (1, 'Jingles'),
-    (2, 'Music'),
-    (3, 'Intervention'),
-    (4, 'PubIn'),
-    (5, 'PubOut'),
-    (6, 'Filler'),
-    (7, 'Top of Hour'),
-    (8, 'Pub');
+INSERT INTO categories (id, name, protected) OVERRIDING SYSTEM VALUE VALUES
+    (1, 'Jingles',      TRUE),
+    (2, 'Music',        TRUE),
+    (3, 'Intervention', TRUE),
+    (4, 'PubIn',        TRUE),
+    (5, 'PubOut',       TRUE),
+    (6, 'Filler',       TRUE),
+    (7, 'Top of Hour',  TRUE),
+    (8, 'Pub',          TRUE);
 SELECT setval('categories_id_seq', 8);
 
-INSERT INTO subcategories (id, category_id, name, hidden) OVERRIDING SYSTEM VALUE VALUES
-    (1,  1, 'Jingles',    TRUE),
-    (2,  1, 'Jin.W-E',    TRUE),
-    (3,  1, 'Jin.Ete',    TRUE),
-    (4,  1, 'Jin.Hiver',  TRUE),
-    (5,  1, 'Accaps',     TRUE),
-    (6,  1, 'Tapis',      TRUE),
-    (7,  1, 'Promos',     TRUE),
-    (8,  1, 'Hitmix',     TRUE),
-    (9,  1, 'Liners',     FALSE),
-    (10, 1, 'Divers',     FALSE),
-    (11, 2, 'PowerPlay',  FALSE),
-    (12, 2, 'FR-1930',    FALSE),
-    (13, 2, 'FR-1940',    FALSE),
-    (14, 2, 'FR-1950',    FALSE),
-    (15, 2, 'FR-1960',    FALSE),
-    (16, 2, 'FR-1970',    FALSE),
-    (17, 2, 'FR-1980',    FALSE),
-    (18, 2, 'FR-1990',    FALSE),
-    (19, 2, 'FR-2000',    FALSE),
-    (20, 2, 'FR-2010',    FALSE),
-    (21, 2, 'FR-2020',    FALSE);
-SELECT setval('subcategories_id_seq', 21);
+INSERT INTO subcategories (id, category_id, name, hidden, protected) OVERRIDING SYSTEM VALUE VALUES
+    (1,  1, 'Jingles',    FALSE,  FALSE),
+    (2,  1, 'Jin.W-E',    FALSE,  FALSE),
+    (3,  1, 'Jin.Ete',    FALSE,  FALSE),
+    (4,  1, 'Jin.Hiver',  FALSE,  FALSE),
+    (5,  1, 'Accaps',     FALSE,  FALSE),
+    (6,  1, 'Tapis',      FALSE,  FALSE),
+    (7,  1, 'Promos',     FALSE,  FALSE),
+    (8,  1, 'Hitmix',     FALSE,  FALSE),
+    (9,  1, 'Liners',     FALSE, FALSE),
+    (10, 1, 'Divers',     FALSE, FALSE),
+    (11, 2, 'PowerPlay',  FALSE, FALSE),
+    (12, 2, 'FR-1930',    FALSE, FALSE),
+    (13, 2, 'FR-1940',    FALSE, FALSE),
+    (14, 2, 'FR-1950',    FALSE, FALSE),
+    (15, 2, 'FR-1960',    FALSE, FALSE),
+    (16, 2, 'FR-1970',    FALSE, FALSE),
+    (17, 2, 'FR-1980',    FALSE, FALSE),
+    (18, 2, 'FR-1990',    FALSE, FALSE),
+    (19, 2, 'FR-2000',    FALSE, FALSE),
+    (20, 2, 'FR-2010',    FALSE, FALSE),
+    (21, 2, 'FR-2020',    FALSE, FALSE),
+    (22, 3, 'Intervention', FALSE, FALSE),
+    (23, 4, 'PubIn',        FALSE, FALSE),
+    (24, 5, 'PubOut',       FALSE, FALSE),
+    (25, 6, 'Filler',       FALSE, FALSE),
+    (26, 7, 'Top of Hour',  FALSE, FALSE),
+    (27, 8, 'Pub',          FALSE, FALSE);
+SELECT setval('subcategories_id_seq', 27);
 
-INSERT INTO artists (id, name) OVERRIDING SYSTEM VALUE VALUES
-    (1, 'Mylène Farmer'),
-    (2, 'ABC'),
-    (3, 'Taylor Swift'),
-    (4, 'Texas'),
-    (5, 'Madonna'),
-    (6, 'Melanie C'),
-    (7, 'Roxette'),
-    (8, 'The Cure');
-SELECT setval('artists_id_seq', 8);
-
-INSERT INTO tracks (
-    id, artist_id, genre_id, title, album, year, duration, sample_rate,
-    cue_in, cue_out, intro, outro, hook_in, hook_out, loop_in, loop_out, path, subcategory_id, active
-) OVERRIDING SYSTEM VALUE VALUES
-    (1, 1,  99, 'XXL',                    'Anamorphosee',      1995, 260.388571, 44100, 0, NULL, 0, 0, 0, 0, 0, 0, '/Users/mickael/Music/Mylène Farmer - XXL.flac',                     19, TRUE),
-    (2, 2, 333, 'The Look Of Love, Pt.1', 'The Lexicon Of Love',1982, 209.533333, 44100, 0, NULL, 0, 0, 0, 0, 0, 0, '/Users/mickael/Music/ABC - The Look Of Love, Pt.1.flac',             19, TRUE),
-    (3, 3,  99, 'Cruel Summer',           'Lover',             2019, 178.426667, 44100, 0, NULL, 0, 0, 0, 0, 0, 0, '/Users/mickael/Music/Taylor Swift - Cruel Summer.flac',              19, TRUE),
-    (4, 4,  99, 'Getaway',                'Red Book',          2005, 233.640000, 44100, 0, NULL, 0, 0, 0, 0, 0, 0, '/Users/mickael/Music/Texas - Getaway.flac',                          19, TRUE),
-    (5, 5,  99, 'Frozen',                 'Ray Of Light',      1998, 367.333333, 44100, 18, NULL, 0, 0, 0, 0, 0, 0, '/Users/mickael/Music/Madonna - Frozen.flac',                         19, TRUE),
-    (6, 6,  99, 'Never Be The Same Again','Northern Star',     2000, 294.200000, 44100, 0, NULL, 25, 28, 0, 0, 0, 0, '/Users/mickael/Music/Melanie C - Never Be The Same Again.flac',      19, TRUE),
-    (7, 7,  99, 'The Look',               'Look Sharp!',       1988, 237.320000, 44100, 0, NULL, 0, 0, 0, 0, 0, 0, '/Users/mickael/Music/Roxette - The Look.flac',                       19, TRUE),
-    (8, 8, 332, 'Lullaby',                'Disintegration',    1989, 248.973333, 44100, 0, NULL, 0, 0, 0, 0, 0, 0, '/Users/mickael/Music/The Cure - Lullaby.flac',                       19, TRUE);
-SELECT setval('tracks_id_seq', 8);
-
--- ── Jingles ──────────────────────────────────────────────────────────────────
-
-INSERT INTO artists (id, name) OVERRIDING SYSTEM VALUE VALUES
-    (9, 'Radio Contact');
+INSERT INTO artists (id, name, last_broadcast_at) OVERRIDING SYSTEM VALUE VALUES
+    (1, 'Mylène Farmer', NULL),
+    (2, 'ABC', NULL),
+    (3, 'Taylor Swift', NULL),
+    (4, 'Texas', NULL),
+    (5, 'Madonna', NULL),
+    (6, 'Melanie C', NULL),
+    (7, 'Roxette', NULL),
+    (8, 'The Cure', NULL),
+    (9, 'Radio Contact', NULL);
 SELECT setval('artists_id_seq', 9);
 
--- subcategory_id=2 → Jin.W-E ; durations measured with afinfo
 INSERT INTO tracks (
     id, artist_id, genre_id, title, album, year, duration, sample_rate,
     cue_in, cue_out, intro, outro, hook_in, hook_out, loop_in, loop_out,
     path, subcategory_id, active
 ) OVERRIDING SYSTEM VALUE VALUES
-    ( 9, 9, NULL, 'Avec elle profitons du w-e',        '', 2000, 20.050045, 44100, 0, NULL, 0, 0, 0, 0, 0, 0, '/Users/mickael/Music/JINGLES/RADIO CONTACT - Avec elle profitons du w-e.flac',        2, TRUE),
-    (10, 9, NULL, 'C''est le w-e quel bonheur',         '', 2000, 14.381474, 44100, 0, NULL, 0, 0, 0, 0, 0, 0, '/Users/mickael/Music/JINGLES/RADIO CONTACT - C''est le w-e quel bonheur.flac',         2, TRUE),
-    (11, 9, NULL, 'Laissons nous vivre, c''est le w-e', '', 2000, 18.169229, 44100, 0, NULL, 0, 0, 0, 0, 0, 0, '/Users/mickael/Music/JINGLES/RADIO CONTACT - Laissons nous vivre, c''est le w-e.flac', 2, TRUE),
-    (12, 9, NULL, 'Le w-e, avec elle, je me sens bien', '', 2000, 16.732494, 44100, 0, NULL, 0, 0, 0, 0, 0, 0, '/Users/mickael/Music/JINGLES/RADIO CONTACT - Le w-e, avec elle, je me sens bien.flac',  2, TRUE),
-    (13, 9, NULL, 'Quel bonheur, c''est le w-e',        '', 2000, 12.735760, 44100, 0, NULL, 0, 0, 0, 0, 0, 0, '/Users/mickael/Music/JINGLES/RADIO CONTACT - Quel bonheur, c''est le w-e.flac',        2, TRUE),
-    (14, 9, NULL, 'Vive le w-e, vive la musique',       '', 2000, 16.549637, 44100, 0, NULL, 0, 0, 0, 0, 0, 0, '/Users/mickael/Music/JINGLES/RADIO CONTACT - Vive le w-e, vive la musique.flac',       2, TRUE);
+    (1,  1,  99, 'XXL',                         'Anamorphosee',        1995, 260.38858, 44100, 0, NULL,      0,  0, 0, 0, 0, 0, '/Users/mickael/Music/Mylène Farmer - XXL.flac',                                      19, TRUE),
+    (2,  2, 333, 'The Look Of Love, Pt.1',      'The Lexicon Of Love', 1982, 209.53334, 44100, 0, NULL,      0,  0, 0, 0, 0, 0, '/Users/mickael/Music/ABC - The Look Of Love, Pt.1.flac',                              19, TRUE),
+    (3,  3,  99, 'Cruel Summer',                'Lover',               2019, 178.42667, 44100, 0, NULL,      0,  0, 0, 0, 0, 0, '/Users/mickael/Music/Taylor Swift - Cruel Summer.flac',                               19, TRUE),
+    (4,  4,  99, 'Getaway',                     'Red Book',            2005, 233.64000, 44100, 0, NULL,      0,  0, 0, 0, 0, 0, '/Users/mickael/Music/Texas - Getaway.flac',                                           19, TRUE),
+    (5,  5,  99, 'Frozen',                      'Ray Of Light',        1998, 367.33334, 44100, 18, NULL,     0,  0, 0, 0, 0, 0, '/Users/mickael/Music/Madonna - Frozen.flac',                                          19, TRUE),
+    (6,  6,  99, 'Never Be The Same Again',     'Northern Star',       2000, 294.20000, 44100, 0, NULL,     25, 28, 0, 0, 0, 0, '/Users/mickael/Music/Melanie C - Never Be The Same Again.flac',                       19, TRUE),
+    (7,  7,  99, 'The Look',                    'Look Sharp!',         1988, 237.32000, 44100, 0, NULL,      0,  0, 0, 0, 0, 0, '/Users/mickael/Music/Roxette - The Look.flac',                                        19, TRUE),
+    (8,  8, 332, 'Lullaby',                     'Disintegration',      1989, 248.97333, 44100, 0, NULL,      0,  0, 0, 0, 0, 0, '/Users/mickael/Music/The Cure - Lullaby.flac',                                        19, TRUE),
+    (9,  9, NULL, 'Avec elle profitons du w-e', '',                    2000,  20.05005, 44100, 0, 15.249319, 0,  0, 0, 0, 0, 0, '/Users/mickael/Music/JINGLES/RADIO CONTACT - Avec elle profitons du w-e.flac',         2, TRUE),
+    (10, 9, NULL, 'C''est le w-e quel bonheur', '',                    2000,  14.38147, 44100, 0, 10.631020, 0,  0, 0, 0, 0, 0, '/Users/mickael/Music/JINGLES/RADIO CONTACT - C''est le w-e quel bonheur.flac',          2, TRUE),
+    (11, 9, NULL, 'Laissons nous vivre, c''est le w-e', '',            2000,  18.16923, 44100, 0, 13.315396, 0,  0, 0, 0, 0, 0, '/Users/mickael/Music/JINGLES/RADIO CONTACT - Laissons nous vivre, c''est le w-e.flac',  2, TRUE),
+    (12, 9, NULL, 'Le w-e, avec elle, je me sens bien', '',            2000,  16.73249, 44100, 0, NULL,      0,  0, 0, 0, 0, 0, '/Users/mickael/Music/JINGLES/RADIO CONTACT - Le w-e, avec elle, je me sens bien.flac', 2, TRUE),
+    (13, 9, NULL, 'Quel bonheur, c''est le w-e', '',                   2000,  12.73576, 44100, 0,  8.905600, 0,  0, 0, 0, 0, 0, '/Users/mickael/Music/JINGLES/RADIO CONTACT - Quel bonheur, c''est le w-e.flac',         2, TRUE),
+    (14, 9, NULL, 'Vive le w-e, vive la musique', '',                  2000,  16.54964, 44100, 0, 11.080453, 0,  0, 0, 0, 0, 0, '/Users/mickael/Music/JINGLES/RADIO CONTACT - Vive le w-e, vive la musique.flac',        2, TRUE);
 SELECT setval('tracks_id_seq', 14);
 
 INSERT INTO template_slots (id, template_id, category_id, subcategory_id, comment, track_protection, artist_protection) OVERRIDING SYSTEM VALUE VALUES

@@ -86,9 +86,11 @@ export function registerCategoryRoutes(app, getDatabaseConfig) {
       return;
     }
 
-    const row = await withDatabase(getDatabaseConfig(), (db) =>
-      createCategory(db, category.value)
-    );
+    const row = await withDatabase(getDatabaseConfig(), async (db) => {
+      const created = await createCategory(db, category.value);
+      await createSubcategory(db, created.id, { name: 'Default', hidden: false });
+      return created;
+    });
     res.status(201).json({ row });
   }));
 
@@ -99,6 +101,10 @@ export function registerCategoryRoutes(app, getDatabaseConfig) {
       return;
     }
 
+    const existing = await withDatabase(getDatabaseConfig(), (db) => getCategory(db, id));
+    if (!existing) { res.status(404).json({ error: 'Category not found.' }); return; }
+    if (existing.protected) { res.status(403).json({ error: 'This category is protected.' }); return; }
+
     const category = validateName(req.body, 32);
     if (!category.ok) {
       res.status(400).json({ error: category.error });
@@ -108,11 +114,6 @@ export function registerCategoryRoutes(app, getDatabaseConfig) {
     const row = await withDatabase(getDatabaseConfig(), (db) =>
       updateCategory(db, id, category.value)
     );
-    if (!row) {
-      res.status(404).json({ error: 'Category not found.' });
-      return;
-    }
-
     res.json({ row });
   }));
 
@@ -123,14 +124,11 @@ export function registerCategoryRoutes(app, getDatabaseConfig) {
       return;
     }
 
-    const deleted = await withDatabase(getDatabaseConfig(), (db) =>
-      deleteCategory(db, id)
-    );
-    if (!deleted) {
-      res.status(404).json({ error: 'Category not found.' });
-      return;
-    }
+    const existing = await withDatabase(getDatabaseConfig(), (db) => getCategory(db, id));
+    if (!existing) { res.status(404).json({ error: 'Category not found.' }); return; }
+    if (existing.protected) { res.status(403).json({ error: 'This category is protected.' }); return; }
 
+    await withDatabase(getDatabaseConfig(), (db) => deleteCategory(db, id));
     res.status(204).send();
   }));
 
@@ -189,6 +187,10 @@ export function registerCategoryRoutes(app, getDatabaseConfig) {
       return;
     }
 
+    const existing = await withDatabase(getDatabaseConfig(), (db) => getSubcategory(db, id));
+    if (!existing) { res.status(404).json({ error: 'Subcategory not found.' }); return; }
+    if (existing.protected) { res.status(403).json({ error: 'This subcategory is protected.' }); return; }
+
     const subcategory = validateSubcategory(req.body);
     if (!subcategory.ok) {
       res.status(400).json({ error: subcategory.error });
@@ -198,11 +200,6 @@ export function registerCategoryRoutes(app, getDatabaseConfig) {
     const row = await withDatabase(getDatabaseConfig(), (db) =>
       updateSubcategory(db, id, subcategory.value)
     );
-    if (!row) {
-      res.status(404).json({ error: 'Subcategory not found.' });
-      return;
-    }
-
     res.json({ row });
   }));
 
@@ -213,14 +210,11 @@ export function registerCategoryRoutes(app, getDatabaseConfig) {
       return;
     }
 
-    const deleted = await withDatabase(getDatabaseConfig(), (db) =>
-      deleteSubcategory(db, id)
-    );
-    if (!deleted) {
-      res.status(404).json({ error: 'Subcategory not found.' });
-      return;
-    }
+    const existing = await withDatabase(getDatabaseConfig(), (db) => getSubcategory(db, id));
+    if (!existing) { res.status(404).json({ error: 'Subcategory not found.' }); return; }
+    if (existing.protected) { res.status(403).json({ error: 'This subcategory is protected.' }); return; }
 
+    await withDatabase(getDatabaseConfig(), (db) => deleteSubcategory(db, id));
     res.status(204).send();
   }));
 }

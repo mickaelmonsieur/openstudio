@@ -174,6 +174,7 @@ export function CategoryPage() {
             primaryKey={categoriesResource.primaryKey}
             rows={categories}
             selectedId={selectedCategoryId}
+            isRowLocked={(row) => row.protected}
             onDelete={(row) => setDeleteTarget({ kind: 'category', row })}
             onEdit={openEditCategory}
             onSelect={(row) => setSelectedCategoryId(row.id)}
@@ -206,6 +207,7 @@ export function CategoryPage() {
             columns={subcategoriesResource.columns}
             primaryKey={subcategoriesResource.primaryKey}
             rows={subcategories}
+            isRowLocked={(row) => row.protected}
             onDelete={(row) => setDeleteTarget({ kind: 'subcategory', row })}
             onEdit={openEditSubcategory}
           />
