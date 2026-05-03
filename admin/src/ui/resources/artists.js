@@ -6,7 +6,6 @@ export const artistsResource = {
   searchable: true,
   primaryKey: 'id',
   columns: [
-    { key: 'id', label: 'ID', width: '90px' },
     { key: 'name', label: 'Name' },
     { key: 'last_broadcast_at', label: 'Last Broadcast', width: '190px' }
   ],

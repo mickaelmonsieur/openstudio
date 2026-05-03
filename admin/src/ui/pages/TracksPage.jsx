@@ -235,7 +235,6 @@ export function TracksPage() {
             <table className="data-table">
               <thead>
                 <tr>
-                  <th style={{ width: '70px' }}>ID</th>
                   <th style={{ width: '170px' }}>Artist</th>
                   <th>Title</th>
                   <th style={{ width: '150px' }}>Genre</th>
@@ -253,7 +252,6 @@ export function TracksPage() {
                 ) : (
                   rows.map((row) => (
                     <tr key={row.id}>
-                      <td>{row.id}</td>
                       <td>{row.artist || '—'}</td>
                       <td>{row.title || '—'}</td>
                       <td>{row.genre || '—'}</td>
