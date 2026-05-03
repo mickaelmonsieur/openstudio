@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 
-export function ScanFolderModal({ genres, subcategories, onClose, onFinished }) {
+export function ScanFolderModal({ genres, stationId, subcategories, onClose, onFinished }) {
   const [root, setRoot] = useState(null);
   const [childrenByPath, setChildrenByPath] = useState({});
   const [expanded, setExpanded] = useState({});
@@ -49,6 +49,7 @@ export function ScanFolderModal({ genres, subcategories, onClose, onFinished }) 
     try {
       const params = new URLSearchParams();
       if (folderPath) params.set('path', folderPath);
+      if (stationId) params.set('station_id', stationId);
       const payload = await fetchJson(`/api/tracks/folders?${params.toString()}`);
 
       setRoot((prev) => prev || payload.folder);
@@ -93,7 +94,8 @@ export function ScanFolderModal({ genres, subcategories, onClose, onFinished }) 
           folderPath: selectedPath,
           genre_id: genreId,
           subcategory_id: subcategoryId,
-          includeSubfolders
+          includeSubfolders,
+          station_id: stationId || undefined
         })
       });
       setJob(payload.job);

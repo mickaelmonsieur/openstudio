@@ -1,6 +1,7 @@
 export const stationsResource = {
   name: 'stations',
   title: 'Stations',
+  group: 'General',
   endpoint: '/api/stations',
   primaryKey: 'id',
   columns: [

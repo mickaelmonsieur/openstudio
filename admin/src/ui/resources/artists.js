@@ -1,6 +1,7 @@
 export const artistsResource = {
   name: 'artists',
   title: 'Artists',
+  group: 'Media',
   endpoint: '/api/artists',
   searchable: true,
   primaryKey: 'id',

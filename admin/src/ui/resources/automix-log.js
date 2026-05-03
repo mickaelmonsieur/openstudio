@@ -1,5 +1,6 @@
 export const automixLogResource = {
   title: 'Auto Mix Log',
+  group: 'Admin',
   endpoint: '/api/automix-log',
   pageSize: 100,
   columns: [

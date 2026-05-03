@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
+import { StationContext } from './StationContext.jsx';
 import { CrudPage } from './crud/CrudPage.jsx';
 import { CategoryPage } from './pages/CategoryPage.jsx';
 import { artistsResource } from './resources/artists.js';
@@ -75,6 +76,8 @@ export function App() {
   });
   const [databaseSaving, setDatabaseSaving] = useState(false);
   const [currentPath, setCurrentPath] = useState(window.location.pathname);
+  const [stations, setStations] = useState([]);
+  const [stationId, setStationId] = useState('');
 
   useEffect(() => {
     fetch('/api/hello')
@@ -104,6 +107,18 @@ export function App() {
     window.addEventListener('popstate', onPopState);
     return () => window.removeEventListener('popstate', onPopState);
   }, []);
+
+  useEffect(() => {
+    if (!databaseStatus.connected) return;
+    fetch('/api/stations')
+      .then((r) => r.json())
+      .then((payload) => {
+        const rows = payload.rows || [];
+        setStations(rows);
+        setStationId((prev) => prev || (rows[0] ? String(rows[0].id) : ''));
+      })
+      .catch(() => {});
+  }, [databaseStatus.connected]);
 
   const activeModule = useMemo(() => {
     if (currentPath.startsWith('/tracks/cue/')) {
@@ -284,6 +299,7 @@ export function App() {
   }
 
   return (
+    <StationContext value={{ stationId, stations }}>
     <main className="app-shell">
       <aside className="sidebar">
         <div className="brand">
@@ -293,6 +309,21 @@ export function App() {
             <div className="brand-subtitle">Admin</div>
           </div>
         </div>
+
+        {stations.length > 0 ? (
+          <div className="station-picker">
+            <label htmlFor="sidebar-station">Station</label>
+            <select
+              id="sidebar-station"
+              value={stationId}
+              onChange={(e) => setStationId(e.target.value)}
+            >
+              {stations.map((s) => (
+                <option key={s.id} value={s.id}>{s.name}</option>
+              ))}
+            </select>
+          </div>
+        ) : null}
 
         <nav className="navigation" aria-label="Admin modules">
           {moduleGroups.map((group) => (
@@ -337,5 +368,6 @@ export function App() {
         </span>
       </footer>
     </main>
+    </StationContext>
   );
 }

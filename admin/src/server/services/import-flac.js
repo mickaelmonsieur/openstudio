@@ -5,7 +5,7 @@ import { findOrCreateArtist } from '../repositories/artists.js';
 import { findGenreByName } from '../repositories/tracks.js';
 import { defaultLibraryRoot } from '../lib/platform.js';
 
-export async function importFlacTrack(db, file) {
+export async function importFlacTrack(db, file, libraryRoot = '') {
   if (!file?.path || !file?.originalname) {
     throw new Error('No file was uploaded.');
   }
@@ -18,7 +18,7 @@ export async function importFlacTrack(db, file) {
   }
 
   const draft = await buildFlacTrackDraft(db, file.path, originalname);
-  const importedPath = await copyIntoDatabase(file.path, originalname);
+  const importedPath = await copyIntoDatabase(file.path, originalname, libraryRoot);
 
   return {
     ...draft,
@@ -68,17 +68,17 @@ function assertFlacMetadata(metadata) {
   }
 }
 
-async function copyIntoDatabase(sourcePath, originalName) {
-  const DATABASE_DIR = defaultLibraryRoot();
+async function copyIntoDatabase(sourcePath, originalName, libraryRoot = '') {
+  const DATABASE_DIR = libraryRoot || defaultLibraryRoot();
   await fs.mkdir(DATABASE_DIR, { recursive: true });
-  const destination = await uniqueDestination(originalName);
+  const destination = await uniqueDestination(originalName, DATABASE_DIR);
   await fs.copyFile(sourcePath, destination);
   await fs.unlink(sourcePath).catch(() => {});
   return destination;
 }
 
-async function uniqueDestination(originalName) {
-  const DATABASE_DIR = defaultLibraryRoot();
+async function uniqueDestination(originalName, libraryRoot = '') {
+  const DATABASE_DIR = libraryRoot || defaultLibraryRoot();
   const parsed = path.parse(safeFileName(originalName));
   const base = parsed.name || 'track';
   const ext = parsed.ext || '.flac';

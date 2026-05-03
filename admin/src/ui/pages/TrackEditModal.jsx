@@ -62,20 +62,6 @@ export function TrackEditModal({ mode = 'edit', track, artists, genres, subcateg
           </label>
 
           <label>
-            <span>Genre</span>
-            <select
-              required
-              value={formData.genre_id}
-              onChange={(e) => update('genre_id', e.target.value)}
-            >
-              <option value="">Select a genre...</option>
-              {genres.map((genre) => (
-                <option key={genre.id} value={genre.id}>{genre.name}</option>
-              ))}
-            </select>
-          </label>
-
-          <label>
             <span>Album</span>
             <input
               maxLength={64}
@@ -94,6 +80,20 @@ export function TrackEditModal({ mode = 'edit', track, artists, genres, subcateg
               value={formData.year}
               onChange={(e) => update('year', e.target.value)}
             />
+          </label>
+
+          <label>
+            <span>Genre</span>
+            <select
+              required
+              value={formData.genre_id}
+              onChange={(e) => update('genre_id', e.target.value)}
+            >
+              <option value="">Select a genre...</option>
+              {genres.map((genre) => (
+                <option key={genre.id} value={genre.id}>{genre.name}</option>
+              ))}
+            </select>
           </label>
 
           <label>

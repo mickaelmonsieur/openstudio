@@ -10,17 +10,18 @@ const MAX_TREE_DEPTH = 4;
 const MAX_MESSAGES = 40;
 const jobs = new Map();
 
-export function databaseRoot() {
-  return defaultLibraryRoot();
+export function databaseRoot(libraryRoot) {
+  return libraryRoot || defaultLibraryRoot();
 }
 
-export async function listDatabaseFolders(folderPath = '') {
-  const fullPath = resolveDatabasePath(folderPath);
-  const depth = pathDepth(fullPath);
+export async function listDatabaseFolders(folderPath = '', libraryRoot = '') {
+  const root = libraryRoot || defaultLibraryRoot();
+  const fullPath = resolveDatabasePath(folderPath, root);
+  const depth = pathDepth(fullPath, root);
 
   if (depth >= MAX_TREE_DEPTH) {
     return {
-      folder: folderInfo(fullPath),
+      folder: folderInfo(fullPath, root),
       children: []
     };
   }
@@ -28,21 +29,23 @@ export async function listDatabaseFolders(folderPath = '') {
   const entries = await fs.readdir(fullPath, { withFileTypes: true });
   const children = entries
     .filter((entry) => entry.isDirectory())
-    .map((entry) => folderInfo(path.join(fullPath, entry.name)))
+    .map((entry) => folderInfo(path.join(fullPath, entry.name), root))
     .sort((a, b) => a.name.localeCompare(b.name));
 
   return {
-    folder: folderInfo(fullPath),
+    folder: folderInfo(fullPath, root),
     children
   };
 }
 
 export function startFolderImport(databaseConfig, options) {
-  const folderPath = resolveDatabasePath(options.folderPath);
+  const root = options.libraryRoot || defaultLibraryRoot();
+  const folderPath = resolveDatabasePath(options.folderPath, root);
   const job = {
     id: randomUUID(),
     status: 'queued',
     folderPath,
+    libraryRoot: root,
     includeSubfolders: Boolean(options.includeSubfolders),
     subcategory_id: options.subcategory_id,
     genre_id: options.genre_id,
@@ -80,7 +83,7 @@ async function runFolderImportJob(databaseConfig, job) {
 
   const files = await findFlacFiles(job.folderPath, {
     includeSubfolders: job.includeSubfolders,
-    maxDepth: MAX_TREE_DEPTH - pathDepth(job.folderPath)
+    maxDepth: MAX_TREE_DEPTH - pathDepth(job.folderPath, job.libraryRoot)
   });
 
   job.total = files.length;
@@ -162,8 +165,8 @@ async function findFlacFiles(folderPath, { includeSubfolders, maxDepth }) {
   return files.sort((a, b) => a.localeCompare(b));
 }
 
-function resolveDatabasePath(inputPath = '') {
-  const root = path.resolve(DATABASE_DIR);
+function resolveDatabasePath(inputPath = '', libraryRoot) {
+  const root = path.resolve(libraryRoot);
   const requested = String(inputPath || '').trim();
   const fullPath = requested ? path.resolve(requested) : root;
 
@@ -174,19 +177,20 @@ function resolveDatabasePath(inputPath = '') {
   return fullPath;
 }
 
-function folderInfo(folderPath) {
-  const depth = pathDepth(folderPath);
+function folderInfo(folderPath, libraryRoot) {
+  const root = path.resolve(libraryRoot);
+  const depth = pathDepth(folderPath, libraryRoot);
   return {
-    name: folderPath === path.resolve(DATABASE_DIR) ? 'Database' : path.basename(folderPath),
+    name: folderPath === root ? 'Library' : path.basename(folderPath),
     path: folderPath,
-    relativePath: path.relative(path.resolve(DATABASE_DIR), folderPath),
+    relativePath: path.relative(root, folderPath),
     depth,
     canOpen: depth < MAX_TREE_DEPTH
   };
 }
 
-function pathDepth(folderPath) {
-  const relative = path.relative(path.resolve(DATABASE_DIR), folderPath);
+function pathDepth(folderPath, libraryRoot) {
+  const relative = path.relative(path.resolve(libraryRoot), folderPath);
   if (!relative) return 0;
   return relative.split(path.sep).filter(Boolean).length;
 }

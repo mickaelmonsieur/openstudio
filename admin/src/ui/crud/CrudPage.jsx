@@ -101,7 +101,7 @@ export function CrudPage({ resource }) {
     <section className="crud-page">
       <header className="crud-header">
         <div>
-          <p className="panel-kicker">CRUD</p>
+          {resource.group ? <p className="panel-kicker">{resource.group}</p> : null}
           <h2>{resource.title}</h2>
         </div>
         <div className="header-actions">

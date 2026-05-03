@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
+import { useStation } from '../StationContext.jsx';
 import { ConfirmDialog } from '../crud/ConfirmDialog.jsx';
 import { ScanFolderModal } from './ScanFolderModal.jsx';
 import { TrackEditModal } from './TrackEditModal.jsx';
@@ -6,6 +7,7 @@ import { TrackEditModal } from './TrackEditModal.jsx';
 const LIMIT = 100;
 
 export function TracksPage() {
+  const { stationId } = useStation();
   const fileInputRef = useRef(null);
   const [rows, setRows] = useState([]);
   const [total, setTotal] = useState(0);
@@ -109,6 +111,7 @@ export function TracksPage() {
     try {
       const body = new FormData();
       body.append('file', file);
+      if (stationId) body.append('station_id', stationId);
 
       const payload = await fetchJson('/api/tracks/import-flac/preview', {
         method: 'POST',
@@ -335,6 +338,7 @@ export function TracksPage() {
       {scanFolderOpen ? (
         <ScanFolderModal
           genres={genres}
+          stationId={stationId}
           subcategories={subcategories}
           onClose={() => setScanFolderOpen(false)}
           onFinished={loadTracks}

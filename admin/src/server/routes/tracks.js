@@ -23,6 +23,8 @@ import {
   listDatabaseFolders,
   startFolderImport
 } from '../services/folder-import.js';
+import { getStation } from '../repositories/stations.js';
+import { defaultLibraryRoot } from '../lib/platform.js';
 import { generateWaveform } from '../services/waveform.js';
 
 const DEFAULT_LIMIT = 100;
@@ -179,6 +181,12 @@ function asyncRoute(handler) {
   };
 }
 
+async function resolveLibraryRoot(getDatabaseConfig, stationId) {
+  if (!stationId) return defaultLibraryRoot();
+  const station = await withDatabase(getDatabaseConfig(), (db) => getStation(db, stationId));
+  return station?.library_path || defaultLibraryRoot();
+}
+
 export function registerTrackRoutes(app, getDatabaseConfig) {
   app.get('/api/tracks', asyncRoute(async (req, res) => {
     const { page, limit, offset } = parsePagination(req.query);
@@ -203,9 +211,11 @@ export function registerTrackRoutes(app, getDatabaseConfig) {
   }));
 
   app.get('/api/tracks/folders', asyncRoute(async (req, res) => {
-    const payload = await listDatabaseFolders(req.query.path);
+    const stationId = parseId(req.query.station_id);
+    const libraryRoot = await resolveLibraryRoot(getDatabaseConfig, stationId);
+    const payload = await listDatabaseFolders(req.query.path, libraryRoot);
     res.json({
-      root: databaseRoot(),
+      root: databaseRoot(libraryRoot),
       ...payload
     });
   }));
@@ -230,11 +240,15 @@ export function registerTrackRoutes(app, getDatabaseConfig) {
       return;
     }
 
+    const stationId = parseId(req.body?.station_id);
+    const libraryRoot = await resolveLibraryRoot(getDatabaseConfig, stationId);
+
     const job = startFolderImport(getDatabaseConfig(), {
       folderPath,
       genre_id,
       subcategory_id,
-      includeSubfolders: req.body?.includeSubfolders !== false
+      includeSubfolders: req.body?.includeSubfolders !== false,
+      libraryRoot
     });
 
     res.status(202).json({ job });
@@ -252,8 +266,10 @@ export function registerTrackRoutes(app, getDatabaseConfig) {
 
   app.post('/api/tracks/import-flac/preview', upload.single('file'), asyncRoute(async (req, res) => {
     try {
+      const stationId = parseId(req.body?.station_id);
+      const libraryRoot = await resolveLibraryRoot(getDatabaseConfig, stationId);
       const draft = await withDatabase(getDatabaseConfig(), (db) =>
-        importFlacTrack(db, req.file)
+        importFlacTrack(db, req.file, libraryRoot)
       );
 
       res.json({ draft });

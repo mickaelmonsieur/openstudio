@@ -1,6 +1,7 @@
 export const usersResource = {
   name: 'users',
   title: 'Users',
+  group: 'Admin',
   endpoint: '/api/users',
   primaryKey: 'id',
   columns: [

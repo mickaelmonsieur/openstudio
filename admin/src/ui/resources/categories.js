@@ -1,6 +1,7 @@
 export const categoriesResource = {
   name: 'categories',
   title: 'Categories',
+  group: 'Media',
   endpoint: '/api/categories',
   primaryKey: 'id',
   columns: [

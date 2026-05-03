@@ -1,5 +1,6 @@
 export const playLogResource = {
   title: 'Play Log',
+  group: 'Admin',
   endpoint: '/api/play-log',
   pageSize: 100,
   columns: [
