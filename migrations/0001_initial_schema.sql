@@ -2,7 +2,7 @@
 
 -- ── Reference tables (no dependencies) ──────────────────────────────────────
 
-CREATE TABLE formats (
+CREATE TABLE templates (
     id   INTEGER GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
     name VARCHAR(32) NOT NULL
 );
@@ -43,18 +43,21 @@ CREATE TABLE subcategories (
 
 CREATE INDEX idx_subcategories_category ON subcategories (category_id);
 
--- ── Programming templates ───────────────────────────────────────────────────
+-- ── Template slots ──────────────────────────────────────────────────────────
 -- track_protection / artist_protection: minimum seconds between replays
 
-CREATE TABLE templates (
+CREATE TABLE template_slots (
     id                INTEGER     GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
-    format_id         INTEGER     NOT NULL REFERENCES formats (id),
+    template_id       INTEGER     NOT NULL REFERENCES templates (id),
+    position          INTEGER     NOT NULL DEFAULT 0 CHECK (position >= 0),
     category_id       INTEGER     NOT NULL REFERENCES categories (id),
     subcategory_id    INTEGER     REFERENCES subcategories (id),
     comment           VARCHAR(64) NOT NULL DEFAULT '',
     track_protection  INTEGER     NOT NULL DEFAULT 3600,
     artist_protection INTEGER     NOT NULL DEFAULT 3600
 );
+
+CREATE INDEX idx_template_slots_order ON template_slots (template_id, position, id);
 
 -- ── Media library ───────────────────────────────────────────────────────────
 

@@ -96,12 +96,12 @@ INSERT INTO sectors (id, name) OVERRIDING SYSTEM VALUE VALUES
     (20, 'Other');
 SELECT setval('sectors_id_seq', 20);
 
-INSERT INTO formats (id, name) OVERRIDING SYSTEM VALUE VALUES
+INSERT INTO templates (id, name) OVERRIDING SYSTEM VALUE VALUES
     (1, 'PUB'),
     (2, 'TOP HORAIRE'),
     (3, 'SEMAINE'),
     (4, 'WEEKEND-80');
-SELECT setval('formats_id_seq', 4);
+SELECT setval('templates_id_seq', 4);
 
 INSERT INTO stations (id, name, library_path) OVERRIDING SYSTEM VALUE VALUES
     (1, 'DEMO', '/Users/Shared/OpenStudio/Library/demo');
@@ -236,7 +236,7 @@ JOIN tracks t ON t.id = timed.id
 WHERE timed.scheduled_at < NOW() + INTERVAL '2 hours'
 ORDER BY timed.pos;
 
-INSERT INTO templates (id, format_id, category_id, subcategory_id, comment, track_protection, artist_protection) OVERRIDING SYSTEM VALUE VALUES
+INSERT INTO template_slots (id, template_id, category_id, subcategory_id, comment, track_protection, artist_protection) OVERRIDING SYSTEM VALUE VALUES
     (1,   1, 8, NULL, 'PUB',                           600,    0),
     (2,   2, 7, NULL, 'TOP HORAIRE',                   600,    0),
     (3,   3, 2, NULL, 'SEMAINE',                      9000, 3600),
@@ -272,7 +272,15 @@ INSERT INTO templates (id, format_id, category_id, subcategory_id, comment, trac
     (33,  1, 4, NULL, 'Pub In',                         600,  600),
     (34,  1, 8, NULL, 'ECRAN PUB',                      600,  600),
     (35,  1, 5, NULL, 'Pub Out',                        600,  600);
-SELECT setval('templates_id_seq', 35);
+WITH ranked AS (
+    SELECT id, ROW_NUMBER() OVER (PARTITION BY template_id ORDER BY id)::INTEGER AS position
+    FROM template_slots
+)
+UPDATE template_slots ts
+SET position = ranked.position
+FROM ranked
+WHERE ranked.id = ts.id;
+SELECT setval('template_slots_id_seq', 35);
 
 -- row 121 (hour=0 min=0 sec=0) is a catch-all sentinel; template_id NULL
 INSERT INTO clock_events (id, hour, minute, second, template_id, priority, duration) OVERRIDING SYSTEM VALUE VALUES

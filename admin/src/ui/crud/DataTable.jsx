@@ -1,3 +1,5 @@
+import { useState } from 'react';
+
 export function DataTable({
   columns,
   rows,
@@ -5,8 +7,28 @@ export function DataTable({
   selectedId,
   onEdit,
   onDelete,
-  onSelect
+  onSelect,
+  reorderable = false,
+  onReorder,
+  renderRowActions
 }) {
+  const [draggingId, setDraggingId] = useState(null);
+
+  function moveRow(targetRow) {
+    if (!reorderable || !onReorder || !draggingId) return;
+    const targetId = targetRow[primaryKey];
+    if (targetId === draggingId) return;
+
+    const fromIndex = rows.findIndex((row) => row[primaryKey] === draggingId);
+    const toIndex = rows.findIndex((row) => row[primaryKey] === targetId);
+    if (fromIndex < 0 || toIndex < 0) return;
+
+    const nextRows = [...rows];
+    const [moved] = nextRows.splice(fromIndex, 1);
+    nextRows.splice(toIndex, 0, moved);
+    onReorder(nextRows);
+  }
+
   return (
     <div className="data-table-wrap">
       <table className="data-table">
@@ -28,16 +50,39 @@ export function DataTable({
               </td>
             </tr>
           ) : (
-            rows.map((row) => (
+            rows.map((row, rowIndex) => (
               <tr
-                className={selectedId === row[primaryKey] ? 'selected-row' : ''}
+                className={[
+                  selectedId === row[primaryKey] ? 'selected-row' : '',
+                  reorderable ? 'draggable-row' : '',
+                  draggingId === row[primaryKey] ? 'dragging-row' : ''
+                ].filter(Boolean).join(' ')}
+                draggable={reorderable}
                 key={row[primaryKey]}
                 onClick={() => onSelect?.(row)}
+                onDragEnd={() => setDraggingId(null)}
+                onDragOver={(event) => {
+                  if (!reorderable) return;
+                  event.preventDefault();
+                }}
+                onDragStart={(event) => {
+                  if (!reorderable) return;
+                  setDraggingId(row[primaryKey]);
+                  event.dataTransfer.effectAllowed = 'move';
+                  event.dataTransfer.setData('text/plain', String(row[primaryKey]));
+                }}
+                onDrop={(event) => {
+                  if (!reorderable) return;
+                  event.preventDefault();
+                  moveRow(row);
+                  setDraggingId(null);
+                }}
               >
                 {columns.map((column) => (
                   <td key={column.key}>{formatCell(row[column.key])}</td>
                 ))}
                 <td className="row-actions">
+                  {renderRowActions?.(row, rowIndex)}
                   <button
                     className="ghost-button"
                     onClick={(event) => {

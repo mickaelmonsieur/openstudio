@@ -5,6 +5,8 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { registerArtistRoutes } from './routes/artists.js';
 import { registerCategoryRoutes } from './routes/categories.js';
+import { registerTemplateRoutes } from './routes/formats.js';
+import { registerScheduleRoutes } from './routes/schedules.js';
 import { registerStationRoutes } from './routes/stations.js';
 import { registerUserRoutes } from './routes/users.js';
 import { registerTrackRoutes } from './routes/tracks.js';
@@ -154,6 +156,8 @@ export async function createOpenStudioAdminServer(config) {
   });
   registerCategoryRoutes(webApp, () => readDatabaseConfig(dataDir));
   registerArtistRoutes(webApp, () => readDatabaseConfig(dataDir));
+  registerTemplateRoutes(webApp, () => readDatabaseConfig(dataDir));
+  registerScheduleRoutes(webApp, () => readDatabaseConfig(dataDir));
   registerStationRoutes(webApp, () => readDatabaseConfig(dataDir));
   registerUserRoutes(webApp, () => readDatabaseConfig(dataDir));
   registerTrackRoutes(webApp, () => readDatabaseConfig(dataDir));

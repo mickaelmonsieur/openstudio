@@ -6,6 +6,8 @@ import { artistsResource } from './resources/artists.js';
 import { stationsResource } from './resources/stations.js';
 import { usersResource } from './resources/users.js';
 import { StationsPage } from './pages/StationsPage.jsx';
+import { SchedulesPage } from './pages/SchedulesPage.jsx';
+import { TemplatesPage } from './pages/TemplatesPage.jsx';
 import { TracksPage } from './pages/TracksPage.jsx';
 import { CuePage } from './pages/CuePage.jsx';
 import { LogPage } from './pages/LogPage.jsx';
@@ -30,9 +32,8 @@ const moduleGroups = [
   {
     title: 'Automation',
     items: [
-      { label: 'Formats', path: '/formats' },
-      { label: 'Schedules', path: '/schedules' },
       { label: 'Templates', path: '/templates' },
+      { label: 'Schedules', path: '/schedules' },
       { label: 'Events', path: '/events' }
     ]
   },
@@ -179,6 +180,22 @@ export function App() {
       return (
         <section className="content-panel">
           <CrudPage resource={artistsResource} />
+        </section>
+      );
+    }
+
+    if (activeModule.path === '/templates') {
+      return (
+        <section className="content-panel wide-panel">
+          <TemplatesPage />
+        </section>
+      );
+    }
+
+    if (activeModule.path === '/schedules') {
+      return (
+        <section className="content-panel">
+          <SchedulesPage />
         </section>
       );
     }

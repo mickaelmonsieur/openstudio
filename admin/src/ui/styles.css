@@ -334,6 +334,19 @@ h1 {
   background: #1d2d36;
 }
 
+.data-table tbody tr.draggable-row {
+  cursor: grab;
+}
+
+.data-table tbody tr.draggable-row:active {
+  cursor: grabbing;
+}
+
+.data-table tbody tr.dragging-row td {
+  background: #382c5f;
+  opacity: 0.72;
+}
+
 .data-table tbody tr.selected-row td {
   background: #2c2759;
 }
@@ -347,7 +360,7 @@ h1 {
 }
 
 .actions-column {
-  width: 180px;
+  width: 270px;
   text-align: right;
 }
 
@@ -358,13 +371,28 @@ h1 {
 .row-actions {
   display: flex;
   justify-content: flex-end;
-  gap: 8px;
+  gap: 6px;
+  white-space: nowrap;
 }
 
 .row-actions a {
   display: inline-flex;
   align-items: center;
   text-decoration: none;
+}
+
+.table-icon-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  min-width: 32px;
+  padding: 0;
+}
+
+.ghost-button:disabled {
+  cursor: wait;
+  opacity: 0.55;
 }
 
 .cue-page {
@@ -845,6 +873,64 @@ h1 {
 .resource-form select:focus {
   outline: 2px solid rgba(104, 87, 216, 0.45);
   border-color: #6857d8;
+}
+
+.form-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+}
+
+.day-picker {
+  display: grid;
+  gap: 8px;
+  color: #d5e3eb;
+  font-size: 13px;
+}
+
+.day-picker-row {
+  display: flex;
+  gap: 6px;
+}
+
+.day-toggle {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 5px;
+  cursor: pointer;
+}
+
+.day-toggle input[type="checkbox"] {
+  width: 18px;
+  height: 18px;
+  accent-color: #6857d8;
+  cursor: pointer;
+}
+
+.day-toggle span {
+  font-size: 11px;
+  color: #91a9b7;
+}
+
+.day-badges {
+  display: flex;
+  gap: 4px;
+  flex-wrap: wrap;
+}
+
+.day-badge {
+  padding: 2px 6px;
+  border-radius: 4px;
+  background: #1d2a33;
+  color: #4a6373;
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.day-badge.active {
+  background: #2c2759;
+  color: #a99ef5;
 }
 
 .import-summary {
