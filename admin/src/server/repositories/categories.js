@@ -2,7 +2,7 @@ export async function listCategories(db) {
   const { rows } = await db.query(`
     SELECT id, name, protected
     FROM categories
-    ORDER BY name
+    ORDER BY id ASC
   `);
 
   return rows;
@@ -66,7 +66,7 @@ export async function listSubcategories(db, categoryId) {
     SELECT id, category_id, name, hidden, protected
     FROM subcategories
     WHERE category_id = $1
-    ORDER BY hidden, name
+    ORDER BY id ASC
     `,
     [categoryId]
   );
