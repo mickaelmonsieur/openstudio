@@ -359,7 +359,10 @@ impl Database {
             FROM queue q
             LEFT JOIN tracks t ON t.id = q.track_id
             LEFT JOIN artists a ON a.id = t.artist_id
+            WHERE q.played = FALSE
+              AND (q.scheduled_at IS NULL OR q.scheduled_at >= NOW())
             ORDER BY q.scheduled_at NULLS LAST, q.priority, q.id
+            LIMIT 50
             ",
             &[&timezone],
         )?;
@@ -486,15 +489,12 @@ impl Database {
         Ok(())
     }
 
-    pub fn clear_queue(&self) -> Result<(), DbError> {
-        let mut client = self.client.lock().map_err(|_| DbError::LockPoisoned)?;
-        client.execute("DELETE FROM queue", &[])?;
-        Ok(())
-    }
-
     pub fn delete_queue_entry(&self, id: i32) -> Result<(), DbError> {
         let mut client = self.client.lock().map_err(|_| DbError::LockPoisoned)?;
-        client.execute("DELETE FROM queue WHERE id = $1", &[&id])?;
+        client.execute(
+            "UPDATE queue SET played = TRUE, updated_at = NOW() WHERE id = $1",
+            &[&id],
+        )?;
         Ok(())
     }
 

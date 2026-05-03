@@ -1039,16 +1039,9 @@ impl App {
             }
 
             Message::QueueClearAll => {
-                if let Some(db) = &self.db {
-                    match db.clear_queue() {
-                        Ok(()) => {
-                            self.queue_entries.clear();
-                            self.selected_queue_index = None;
-                            self.clear_preloaded_queue_status();
-                        }
-                        Err(e) => self.status = format!("Queue clear failed: {e}"),
-                    }
-                }
+                self.queue_entries.clear();
+                self.selected_queue_index = None;
+                self.clear_preloaded_queue_status();
                 Task::none()
             }
 
@@ -1482,6 +1475,12 @@ impl App {
         }
     }
 
+    fn refill_queue_if_needed(&mut self) {
+        if self.queue_entries.len() < 50 {
+            self.reload_queue_entries_from_db();
+        }
+    }
+
     fn reload_search_tracks_from_db(&mut self) {
         let Some(db) = &self.db else {
             self.search_tracks.clear();
@@ -1799,6 +1798,7 @@ impl App {
             }
         }
 
+        self.refill_queue_if_needed();
         self.queue_player_entries.insert(player_id, entry.clone());
         self.current_queue_player_id = player_id;
         self.current_queue_entry = Some(entry);
@@ -2424,6 +2424,7 @@ impl App {
                 } else {
                     Some(queue_index.min(self.queue_entries.len() - 1))
                 };
+                self.refill_queue_if_needed();
             }
             Err(e) => self.status = format!("Queue entry delete failed: {e}"),
         }
