@@ -273,10 +273,6 @@ impl App {
             parts.push(String::from("Fixed"));
         }
 
-        if entry.priority > 0 {
-            parts.push(format!("Priority {}", entry.priority));
-        }
-
         if entry.track_id.is_none() {
             parts.push(String::from("No track"));
         }

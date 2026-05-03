@@ -2336,7 +2336,6 @@ impl App {
             cue_in: std::time::Duration::ZERO,
             cue_out: track.cue_out,
             scheduled_at: None,
-            priority: 0,
             fixed_time: false,
         };
 

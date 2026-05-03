@@ -98,7 +98,6 @@ pub struct QueueEntry {
     pub cue_in: Duration,
     pub cue_out: Duration,
     pub scheduled_at: Option<String>,
-    pub priority: i16,
     pub fixed_time: bool,
 }
 
@@ -346,7 +345,6 @@ impl Database {
             SELECT
                 q.id,
                 q.track_id,
-                q.priority,
                 q.fixed_time,
                 q.cue_in::double precision AS cue_in,
                 q.cue_out::double precision AS cue_out,
@@ -386,7 +384,6 @@ impl Database {
                     cue_in: seconds_to_duration(cue_in),
                     cue_out: seconds_to_duration(cue_out),
                     scheduled_at: row.get("scheduled_at"),
-                    priority: row.get("priority"),
                     fixed_time: row.get("fixed_time"),
                 }
             })
