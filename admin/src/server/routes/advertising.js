@@ -1,11 +1,23 @@
 import { withDatabase } from '../db/client.js';
 import {
   listSectors,
-  listAdvertisers, getAdvertiser, createAdvertiser, updateAdvertiser, deleteAdvertiser,
-  listContacts, getContact, createContact, updateContact, deleteContact,
-  listCampaigns, getCampaign, createCampaign, updateCampaign, deleteCampaign,
-  listCampaignTracks, getCampaignTrack, createCampaignTrack, updateCampaignTrack, deleteCampaignTrack
+  countAdvertisers, listAdvertisers, getAdvertiser, createAdvertiser, updateAdvertiser, deleteAdvertiser,
+  countContacts, listContacts, getContact, createContact, updateContact, deleteContact,
+  countCampaigns, listCampaigns, getCampaign, createCampaign, updateCampaign, deleteCampaign,
+  countCampaignTracks, listCampaignTracks, getCampaignTrack, createCampaignTrack, updateCampaignTrack, deleteCampaignTrack
 } from '../repositories/advertising.js';
+
+const ADV_LIMIT = 50;
+
+function parsePagination(query) {
+  const page  = Math.max(1, parseInt(query.page  || 1, 10) || 1);
+  const limit = Math.min(200, Math.max(1, parseInt(query.limit || ADV_LIMIT, 10) || ADV_LIMIT));
+  return { page, limit, offset: (page - 1) * limit };
+}
+
+function parseSearch(query) {
+  return String(query.q || '').trim().slice(0, 120);
+}
 
 function parseId(value) {
   const id = Number(value);
@@ -107,9 +119,13 @@ export function registerAdvertisingRoutes(app, getDatabaseConfig) {
   }));
 
   // Advertisers
-  app.get('/api/advertisers', asyncRoute(async (_req, res) => {
-    const rows = await withDatabase(getDatabaseConfig(), listAdvertisers);
-    res.json({ rows });
+  app.get('/api/advertisers', asyncRoute(async (req, res) => {
+    const { page, limit, offset } = parsePagination(req.query);
+    const search = parseSearch(req.query);
+    const [total, rows] = await withDatabase(getDatabaseConfig(), (db) =>
+      Promise.all([countAdvertisers(db, search), listAdvertisers(db, { limit, offset, search })])
+    );
+    res.json({ rows, total, page, limit });
   }));
 
   app.post('/api/advertisers', asyncRoute(async (req, res) => {
@@ -138,9 +154,13 @@ export function registerAdvertisingRoutes(app, getDatabaseConfig) {
   }));
 
   // Contacts
-  app.get('/api/contacts', asyncRoute(async (_req, res) => {
-    const rows = await withDatabase(getDatabaseConfig(), listContacts);
-    res.json({ rows });
+  app.get('/api/contacts', asyncRoute(async (req, res) => {
+    const { page, limit, offset } = parsePagination(req.query);
+    const search = parseSearch(req.query);
+    const [total, rows] = await withDatabase(getDatabaseConfig(), (db) =>
+      Promise.all([countContacts(db, search), listContacts(db, { limit, offset, search })])
+    );
+    res.json({ rows, total, page, limit });
   }));
 
   app.post('/api/contacts', asyncRoute(async (req, res) => {
@@ -169,9 +189,13 @@ export function registerAdvertisingRoutes(app, getDatabaseConfig) {
   }));
 
   // Campaigns
-  app.get('/api/campaigns', asyncRoute(async (_req, res) => {
-    const rows = await withDatabase(getDatabaseConfig(), listCampaigns);
-    res.json({ rows });
+  app.get('/api/campaigns', asyncRoute(async (req, res) => {
+    const { page, limit, offset } = parsePagination(req.query);
+    const search = parseSearch(req.query);
+    const [total, rows] = await withDatabase(getDatabaseConfig(), (db) =>
+      Promise.all([countCampaigns(db, search), listCampaigns(db, { limit, offset, search })])
+    );
+    res.json({ rows, total, page, limit });
   }));
 
   app.post('/api/campaigns', asyncRoute(async (req, res) => {
@@ -205,9 +229,13 @@ export function registerAdvertisingRoutes(app, getDatabaseConfig) {
     res.json({ campaigns });
   }));
 
-  app.get('/api/campaign-tracks', asyncRoute(async (_req, res) => {
-    const rows = await withDatabase(getDatabaseConfig(), listCampaignTracks);
-    res.json({ rows });
+  app.get('/api/campaign-tracks', asyncRoute(async (req, res) => {
+    const { page, limit, offset } = parsePagination(req.query);
+    const search = parseSearch(req.query);
+    const [total, rows] = await withDatabase(getDatabaseConfig(), (db) =>
+      Promise.all([countCampaignTracks(db, search), listCampaignTracks(db, { limit, offset, search })])
+    );
+    res.json({ rows, total, page, limit });
   }));
 
   app.post('/api/campaign-tracks', asyncRoute(async (req, res) => {

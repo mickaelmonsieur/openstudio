@@ -5,18 +5,25 @@ import { DataTable } from '../crud/DataTable.jsx';
 const PUB_CATEGORY_ID = 8;
 
 const COLS = [
-  { key: 'id',            label: 'ID',       width: '60px' },
-  { key: 'campaign_name', label: 'Campaign', width: '200px' },
-  { key: 'track_display', label: 'Track' },
-  { key: 'position',      label: 'Pos.',     width: '60px' }
+  { key: 'id',              label: 'ID',         width: '60px' },
+  { key: 'advertiser_name', label: 'Advertiser', width: '160px' },
+  { key: 'campaign_name',   label: 'Campaign',   width: '160px' },
+  { key: 'track_display',   label: 'Track' },
+  { key: 'position',        label: 'Pos.',       width: '60px' }
 ];
 
 function emptyForm() {
   return { campaign_id: '', track_id: '', track_label: '', position: '' };
 }
 
+const LIMIT = 50;
+
 export function CampaignTracksPage() {
   const [rows, setRows]           = useState([]);
+  const [total, setTotal]         = useState(0);
+  const [page, setPage]           = useState(1);
+  const [searchInput, setSearchInput] = useState('');
+  const [searchQuery, setSearchQuery] = useState('');
   const [campaigns, setCampaigns] = useState([]);
   const [loading, setLoading]     = useState(true);
   const [error, setError]         = useState(null);
@@ -30,20 +37,34 @@ export function CampaignTracksPage() {
   const [trackResults, setTrackResults] = useState([]);
   const [trackLoading, setTrackLoading] = useState(false);
 
+  const totalPages = Math.max(1, Math.ceil(total / LIMIT));
+
   useEffect(() => {
-    Promise.all([fetchJson('/api/campaign-tracks'), fetchJson('/api/campaign-tracks/options')])
-      .then(([ct, opts]) => {
-        setRows(ct.rows || []);
-        setCampaigns(opts.campaigns || []);
-      })
-      .catch((err) => setError(err.message))
-      .finally(() => setLoading(false));
+    fetchJson('/api/campaign-tracks/options')
+      .then((opts) => setCampaigns(opts.campaigns || []))
+      .catch((err) => setError(err.message));
   }, []);
 
-  async function reload() {
-    const payload = await fetchJson('/api/campaign-tracks');
-    setRows(payload.rows || []);
+  useEffect(() => {
+    const timer = setTimeout(() => { setSearchQuery(searchInput.trim()); setPage(1); }, 250);
+    return () => clearTimeout(timer);
+  }, [searchInput]);
+
+  useEffect(() => { load(); }, [page, searchQuery]);
+
+  async function load() {
+    setLoading(true); setError(null);
+    try {
+      const params = new URLSearchParams({ page: String(page), limit: String(LIMIT) });
+      if (searchQuery) params.set('q', searchQuery);
+      const payload = await fetchJson(`/api/campaign-tracks?${params}`);
+      setRows(payload.rows || []);
+      setTotal(payload.total || 0);
+    } catch (err) { setError(err.message); }
+    finally { setLoading(false); }
   }
+
+  async function reload() { await load(); }
 
   function upd(key, value) { setForm((prev) => ({ ...prev, [key]: value })); }
 
@@ -121,7 +142,14 @@ export function CampaignTracksPage() {
     <section className="crud-page">
       <header className="crud-header">
         <div><p className="panel-kicker">Advertising</p><h2>Campaigns Tracks</h2></div>
-        <button className="primary-button" type="button" onClick={openAdd}>Add</button>
+        <div className="header-actions">
+          <label className="table-search">
+            <span>Search</span>
+            <input type="search" value={searchInput} onChange={(e) => setSearchInput(e.target.value)} />
+          </label>
+          <span className="log-total">{total.toLocaleString()} tracks</span>
+          <button className="primary-button" type="button" onClick={openAdd}>Add</button>
+        </div>
       </header>
 
       {error ? <div className="table-error">{error}</div> : null}
@@ -131,6 +159,12 @@ export function CampaignTracksPage() {
           onDelete={(row) => { setError(null); setDeleteTarget(row); }}
         />
       )}
+
+      <div className="pagination">
+        <button className="ghost-button" disabled={page <= 1} type="button" onClick={() => setPage((p) => p - 1)}>← Prev</button>
+        <span className="pagination-info">Page {page} of {totalPages} — {total.toLocaleString()} total</span>
+        <button className="ghost-button" disabled={page >= totalPages} type="button" onClick={() => setPage((p) => p + 1)}>Next →</button>
+      </div>
 
       {modal ? (
         <div className="modal-backdrop">

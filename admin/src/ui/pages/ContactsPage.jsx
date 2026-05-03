@@ -3,14 +3,16 @@ import { ConfirmDialog } from '../crud/ConfirmDialog.jsx';
 import { DataTable } from '../crud/DataTable.jsx';
 
 const COLS = [
-  { key: 'id',              label: 'ID',       width: '60px' },
+  { key: 'id',              label: 'ID',         width: '60px' },
   { key: 'advertiser_name', label: 'Advertiser', width: '160px' },
   { key: 'name',            label: 'Name' },
-  { key: 'role',            label: 'Role',     width: '120px' },
-  { key: 'phone',           label: 'Phone',    width: '120px' },
-  { key: 'email',           label: 'Email',    width: '180px' },
-  { key: 'primary_contact', label: 'Primary',  width: '75px' }
+  { key: 'role',            label: 'Role',        width: '120px' },
+  { key: 'phone',           label: 'Phone',       width: '120px' },
+  { key: 'email',           label: 'Email',       width: '180px' },
+  { key: 'primary_contact', label: 'Primary',     width: '75px' }
 ];
+
+const LIMIT = 50;
 
 function emptyForm() {
   return { advertiser_id: '', name: '', role: '', phone: '', email: '', primary_contact: false, notes: '' };
@@ -18,6 +20,10 @@ function emptyForm() {
 
 export function ContactsPage() {
   const [rows, setRows]               = useState([]);
+  const [total, setTotal]             = useState(0);
+  const [page, setPage]               = useState(1);
+  const [searchInput, setSearchInput] = useState('');
+  const [searchQuery, setSearchQuery] = useState('');
   const [advertisers, setAdvertisers] = useState([]);
   const [loading, setLoading]         = useState(true);
   const [error, setError]             = useState(null);
@@ -27,16 +33,29 @@ export function ContactsPage() {
   const [saving, setSaving]           = useState(false);
   const [deleteTarget, setDeleteTarget] = useState(null);
 
+  const totalPages = Math.max(1, Math.ceil(total / LIMIT));
+
   useEffect(() => {
-    Promise.all([fetchJson('/api/contacts'), fetchJson('/api/advertisers')])
-      .then(([c, a]) => { setRows(c.rows || []); setAdvertisers(a.rows || []); })
-      .catch((err) => setError(err.message))
-      .finally(() => setLoading(false));
+    fetchJson('/api/advertisers').then((a) => setAdvertisers(a.rows || [])).catch(() => {});
   }, []);
 
-  async function reload() {
-    const payload = await fetchJson('/api/contacts');
-    setRows(payload.rows || []);
+  useEffect(() => {
+    const timer = setTimeout(() => { setSearchQuery(searchInput.trim()); setPage(1); }, 250);
+    return () => clearTimeout(timer);
+  }, [searchInput]);
+
+  useEffect(() => { load(); }, [page, searchQuery]);
+
+  async function load() {
+    setLoading(true); setError(null);
+    try {
+      const params = new URLSearchParams({ page: String(page), limit: String(LIMIT) });
+      if (searchQuery) params.set('q', searchQuery);
+      const payload = await fetchJson(`/api/contacts?${params}`);
+      setRows(payload.rows || []);
+      setTotal(payload.total || 0);
+    } catch (err) { setError(err.message); }
+    finally { setLoading(false); }
   }
 
   function upd(key, value) { setForm((prev) => ({ ...prev, [key]: value })); }
@@ -67,7 +86,7 @@ export function ContactsPage() {
         body: JSON.stringify(form)
       });
       setModal(null);
-      await reload();
+      await load();
     } catch (err) { setFormError(err.message); }
     finally { setSaving(false); }
   }
@@ -77,7 +96,7 @@ export function ContactsPage() {
     try {
       await fetchJson(`/api/contacts/${deleteTarget.id}`, { method: 'DELETE' });
       setDeleteTarget(null);
-      await reload();
+      await load();
     } catch (err) { setError(err.message); setDeleteTarget(null); }
     finally { setSaving(false); }
   }
@@ -86,7 +105,14 @@ export function ContactsPage() {
     <section className="crud-page">
       <header className="crud-header">
         <div><p className="panel-kicker">Advertising</p><h2>Contacts</h2></div>
-        <button className="primary-button" type="button" onClick={openAdd}>Add</button>
+        <div className="header-actions">
+          <label className="table-search">
+            <span>Search</span>
+            <input type="search" value={searchInput} onChange={(e) => setSearchInput(e.target.value)} />
+          </label>
+          <span className="log-total">{total.toLocaleString()} contacts</span>
+          <button className="primary-button" type="button" onClick={openAdd}>Add</button>
+        </div>
       </header>
 
       {error ? <div className="table-error">{error}</div> : null}
@@ -96,6 +122,12 @@ export function ContactsPage() {
           onDelete={(row) => { setError(null); setDeleteTarget(row); }}
         />
       )}
+
+      <div className="pagination">
+        <button className="ghost-button" disabled={page <= 1} type="button" onClick={() => setPage((p) => p - 1)}>← Prev</button>
+        <span className="pagination-info">Page {page} of {totalPages} — {total.toLocaleString()} total</span>
+        <button className="ghost-button" disabled={page >= totalPages} type="button" onClick={() => setPage((p) => p + 1)}>Next →</button>
+      </div>
 
       {modal ? (
         <div className="modal-backdrop">

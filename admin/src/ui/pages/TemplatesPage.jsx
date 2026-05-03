@@ -196,6 +196,30 @@ export function TemplatesPage() {
     }
   }
 
+  async function duplicateSlot(row) {
+    if (!selectedTemplateId || saving) return;
+    setSaving(true);
+    setError(null);
+    try {
+      await fetchJson(`/api/templates/${selectedTemplateId}/slots`, {
+        method: 'POST',
+        body: JSON.stringify({
+          category_id:       row.category_id,
+          subcategory_id:    row.subcategory_id || null,
+          comment:           row.comment || '',
+          track_protection:  row.track_protection ?? 3600,
+          artist_protection: row.artist_protection ?? 3600,
+          insert_after_id:   row.id
+        })
+      });
+      await loadSlots(selectedTemplateId);
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setSaving(false);
+    }
+  }
+
   async function reorderSlots(nextRows) {
     if (!selectedTemplateId || orderingSlots) return;
 
@@ -295,10 +319,7 @@ export function TemplatesPage() {
                   aria-label="Add slot below"
                   className="ghost-button table-icon-button"
                   disabled={orderingSlots}
-                  onClick={(event) => {
-                    event.stopPropagation();
-                    openCreateSlot(row);
-                  }}
+                  onClick={(event) => { event.stopPropagation(); openCreateSlot(row); }}
                   title="Add below"
                   type="button"
                 >
@@ -308,10 +329,7 @@ export function TemplatesPage() {
                   aria-label="Move slot up"
                   className="ghost-button table-icon-button"
                   disabled={orderingSlots || index === 0}
-                  onClick={(event) => {
-                    event.stopPropagation();
-                    moveSlot(row, -1);
-                  }}
+                  onClick={(event) => { event.stopPropagation(); moveSlot(row, -1); }}
                   title="Move up"
                   type="button"
                 >
@@ -321,21 +339,28 @@ export function TemplatesPage() {
                   aria-label="Move slot down"
                   className="ghost-button table-icon-button"
                   disabled={orderingSlots || index === displaySlots.length - 1}
-                  onClick={(event) => {
-                    event.stopPropagation();
-                    moveSlot(row, 1);
-                  }}
+                  onClick={(event) => { event.stopPropagation(); moveSlot(row, 1); }}
                   title="Move down"
                   type="button"
                 >
                   <i className="bi bi-arrow-down" aria-hidden="true" />
                 </button>
+                <button
+                  aria-label="Duplicate slot"
+                  className="ghost-button table-icon-button"
+                  disabled={orderingSlots || saving}
+                  onClick={(event) => { event.stopPropagation(); duplicateSlot(row); }}
+                  title="Duplicate"
+                  type="button"
+                >
+                  <i className="bi bi-copy" aria-hidden="true" />
+                </button>
               </>
             )}
             reorderable
             rows={displaySlots}
-            onDelete={(row) => setDeleteTarget({ kind: 'slot', row })}
             onEdit={openEditSlot}
+            onDelete={(row) => setDeleteTarget({ kind: 'slot', row })}
           />
         )}
       </section>

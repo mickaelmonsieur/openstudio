@@ -14,9 +14,29 @@ const ADV_SEL = `
 `;
 const ADV_FROM = `FROM advertisers a LEFT JOIN sectors s ON s.id = a.sector_id`;
 
-export async function listAdvertisers(db) {
-  const { rows } = await db.query(`SELECT ${ADV_SEL} ${ADV_FROM} ORDER BY a.name`);
+export async function countAdvertisers(db, search = '') {
+  const { where, values } = advSearch(search);
+  const { rows } = await db.query(`SELECT COUNT(*)::integer AS total ${ADV_FROM} ${where}`, values);
+  return rows[0].total;
+}
+
+export async function listAdvertisers(db, { limit, offset, search = '' } = {}) {
+  const { where, values } = advSearch(search);
+  if (limit == null) {
+    const { rows } = await db.query(`SELECT ${ADV_SEL} ${ADV_FROM} ${where} ORDER BY a.name`, values);
+    return rows;
+  }
+  const { rows } = await db.query(
+    `SELECT ${ADV_SEL} ${ADV_FROM} ${where} ORDER BY a.name LIMIT $${values.length + 1} OFFSET $${values.length + 2}`,
+    [...values, limit, offset]
+  );
   return rows;
+}
+
+function advSearch(search) {
+  const q = String(search || '').trim();
+  if (!q) return { where: '', values: [] };
+  return { where: `WHERE a.name ILIKE $1 ESCAPE '\\'`, values: [`%${escapeLike(q)}%`] };
 }
 
 export async function getAdvertiser(db, id) {
@@ -56,9 +76,30 @@ const CON_SEL = `
 `;
 const CON_FROM = `FROM contacts c LEFT JOIN advertisers a ON a.id = c.advertiser_id`;
 
-export async function listContacts(db) {
-  const { rows } = await db.query(`SELECT ${CON_SEL} ${CON_FROM} ORDER BY a.name, c.name`);
+export async function countContacts(db, search = '') {
+  const { where, values } = conSearch(search);
+  const { rows } = await db.query(`SELECT COUNT(*)::integer AS total ${CON_FROM} ${where}`, values);
+  return rows[0].total;
+}
+
+export async function listContacts(db, { limit, offset, search = '' } = {}) {
+  const { where, values } = conSearch(search);
+  if (limit == null) {
+    const { rows } = await db.query(`SELECT ${CON_SEL} ${CON_FROM} ${where} ORDER BY a.name, c.name`, values);
+    return rows;
+  }
+  const { rows } = await db.query(
+    `SELECT ${CON_SEL} ${CON_FROM} ${where} ORDER BY a.name, c.name LIMIT $${values.length + 1} OFFSET $${values.length + 2}`,
+    [...values, limit, offset]
+  );
   return rows;
+}
+
+function conSearch(search) {
+  const q = String(search || '').trim();
+  if (!q) return { where: '', values: [] };
+  const p = `%${escapeLike(q)}%`;
+  return { where: `WHERE (c.name ILIKE $1 ESCAPE '\\' OR a.name ILIKE $1 ESCAPE '\\')`, values: [p] };
 }
 
 export async function getContact(db, id) {
@@ -106,9 +147,30 @@ const CMP_FROM = `
   LEFT JOIN stations    s ON s.id = cp.station_id
 `;
 
-export async function listCampaigns(db) {
-  const { rows } = await db.query(`SELECT ${CMP_SEL} ${CMP_FROM} ORDER BY a.name, cp.name`);
+export async function countCampaigns(db, search = '') {
+  const { where, values } = cmpSearch(search);
+  const { rows } = await db.query(`SELECT COUNT(*)::integer AS total ${CMP_FROM} ${where}`, values);
+  return rows[0].total;
+}
+
+export async function listCampaigns(db, { limit, offset, search = '' } = {}) {
+  const { where, values } = cmpSearch(search);
+  if (limit == null) {
+    const { rows } = await db.query(`SELECT ${CMP_SEL} ${CMP_FROM} ${where} ORDER BY a.name, cp.name`, values);
+    return rows;
+  }
+  const { rows } = await db.query(
+    `SELECT ${CMP_SEL} ${CMP_FROM} ${where} ORDER BY a.name, cp.name LIMIT $${values.length + 1} OFFSET $${values.length + 2}`,
+    [...values, limit, offset]
+  );
   return rows;
+}
+
+function cmpSearch(search) {
+  const q = String(search || '').trim();
+  if (!q) return { where: '', values: [] };
+  const p = `%${escapeLike(q)}%`;
+  return { where: `WHERE (cp.name ILIKE $1 ESCAPE '\\' OR a.name ILIKE $1 ESCAPE '\\')`, values: [p] };
 }
 
 export async function getCampaign(db, id) {
@@ -145,19 +207,49 @@ export async function deleteCampaign(db, id) {
 const CT_SEL = `
   ct.id, ct.campaign_id, ct.track_id, ct.position,
   cp.name AS campaign_name,
+  adv.name AS advertiser_name,
   ar.name || ' — ' || t.title AS track_display,
   t.title AS track_title, ar.name AS artist_name
 `;
 const CT_FROM = `
   FROM campaign_tracks ct
-  LEFT JOIN campaigns cp ON cp.id = ct.campaign_id
-  LEFT JOIN tracks t     ON t.id  = ct.track_id
-  LEFT JOIN artists ar   ON ar.id = t.artist_id
+  LEFT JOIN campaigns   cp  ON cp.id  = ct.campaign_id
+  LEFT JOIN advertisers adv ON adv.id = cp.advertiser_id
+  LEFT JOIN tracks      t   ON t.id   = ct.track_id
+  LEFT JOIN artists     ar  ON ar.id  = t.artist_id
 `;
 
-export async function listCampaignTracks(db) {
-  const { rows } = await db.query(`SELECT ${CT_SEL} ${CT_FROM} ORDER BY cp.name, ct.position`);
+export async function countCampaignTracks(db, search = '') {
+  const { where, values } = ctSearch(search);
+  const { rows } = await db.query(`SELECT COUNT(*)::integer AS total ${CT_FROM} ${where}`, values);
+  return rows[0].total;
+}
+
+export async function listCampaignTracks(db, { limit, offset, search = '' } = {}) {
+  const { where, values } = ctSearch(search);
+  if (limit == null) {
+    const { rows } = await db.query(`SELECT ${CT_SEL} ${CT_FROM} ${where} ORDER BY cp.name, ct.position`, values);
+    return rows;
+  }
+  const { rows } = await db.query(
+    `SELECT ${CT_SEL} ${CT_FROM} ${where} ORDER BY cp.name, ct.position LIMIT $${values.length + 1} OFFSET $${values.length + 2}`,
+    [...values, limit, offset]
+  );
   return rows;
+}
+
+function ctSearch(search) {
+  const q = String(search || '').trim();
+  if (!q) return { where: '', values: [] };
+  const p = `%${escapeLike(q)}%`;
+  return {
+    where: `WHERE (cp.name ILIKE $1 ESCAPE '\\' OR adv.name ILIKE $1 ESCAPE '\\' OR t.title ILIKE $1 ESCAPE '\\' OR ar.name ILIKE $1 ESCAPE '\\')`,
+    values: [p]
+  };
+}
+
+function escapeLike(value) {
+  return String(value).replace(/[\\%_]/g, '\\$&');
 }
 
 export async function getCampaignTrack(db, id) {

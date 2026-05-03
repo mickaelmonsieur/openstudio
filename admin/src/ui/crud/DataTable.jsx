@@ -87,24 +87,22 @@ export function DataTable({
                   {!isRowLocked?.(row) && (
                     <>
                       <button
-                        className="ghost-button"
-                        onClick={(event) => {
-                          event.stopPropagation();
-                          onEdit(row);
-                        }}
+                        aria-label="Edit"
+                        className="ghost-button table-icon-button"
+                        onClick={(event) => { event.stopPropagation(); onEdit(row); }}
+                        title="Edit"
                         type="button"
                       >
-                        Edit
+                        <i className="bi bi-pencil" aria-hidden="true" />
                       </button>
                       <button
-                        className="danger-button"
-                        onClick={(event) => {
-                          event.stopPropagation();
-                          onDelete(row);
-                        }}
+                        aria-label="Delete"
+                        className="danger-button table-icon-button"
+                        onClick={(event) => { event.stopPropagation(); onDelete(row); }}
+                        title="Delete"
                         type="button"
                       >
-                        Delete
+                        <i className="bi bi-trash" aria-hidden="true" />
                       </button>
                     </>
                   )}

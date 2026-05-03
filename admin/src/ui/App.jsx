@@ -251,18 +251,17 @@ export function App() {
 
     if (activeModule.path === '/tracks') {
       const cueMatch = currentPath.match(/^\/tracks\/cue\/(\d+)$/);
-      if (cueMatch) {
-        return (
-          <section className="content-panel wide-panel">
-            <CuePage trackId={cueMatch[1]} />
-          </section>
-        );
-      }
-
       return (
-        <section className="content-panel">
-          <TracksPage />
-        </section>
+        <>
+          <section className="content-panel" style={cueMatch ? { display: 'none' } : undefined}>
+            <TracksPage />
+          </section>
+          {cueMatch ? (
+            <section className="content-panel wide-panel">
+              <CuePage trackId={cueMatch[1]} />
+            </section>
+          ) : null}
+        </>
       );
     }
 

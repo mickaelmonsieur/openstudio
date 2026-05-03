@@ -11,12 +11,18 @@ const COLS = [
   { key: 'client_since',label: 'Since',   width: '100px' }
 ];
 
+const LIMIT = 50;
+
 function emptyForm() {
   return { name: '', sector_id: '', address: '', vat_number: '', notes: '', active: true, client_since: '' };
 }
 
 export function AdvertisersPage() {
   const [rows, setRows]         = useState([]);
+  const [total, setTotal]       = useState(0);
+  const [page, setPage]         = useState(1);
+  const [searchInput, setSearchInput]   = useState('');
+  const [searchQuery, setSearchQuery]   = useState('');
   const [sectors, setSectors]   = useState([]);
   const [loading, setLoading]   = useState(true);
   const [error, setError]       = useState(null);
@@ -26,16 +32,29 @@ export function AdvertisersPage() {
   const [saving, setSaving]     = useState(false);
   const [deleteTarget, setDeleteTarget] = useState(null);
 
+  const totalPages = Math.max(1, Math.ceil(total / LIMIT));
+
   useEffect(() => {
-    Promise.all([fetchJson('/api/advertisers'), fetchJson('/api/sectors')])
-      .then(([a, s]) => { setRows(a.rows || []); setSectors(s.rows || []); })
-      .catch((err) => setError(err.message))
-      .finally(() => setLoading(false));
+    fetchJson('/api/sectors').then((s) => setSectors(s.rows || [])).catch(() => {});
   }, []);
 
-  async function reload() {
-    const payload = await fetchJson('/api/advertisers');
-    setRows(payload.rows || []);
+  useEffect(() => {
+    const timer = setTimeout(() => { setSearchQuery(searchInput.trim()); setPage(1); }, 250);
+    return () => clearTimeout(timer);
+  }, [searchInput]);
+
+  useEffect(() => { load(); }, [page, searchQuery]);
+
+  async function load() {
+    setLoading(true); setError(null);
+    try {
+      const params = new URLSearchParams({ page: String(page), limit: String(LIMIT) });
+      if (searchQuery) params.set('q', searchQuery);
+      const payload = await fetchJson(`/api/advertisers?${params}`);
+      setRows(payload.rows || []);
+      setTotal(payload.total || 0);
+    } catch (err) { setError(err.message); }
+    finally { setLoading(false); }
   }
 
   function upd(key, value) { setForm((prev) => ({ ...prev, [key]: value })); }
@@ -66,7 +85,7 @@ export function AdvertisersPage() {
         body: JSON.stringify(form)
       });
       setModal(null);
-      await reload();
+      await load();
     } catch (err) { setFormError(err.message); }
     finally { setSaving(false); }
   }
@@ -76,7 +95,7 @@ export function AdvertisersPage() {
     try {
       await fetchJson(`/api/advertisers/${deleteTarget.id}`, { method: 'DELETE' });
       setDeleteTarget(null);
-      await reload();
+      await load();
     } catch (err) { setError(err.message); setDeleteTarget(null); }
     finally { setSaving(false); }
   }
@@ -85,7 +104,14 @@ export function AdvertisersPage() {
     <section className="crud-page">
       <header className="crud-header">
         <div><p className="panel-kicker">Advertising</p><h2>Advertisers</h2></div>
-        <button className="primary-button" type="button" onClick={openAdd}>Add</button>
+        <div className="header-actions">
+          <label className="table-search">
+            <span>Search</span>
+            <input type="search" value={searchInput} onChange={(e) => setSearchInput(e.target.value)} />
+          </label>
+          <span className="log-total">{total.toLocaleString()} advertisers</span>
+          <button className="primary-button" type="button" onClick={openAdd}>Add</button>
+        </div>
       </header>
 
       {error ? <div className="table-error">{error}</div> : null}
@@ -95,6 +121,12 @@ export function AdvertisersPage() {
           onDelete={(row) => { setError(null); setDeleteTarget(row); }}
         />
       )}
+
+      <div className="pagination">
+        <button className="ghost-button" disabled={page <= 1} type="button" onClick={() => setPage((p) => p - 1)}>← Prev</button>
+        <span className="pagination-info">Page {page} of {totalPages} — {total.toLocaleString()} total</span>
+        <button className="ghost-button" disabled={page >= totalPages} type="button" onClick={() => setPage((p) => p + 1)}>Next →</button>
+      </div>
 
       {modal ? (
         <div className="modal-backdrop">

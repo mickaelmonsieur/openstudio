@@ -92,7 +92,7 @@ export function CuePage({ trackId }) {
           <p className="panel-kicker">Cue Editor</p>
           <h2>{waveform ? trackTitle(waveform.track) : `Track #${trackId}`}</h2>
         </div>
-        <a className="ghost-button" href="/tracks">Back</a>
+        <button className="ghost-button" type="button" onClick={() => window.history.back()}>Back</button>
       </header>
 
       {error ? <div className="table-error">{error}</div> : null}
