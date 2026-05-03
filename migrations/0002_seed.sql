@@ -103,8 +103,8 @@ INSERT INTO formats (id, name) OVERRIDING SYSTEM VALUE VALUES
     (4, 'WEEKEND-80');
 SELECT setval('formats_id_seq', 4);
 
-INSERT INTO stations (id, name) OVERRIDING SYSTEM VALUE VALUES
-    (1, 'DEMO');
+INSERT INTO stations (id, name, library_path) OVERRIDING SYSTEM VALUE VALUES
+    (1, 'DEMO', '/Users/Shared/OpenStudio/Library/demo');
 SELECT setval('stations_id_seq', 1);
 
 INSERT INTO categories (id, name) OVERRIDING SYSTEM VALUE VALUES

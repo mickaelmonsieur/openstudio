@@ -4,14 +4,14 @@ import { randomUUID } from 'node:crypto';
 import { withDatabase } from '../db/client.js';
 import { createTrack, trackExistsByPath } from '../repositories/tracks.js';
 import { buildFlacTrackDraft } from './import-flac.js';
+import { defaultLibraryRoot } from '../lib/platform.js';
 
-const DATABASE_DIR = '/Users/mickael/Music/Database';
 const MAX_TREE_DEPTH = 4;
 const MAX_MESSAGES = 40;
 const jobs = new Map();
 
 export function databaseRoot() {
-  return DATABASE_DIR;
+  return defaultLibraryRoot();
 }
 
 export async function listDatabaseFolders(folderPath = '') {

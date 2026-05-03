@@ -1,6 +1,8 @@
+const COLUMNS = 'id, name, library_path';
+
 export async function listStations(db) {
   const { rows } = await db.query(`
-    SELECT id, name
+    SELECT ${COLUMNS}
     FROM stations
     ORDER BY name
   `);
@@ -10,11 +12,7 @@ export async function listStations(db) {
 
 export async function getStation(db, id) {
   const { rows } = await db.query(
-    `
-    SELECT id, name
-    FROM stations
-    WHERE id = $1
-    `,
+    `SELECT ${COLUMNS} FROM stations WHERE id = $1`,
     [id]
   );
 
@@ -24,11 +22,11 @@ export async function getStation(db, id) {
 export async function createStation(db, data) {
   const { rows } = await db.query(
     `
-    INSERT INTO stations (name)
-    VALUES ($1)
-    RETURNING id, name
+    INSERT INTO stations (name, library_path)
+    VALUES ($1, $2)
+    RETURNING ${COLUMNS}
     `,
-    [data.name.trim()]
+    [data.name.trim(), data.library_path.trim()]
   );
 
   return rows[0];
@@ -38,11 +36,12 @@ export async function updateStation(db, id, data) {
   const { rows } = await db.query(
     `
     UPDATE stations
-    SET name = $2
+    SET name         = $2,
+        library_path = $3
     WHERE id = $1
-    RETURNING id, name
+    RETURNING ${COLUMNS}
     `,
-    [id, data.name.trim()]
+    [id, data.name.trim(), data.library_path.trim()]
   );
 
   return rows[0] || null;
@@ -50,10 +49,7 @@ export async function updateStation(db, id, data) {
 
 export async function deleteStation(db, id) {
   const { rowCount } = await db.query(
-    `
-    DELETE FROM stations
-    WHERE id = $1
-    `,
+    'DELETE FROM stations WHERE id = $1',
     [id]
   );
 

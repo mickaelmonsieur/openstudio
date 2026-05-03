@@ -20,8 +20,10 @@ CREATE TABLE artists (
 );
 
 CREATE TABLE stations (
-    id   INTEGER     GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
-    name VARCHAR(64) NOT NULL
+    id           INTEGER      GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+    name         VARCHAR(64)  NOT NULL,
+    library_path VARCHAR(255) NOT NULL DEFAULT '',
+    CONSTRAINT uq_stations_name UNIQUE (name)
 );
 
 CREATE TABLE genres (

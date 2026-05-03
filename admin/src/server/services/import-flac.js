@@ -3,20 +3,22 @@ import path from 'node:path';
 import { parseFile } from 'music-metadata';
 import { findOrCreateArtist } from '../repositories/artists.js';
 import { findGenreByName } from '../repositories/tracks.js';
-
-const DATABASE_DIR = '/Users/mickael/Music/Database';
+import { defaultLibraryRoot } from '../lib/platform.js';
 
 export async function importFlacTrack(db, file) {
   if (!file?.path || !file?.originalname) {
     throw new Error('No file was uploaded.');
   }
 
-  if (path.extname(file.originalname).toLowerCase() !== '.flac') {
+  // multer decodes the multipart filename as Latin-1; re-interpret the bytes as UTF-8
+  const originalname = Buffer.from(file.originalname, 'latin1').toString('utf8');
+
+  if (path.extname(originalname).toLowerCase() !== '.flac') {
     throw new Error('Only .flac files can be imported.');
   }
 
-  const draft = await buildFlacTrackDraft(db, file.path, file.originalname);
-  const importedPath = await copyIntoDatabase(file.path, file.originalname);
+  const draft = await buildFlacTrackDraft(db, file.path, originalname);
+  const importedPath = await copyIntoDatabase(file.path, originalname);
 
   return {
     ...draft,
@@ -67,6 +69,7 @@ function assertFlacMetadata(metadata) {
 }
 
 async function copyIntoDatabase(sourcePath, originalName) {
+  const DATABASE_DIR = defaultLibraryRoot();
   await fs.mkdir(DATABASE_DIR, { recursive: true });
   const destination = await uniqueDestination(originalName);
   await fs.copyFile(sourcePath, destination);
@@ -75,6 +78,7 @@ async function copyIntoDatabase(sourcePath, originalName) {
 }
 
 async function uniqueDestination(originalName) {
+  const DATABASE_DIR = defaultLibraryRoot();
   const parsed = path.parse(safeFileName(originalName));
   const base = parsed.name || 'track';
   const ext = parsed.ext || '.flac';
@@ -93,7 +97,32 @@ async function uniqueDestination(originalName) {
 }
 
 function safeFileName(name) {
-  return path.basename(name).replace(/[/:*?"<>|]/g, '-').trim() || 'track.flac';
+  // Replace slashes before basename so "AC/DC" is not split into a directory
+  const bare = path.basename(name.replace(/\//g, '_'));
+  const extIndex = bare.lastIndexOf('.');
+  const rawBase = extIndex > 0 ? bare.slice(0, extIndex) : bare;
+  const ext = (extIndex > 0 ? bare.slice(extIndex) : '.flac').toLowerCase();
+
+  const base = rawBase
+    // Ligatures first (NFD won't split these)
+    .replace(/œ/g, 'oe').replace(/Œ/g, 'Oe')
+    .replace(/æ/g, 'ae').replace(/Æ/g, 'Ae')
+    .replace(/ß/g, 'ss')
+    // Strip diacritics (é→e, ü→u, ñ→n…)
+    .normalize('NFD')
+    .replace(/[̀-ͯ]/g, '')
+    // Drop any remaining non-ASCII
+    .replace(/[^\x00-\x7F]/g, '')
+    // Spaces and slashes → underscore
+    .replace(/[\s/]+/g, '_')
+    // Keep only safe chars
+    .replace(/[^a-zA-Z0-9_\-]/g, '')
+    // Cleanup
+    .replace(/_{2,}/g, '_')
+    .replace(/^_+|_+$/g, '')
+    || 'track';
+
+  return `${base}${ext}`;
 }
 
 function stripExtension(name) {

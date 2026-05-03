@@ -4,6 +4,7 @@ import { CategoryPage } from './pages/CategoryPage.jsx';
 import { artistsResource } from './resources/artists.js';
 import { stationsResource } from './resources/stations.js';
 import { usersResource } from './resources/users.js';
+import { StationsPage } from './pages/StationsPage.jsx';
 import { TracksPage } from './pages/TracksPage.jsx';
 import { CuePage } from './pages/CuePage.jsx';
 import { LogPage } from './pages/LogPage.jsx';
@@ -154,7 +155,7 @@ export function App() {
     if (activeModule.path === '/stations') {
       return (
         <section className="content-panel">
-          <CrudPage resource={stationsResource} />
+          <StationsPage />
         </section>
       );
     }

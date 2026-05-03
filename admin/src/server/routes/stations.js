@@ -1,3 +1,4 @@
+import fs from 'node:fs/promises';
 import { withDatabase } from '../db/client.js';
 import {
   createStation,
@@ -6,6 +7,7 @@ import {
   listStations,
   updateStation
 } from '../repositories/stations.js';
+import { suggestStationPath } from '../lib/platform.js';
 
 function parseId(value) {
   const id = Number(value);
@@ -17,12 +19,20 @@ function validateStation(data) {
   if (!name) {
     return { ok: false, error: 'Name is required.' };
   }
-
   if (name.length > 64) {
     return { ok: false, error: 'Name must be 64 characters or less.' };
   }
 
-  return { ok: true, value: { name } };
+  const library_path = String(data?.library_path || '').trim();
+  if (!library_path) {
+    return { ok: false, error: 'Library path is required.' };
+  }
+
+  return { ok: true, value: { name, library_path } };
+}
+
+async function ensureDirectory(dirPath) {
+  await fs.mkdir(dirPath, { recursive: true });
 }
 
 function asyncRoute(handler) {
@@ -30,14 +40,18 @@ function asyncRoute(handler) {
     try {
       await handler(req, res);
     } catch (error) {
-      res.status(500).json({
-        error: error.message
-      });
+      res.status(500).json({ error: error.message });
     }
   };
 }
 
 export function registerStationRoutes(app, getDatabaseConfig) {
+  // Must be before /:id to avoid "suggest-path" being parsed as an id
+  app.get('/api/stations/suggest-path', asyncRoute(async (req, res) => {
+    const name = String(req.query.name || '').trim();
+    res.json({ path: suggestStationPath(name) });
+  }));
+
   app.get('/api/stations', asyncRoute(async (_req, res) => {
     const rows = await withDatabase(getDatabaseConfig(), listStations);
     res.json({ rows });
@@ -66,6 +80,7 @@ export function registerStationRoutes(app, getDatabaseConfig) {
       return;
     }
 
+    await ensureDirectory(station.value.library_path);
     const row = await withDatabase(getDatabaseConfig(), (db) =>
       createStation(db, station.value)
     );
@@ -85,6 +100,7 @@ export function registerStationRoutes(app, getDatabaseConfig) {
       return;
     }
 
+    await ensureDirectory(station.value.library_path);
     const row = await withDatabase(getDatabaseConfig(), (db) =>
       updateStation(db, id, station.value)
     );
