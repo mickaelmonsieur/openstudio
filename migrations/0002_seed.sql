@@ -182,9 +182,6 @@ INSERT INTO tracks (
 SELECT setval('tracks_id_seq', 14);
 
 INSERT INTO template_slots (id, template_id, category_id, subcategory_id, comment, track_protection, artist_protection) OVERRIDING SYSTEM VALUE VALUES
-    (1,   1, 8, NULL, 'PUB',                           600,    0),
-    (2,   2, 7, NULL, 'TOP HORAIRE',                   600,    0),
-    (3,   3, 2, NULL, 'SEMAINE',                      9000, 3600),
     (4,   3, 2,   12, '1ER DISQUE',                   9000, 3600),
     (5,   3, 2,   13, '2EME DISQUE (Annees 2000)',     9000, 3600),
     (6,   3, 1,   14, 'RETOUR PUB',                    600,    0),
@@ -213,7 +210,7 @@ INSERT INTO template_slots (id, template_id, category_id, subcategory_id, commen
     (29,  3, 2,   17, 'CD SECOURS',                   9000, 3600),
     (30,  3, 2,   18, 'CD SECOURS',                   9000, 3600),
     (31,  3, 2,   19, 'CD SECOURS',                   9000, 3600),
-    (32,  2, 7, NULL, 'Top H',                          600,  600),
+    (32,  2, 7, NULL, 'Top Horaire',                          600,  600),
     (33,  1, 4, NULL, 'Pub In',                         600,  600),
     (34,  1, 8, NULL, 'ECRAN PUB',                      600,  600),
     (35,  1, 5, NULL, 'Pub Out',                        600,  600);
@@ -324,8 +321,7 @@ INSERT INTO clock_events (id, hour, minute, second, template_id, priority, durat
     (116,22, 47,  0, 1, 0, 60),
     (117,23,  5,  0, 1, 0, 60),
     (118,23, 27,  0, 1, 0, 60),
-    (120,23, 47,  0, 1, 0, 60),
-    (121, 0,  0,  0, NULL, 0, 0);
+    (120,23, 47,  0, 1, 0, 60);
 SELECT setval('clock_events_id_seq', 121);
 
 INSERT INTO schedules (id, from_hour, to_hour, monday, tuesday, wednesday, thursday, friday, saturday, sunday, template_id) OVERRIDING SYSTEM VALUE VALUES
