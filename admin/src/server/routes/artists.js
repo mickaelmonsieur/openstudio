@@ -1,11 +1,20 @@
 import { withDatabase } from '../db/client.js';
 import {
+  countArtists,
   createArtist,
   deleteArtist,
   getArtist,
   listArtists,
   updateArtist
 } from '../repositories/artists.js';
+
+const LIMIT = 100;
+
+function parsePagination(query) {
+  const page  = Math.max(1, parseInt(query.page  || 1, 10) || 1);
+  const limit = Math.min(500, Math.max(1, parseInt(query.limit || LIMIT, 10) || LIMIT));
+  return { page, limit, offset: (page - 1) * limit };
+}
 
 function parseId(value) {
   const id = Number(value);
@@ -43,9 +52,12 @@ function asyncRoute(handler) {
 
 export function registerArtistRoutes(app, getDatabaseConfig) {
   app.get('/api/artists', asyncRoute(async (req, res) => {
+    const { page, limit, offset } = parsePagination(req.query);
     const search = parseSearch(req.query);
-    const rows = await withDatabase(getDatabaseConfig(), (db) => listArtists(db, search));
-    res.json({ rows, q: search });
+    const [total, rows] = await withDatabase(getDatabaseConfig(), (db) =>
+      Promise.all([countArtists(db, search), listArtists(db, search, { limit, offset })])
+    );
+    res.json({ rows, total, page, limit, q: search });
   }));
 
   app.get('/api/artists/:id', asyncRoute(async (req, res) => {

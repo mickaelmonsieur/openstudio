@@ -8,5 +8,3 @@
   Params : -25dBm, 200ms. 
 
 * Artists, Tracks, remove Id from Table.
-
-* To Stations, Artists, Schedule, Events, Users add pagination.

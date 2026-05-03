@@ -1,18 +1,22 @@
-export async function listArtists(db, search = '') {
+export async function countArtists(db, search = '') {
   const { where, values } = buildSearchWhere(search);
-  const { rows } = await db.query(
-    `
-    SELECT
-      id,
-      name,
-      to_char(last_broadcast_at, 'YYYY-MM-DD HH24:MI:SS') AS last_broadcast_at
-    FROM artists
-    ${where}
-    ORDER BY name
-    `,
-    values
-  );
+  const { rows } = await db.query(`SELECT COUNT(*)::integer AS total FROM artists ${where}`, values);
+  return rows[0].total;
+}
 
+export async function listArtists(db, search = '', { limit, offset } = {}) {
+  const { where, values } = buildSearchWhere(search);
+  if (limit == null) {
+    const { rows } = await db.query(
+      `SELECT id, name, to_char(last_broadcast_at, 'YYYY-MM-DD HH24:MI:SS') AS last_broadcast_at FROM artists ${where} ORDER BY name`,
+      values
+    );
+    return rows;
+  }
+  const { rows } = await db.query(
+    `SELECT id, name, to_char(last_broadcast_at, 'YYYY-MM-DD HH24:MI:SS') AS last_broadcast_at FROM artists ${where} ORDER BY name LIMIT $${values.length + 1} OFFSET $${values.length + 2}`,
+    [...values, limit, offset]
+  );
   return rows;
 }
 

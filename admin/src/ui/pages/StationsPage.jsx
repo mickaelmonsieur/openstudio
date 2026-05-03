@@ -1,8 +1,12 @@
 import { useEffect, useRef, useState } from 'react';
 import { ConfirmDialog } from '../crud/ConfirmDialog.jsx';
 
+const LIMIT = 50;
+
 export function StationsPage() {
   const [rows, setRows] = useState([]);
+  const [total, setTotal] = useState(0);
+  const [page, setPage] = useState(1);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [modal, setModal] = useState(null); // { mode: 'create'|'edit', row: null|{} }
@@ -11,14 +15,18 @@ export function StationsPage() {
   const [deleteTarget, setDeleteTarget] = useState(null);
   const [deleting, setDeleting] = useState(false);
 
-  useEffect(() => { loadStations(); }, []);
+  const totalPages = Math.max(1, Math.ceil(total / LIMIT));
+
+  useEffect(() => { loadStations(); }, [page]); // eslint-disable-line react-hooks/exhaustive-deps
 
   async function loadStations() {
     setLoading(true);
     setError(null);
     try {
-      const payload = await fetchJson('/api/stations');
+      const params = new URLSearchParams({ page: String(page), limit: String(LIMIT) });
+      const payload = await fetchJson(`/api/stations?${params}`);
       setRows(payload.rows || []);
+      setTotal(payload.total || 0);
     } catch (err) {
       setError(err.message);
     } finally {
@@ -99,15 +107,19 @@ export function StationsPage() {
                     <td><code className="path-cell">{row.library_path || '—'}</code></td>
                     <td className="row-actions">
                       <button
-                        className="ghost-button"
+                        aria-label="Edit"
+                        className="ghost-button table-icon-button"
+                        title="Edit"
                         type="button"
                         onClick={() => { setFormError(null); setModal({ mode: 'edit', row }); }}
-                      >Edit</button>
+                      ><i aria-hidden="true" className="bi bi-pencil" /></button>
                       <button
-                        className="danger-button"
+                        aria-label="Delete"
+                        className="danger-button table-icon-button"
+                        title="Delete"
                         type="button"
                         onClick={() => { setError(null); setDeleteTarget(row); }}
-                      >Delete</button>
+                      ><i aria-hidden="true" className="bi bi-trash" /></button>
                     </td>
                   </tr>
                 ))
@@ -116,6 +128,12 @@ export function StationsPage() {
           </table>
         </div>
       )}
+
+      <div className="pagination">
+        <button className="ghost-button" disabled={page <= 1} type="button" onClick={() => setPage((p) => p - 1)}>← Prev</button>
+        <span className="pagination-info">Page {page} of {totalPages} — {total.toLocaleString()} total</span>
+        <button className="ghost-button" disabled={page >= totalPages} type="button" onClick={() => setPage((p) => p + 1)}>Next →</button>
+      </div>
 
       {modal ? (
         <StationFormModal

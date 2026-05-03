@@ -1,12 +1,21 @@
 import fs from 'node:fs/promises';
 import { withDatabase } from '../db/client.js';
 import {
+  countStations,
   createStation,
   deleteStation,
   getStation,
   listStations,
   updateStation
 } from '../repositories/stations.js';
+
+const LIMIT = 50;
+
+function parsePagination(query) {
+  const page  = Math.max(1, parseInt(query.page  || 1, 10) || 1);
+  const limit = Math.min(200, Math.max(1, parseInt(query.limit || LIMIT, 10) || LIMIT));
+  return { page, limit, offset: (page - 1) * limit };
+}
 import { suggestStationPath } from '../lib/platform.js';
 
 function parseId(value) {
@@ -52,9 +61,12 @@ export function registerStationRoutes(app, getDatabaseConfig) {
     res.json({ path: suggestStationPath(name) });
   }));
 
-  app.get('/api/stations', asyncRoute(async (_req, res) => {
-    const rows = await withDatabase(getDatabaseConfig(), listStations);
-    res.json({ rows });
+  app.get('/api/stations', asyncRoute(async (req, res) => {
+    const { page, limit, offset } = parsePagination(req.query);
+    const [total, rows] = await withDatabase(getDatabaseConfig(), (db) =>
+      Promise.all([countStations(db), listStations(db, { limit, offset })])
+    );
+    res.json({ rows, total, page, limit });
   }));
 
   app.get('/api/stations/:id', asyncRoute(async (req, res) => {

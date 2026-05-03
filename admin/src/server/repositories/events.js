@@ -14,12 +14,20 @@ const FROM_JOIN = `
   LEFT JOIN templates t ON t.id = ce.template_id
 `;
 
-export async function listEvents(db) {
-  const { rows } = await db.query(`
-    SELECT ${SELECT_COLS}
-    ${FROM_JOIN}
-    ORDER BY ce.hour, ce.minute, ce.second, ce.priority, ce.id
-  `);
+export async function countEvents(db) {
+  const { rows } = await db.query(`SELECT COUNT(*)::integer AS total ${FROM_JOIN}`);
+  return rows[0].total;
+}
+
+export async function listEvents(db, { limit, offset } = {}) {
+  if (limit == null) {
+    const { rows } = await db.query(`SELECT ${SELECT_COLS} ${FROM_JOIN} ORDER BY ce.hour, ce.minute, ce.second, ce.priority, ce.id`);
+    return rows;
+  }
+  const { rows } = await db.query(
+    `SELECT ${SELECT_COLS} ${FROM_JOIN} ORDER BY ce.hour, ce.minute, ce.second, ce.priority, ce.id LIMIT $1 OFFSET $2`,
+    [limit, offset]
+  );
   return rows;
 }
 

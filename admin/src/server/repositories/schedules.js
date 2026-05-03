@@ -18,12 +18,20 @@ const FROM_JOIN = `
   LEFT JOIN templates t ON t.id = s.template_id
 `;
 
-export async function listSchedules(db) {
-  const { rows } = await db.query(`
-    SELECT ${SELECT_COLS}
-    ${FROM_JOIN}
-    ORDER BY s.from_hour, s.to_hour, s.id
-  `);
+export async function countSchedules(db) {
+  const { rows } = await db.query(`SELECT COUNT(*)::integer AS total ${FROM_JOIN}`);
+  return rows[0].total;
+}
+
+export async function listSchedules(db, { limit, offset } = {}) {
+  if (limit == null) {
+    const { rows } = await db.query(`SELECT ${SELECT_COLS} ${FROM_JOIN} ORDER BY s.from_hour, s.to_hour, s.id`);
+    return rows;
+  }
+  const { rows } = await db.query(
+    `SELECT ${SELECT_COLS} ${FROM_JOIN} ORDER BY s.from_hour, s.to_hour, s.id LIMIT $1 OFFSET $2`,
+    [limit, offset]
+  );
   return rows;
 }
 

@@ -1,12 +1,19 @@
 const COLUMNS = 'id, name, library_path';
 
-export async function listStations(db) {
-  const { rows } = await db.query(`
-    SELECT ${COLUMNS}
-    FROM stations
-    ORDER BY name
-  `);
+export async function countStations(db) {
+  const { rows } = await db.query('SELECT COUNT(*)::integer AS total FROM stations');
+  return rows[0].total;
+}
 
+export async function listStations(db, { limit, offset } = {}) {
+  if (limit == null) {
+    const { rows } = await db.query(`SELECT ${COLUMNS} FROM stations ORDER BY name`);
+    return rows;
+  }
+  const { rows } = await db.query(
+    `SELECT ${COLUMNS} FROM stations ORDER BY name LIMIT $1 OFFSET $2`,
+    [limit, offset]
+  );
   return rows;
 }
 

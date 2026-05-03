@@ -1,11 +1,20 @@
 import { withDatabase } from '../db/client.js';
 import {
+  countEvents,
   createEvent,
   deleteEvent,
   listEvents,
   updateEvent
 } from '../repositories/events.js';
 import { listTemplates } from '../repositories/formats.js';
+
+const LIMIT = 50;
+
+function parsePagination(query) {
+  const page  = Math.max(1, parseInt(query.page  || 1, 10) || 1);
+  const limit = Math.min(200, Math.max(1, parseInt(query.limit || LIMIT, 10) || LIMIT));
+  return { page, limit, offset: (page - 1) * limit };
+}
 
 function parseId(value) {
   const id = Number(value);
@@ -60,9 +69,12 @@ export function registerEventRoutes(app, getDatabaseConfig) {
     res.json({ templates });
   }));
 
-  app.get('/api/events', asyncRoute(async (_req, res) => {
-    const rows = await withDatabase(getDatabaseConfig(), (db) => listEvents(db));
-    res.json({ rows });
+  app.get('/api/events', asyncRoute(async (req, res) => {
+    const { page, limit, offset } = parsePagination(req.query);
+    const [total, rows] = await withDatabase(getDatabaseConfig(), (db) =>
+      Promise.all([countEvents(db), listEvents(db, { limit, offset })])
+    );
+    res.json({ rows, total, page, limit });
   }));
 
   app.post('/api/events', asyncRoute(async (req, res) => {

@@ -3,8 +3,12 @@ import { ConfirmDialog } from './ConfirmDialog.jsx';
 import { CrudFormModal } from './CrudFormModal.jsx';
 import { DataTable } from './DataTable.jsx';
 
+const LIMIT = 100;
+
 export function CrudPage({ resource }) {
   const [rows, setRows] = useState([]);
+  const [total, setTotal] = useState(0);
+  const [page, setPage] = useState(1);
   const [searchInput, setSearchInput] = useState('');
   const [searchQuery, setSearchQuery] = useState('');
   const [loading, setLoading] = useState(true);
@@ -14,17 +18,18 @@ export function CrudPage({ resource }) {
   const [formError, setFormError] = useState(null);
   const [deleteTarget, setDeleteTarget] = useState(null);
 
+  const totalPages = Math.max(1, Math.ceil(total / LIMIT));
+
   useEffect(() => {
     loadRows();
-  }, [resource.endpoint, searchQuery]);
+  }, [resource.endpoint, page, searchQuery]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
     if (!resource.searchable) return undefined;
-
     const timer = setTimeout(() => {
       setSearchQuery(searchInput.trim());
+      setPage(1);
     }, 250);
-
     return () => clearTimeout(timer);
   }, [resource.searchable, searchInput]);
 
@@ -32,14 +37,12 @@ export function CrudPage({ resource }) {
     setLoading(true);
     setError(null);
     try {
-      const params = new URLSearchParams();
+      const params = new URLSearchParams({ page: String(page), limit: String(LIMIT) });
       if (resource.searchable && searchQuery) params.set('q', searchQuery);
-      const url = params.toString()
-        ? `${resource.endpoint}?${params.toString()}`
-        : resource.endpoint;
-      const response = await fetch(url);
+      const response = await fetch(`${resource.endpoint}?${params.toString()}`);
       const payload = await readJsonResponse(response);
       setRows(payload.rows || []);
+      setTotal(payload.total || 0);
     } catch (loadError) {
       setError(loadError.message);
     } finally {
@@ -149,13 +152,20 @@ export function CrudPage({ resource }) {
       {loading ? (
         <div className="table-loading">Loading...</div>
       ) : (
-        <DataTable
-          columns={resource.columns}
-          primaryKey={resource.primaryKey}
-          rows={rows}
-          onDelete={setDeleteTarget}
-          onEdit={(row) => setModal({ mode: 'edit', row })}
-        />
+        <>
+          <DataTable
+            columns={resource.columns}
+            primaryKey={resource.primaryKey}
+            rows={rows}
+            onDelete={setDeleteTarget}
+            onEdit={(row) => setModal({ mode: 'edit', row })}
+          />
+          <div className="pagination">
+            <button className="ghost-button" disabled={page <= 1} type="button" onClick={() => setPage((p) => p - 1)}>← Prev</button>
+            <span className="pagination-info">Page {page} of {totalPages} — {total.toLocaleString()} total</span>
+            <button className="ghost-button" disabled={page >= totalPages} type="button" onClick={() => setPage((p) => p + 1)}>Next →</button>
+          </div>
+        </>
       )}
 
       {modal ? (

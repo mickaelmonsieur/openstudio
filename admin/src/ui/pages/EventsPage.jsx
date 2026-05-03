@@ -12,9 +12,13 @@ function emptyForm() {
   };
 }
 
+const LIMIT = 50;
+
 export function EventsPage() {
   const [rows, setRows] = useState([]);
   const [templates, setTemplates] = useState([]);
+  const [total, setTotal] = useState(0);
+  const [page, setPage] = useState(1);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [modal, setModal] = useState(null);
@@ -23,17 +27,21 @@ export function EventsPage() {
   const [saving, setSaving] = useState(false);
   const [deleteTarget, setDeleteTarget] = useState(null);
 
-  useEffect(() => { load(); }, []);
+  const totalPages = Math.max(1, Math.ceil(total / LIMIT));
+
+  useEffect(() => { load(); }, [page]); // eslint-disable-line react-hooks/exhaustive-deps
 
   async function load() {
     setLoading(true);
     setError(null);
     try {
+      const params = new URLSearchParams({ page: String(page), limit: String(LIMIT) });
       const [eventsPayload, optionsPayload] = await Promise.all([
-        fetchJson('/api/events'),
+        fetchJson(`/api/events?${params}`),
         fetchJson('/api/events/options')
       ]);
       setRows(eventsPayload.rows || []);
+      setTotal(eventsPayload.total || 0);
       setTemplates(optionsPayload.templates || []);
     } catch (err) {
       setError(err.message);
@@ -138,8 +146,8 @@ export function EventsPage() {
                   <td>{row.priority ?? 0}</td>
                   <td>{formatDuration(row.duration)}</td>
                   <td className="row-actions">
-                    <button className="ghost-button" type="button" onClick={() => openEdit(row)}>Edit</button>
-                    <button className="danger-button" type="button" onClick={() => { setError(null); setDeleteTarget(row); }}>Delete</button>
+                    <button aria-label="Edit" className="ghost-button table-icon-button" title="Edit" type="button" onClick={() => openEdit(row)}><i aria-hidden="true" className="bi bi-pencil" /></button>
+                    <button aria-label="Delete" className="danger-button table-icon-button" title="Delete" type="button" onClick={() => { setError(null); setDeleteTarget(row); }}><i aria-hidden="true" className="bi bi-trash" /></button>
                   </td>
                 </tr>
               ))}
@@ -147,6 +155,12 @@ export function EventsPage() {
           </table>
         </div>
       )}
+
+      <div className="pagination">
+        <button className="ghost-button" disabled={page <= 1} type="button" onClick={() => setPage((p) => p - 1)}>← Prev</button>
+        <span className="pagination-info">Page {page} of {totalPages} — {total.toLocaleString()} total</span>
+        <button className="ghost-button" disabled={page >= totalPages} type="button" onClick={() => setPage((p) => p + 1)}>Next →</button>
+      </div>
 
       {modal ? (
         <div className="modal-backdrop">

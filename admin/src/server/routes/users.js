@@ -1,11 +1,20 @@
 import { withDatabase } from '../db/client.js';
 import {
+  countUsers,
   createUser,
   deleteUser,
   getUser,
   listUsers,
   updateUser
 } from '../repositories/users.js';
+
+const LIMIT = 50;
+
+function parsePagination(query) {
+  const page  = Math.max(1, parseInt(query.page  || 1, 10) || 1);
+  const limit = Math.min(200, Math.max(1, parseInt(query.limit || LIMIT, 10) || LIMIT));
+  return { page, limit, offset: (page - 1) * limit };
+}
 
 function parseId(value) {
   const id = Number(value);
@@ -47,9 +56,12 @@ function asyncRoute(handler) {
 }
 
 export function registerUserRoutes(app, getDatabaseConfig) {
-  app.get('/api/users', asyncRoute(async (_req, res) => {
-    const rows = await withDatabase(getDatabaseConfig(), listUsers);
-    res.json({ rows });
+  app.get('/api/users', asyncRoute(async (req, res) => {
+    const { page, limit, offset } = parsePagination(req.query);
+    const [total, rows] = await withDatabase(getDatabaseConfig(), (db) =>
+      Promise.all([countUsers(db), listUsers(db, { limit, offset })])
+    );
+    res.json({ rows, total, page, limit });
   }));
 
   app.get('/api/users/:id', asyncRoute(async (req, res) => {

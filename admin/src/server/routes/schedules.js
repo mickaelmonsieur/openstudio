@@ -1,11 +1,20 @@
 import { withDatabase } from '../db/client.js';
 import {
+  countSchedules,
   createSchedule,
   deleteSchedule,
   listSchedules,
   updateSchedule
 } from '../repositories/schedules.js';
 import { listTemplates } from '../repositories/formats.js';
+
+const LIMIT = 50;
+
+function parsePagination(query) {
+  const page  = Math.max(1, parseInt(query.page  || 1, 10) || 1);
+  const limit = Math.min(200, Math.max(1, parseInt(query.limit || LIMIT, 10) || LIMIT));
+  return { page, limit, offset: (page - 1) * limit };
+}
 
 const DAYS = ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday'];
 
@@ -53,9 +62,12 @@ export function registerScheduleRoutes(app, getDatabaseConfig) {
     res.json({ templates });
   }));
 
-  app.get('/api/schedules', asyncRoute(async (_req, res) => {
-    const rows = await withDatabase(getDatabaseConfig(), (db) => listSchedules(db));
-    res.json({ rows });
+  app.get('/api/schedules', asyncRoute(async (req, res) => {
+    const { page, limit, offset } = parsePagination(req.query);
+    const [total, rows] = await withDatabase(getDatabaseConfig(), (db) =>
+      Promise.all([countSchedules(db), listSchedules(db, { limit, offset })])
+    );
+    res.json({ rows, total, page, limit });
   }));
 
   app.post('/api/schedules', asyncRoute(async (req, res) => {
