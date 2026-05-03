@@ -100,7 +100,7 @@ INSERT INTO templates (id, name) OVERRIDING SYSTEM VALUE VALUES
     (1, 'PUB'),
     (2, 'TOP HORAIRE'),
     (3, 'SEMAINE'),
-    (4, 'WEEKEND-80');
+    (4, 'HIT ONLY');
 SELECT setval('templates_id_seq', 4);
 
 INSERT INTO stations (id, name, library_path) OVERRIDING SYSTEM VALUE VALUES
@@ -325,7 +325,7 @@ INSERT INTO clock_events (id, hour, minute, second, template_id, priority, durat
 SELECT setval('clock_events_id_seq', 121);
 
 INSERT INTO schedules (id, from_hour, to_hour, monday, tuesday, wednesday, thursday, friday, saturday, sunday, template_id) OVERRIDING SYSTEM VALUE VALUES
-    (1, 0, 23, TRUE, TRUE, TRUE, TRUE, TRUE, TRUE, TRUE, 3);
+    (1, 0, 23, TRUE, TRUE, TRUE, TRUE, TRUE, TRUE, TRUE, 4);
 SELECT setval('schedules_id_seq', 1);
 
 INSERT INTO users_roles (id, name) OVERRIDING SYSTEM VALUE VALUES
@@ -348,3 +348,13 @@ INSERT INTO configurations (
     timezone
 )
 VALUES (false, false, 10, 2500, 1000, 'Europe/Paris');
+
+INSERT INTO "advertisers" ("id", "name", "sector_id", "address", "vat_number", "notes", "active", "client_since") OVERRIDING SYSTEM VALUE VALUES
+(1,	'CARRELAGES PIRARD',	2,	'Rue du Travail 1, 4460 Grâce-Hollogne',	NULL,	'FAKE CUSTOMER',	'1',	'2000-01-01');
+
+INSERT INTO "contacts" ("id", "advertiser_id", "name", "role", "phone", "email", "primary_contact", "notes") OVERRIDING SYSTEM VALUE VALUES
+(1,	1,	'Monsieur Dracula',	'Manager',	'+32475151230',	'hello@pirard.local',	'1',	NULL);
+
+INSERT INTO "campaigns" ("id", "advertiser_id", "name", "total_broadcasts", "broadcast_count", "station_id", "active", "encoded_at", "start_date", "end_date", "last_aired_at") OVERRIDING SYSTEM VALUE VALUES
+(1,	1,	'HALLOWEEN 2026',	10000,	0,	1,	'1',	NULL,	'2026-01-01',	'2026-12-31',	NULL);
+

@@ -134,9 +134,8 @@ class QueueGenerator {
     for (const slot of slots) {
       if (offsetSeconds >= HOUR_LIMIT_SECONDS) break;
 
-      const remainingSeconds = HOUR_LIMIT_SECONDS - offsetSeconds;
       const scheduledAtLocal = localTimestamp(hourInfo.date, hourInfo.hour, offsetSeconds);
-      const track = await findTrackForSlot(this.db, slot, scheduledAtLocal, this.timezone, remainingSeconds);
+      const track = await findTrackForSlot(this.db, slot, scheduledAtLocal, this.timezone);
 
       if (!track) {
         this.job.skipped += 1;
@@ -144,10 +143,6 @@ class QueueGenerator {
       }
 
       const playDuration = Number(track.play_duration || 0);
-      if (offsetSeconds + playDuration > HOUR_LIMIT_SECONDS) {
-        break;
-      }
-
       await insertQueueEntry(this.db, track, scheduledAtLocal, this.timezone, slot.position);
       offsetSeconds += playDuration;
       createdForHour += 1;

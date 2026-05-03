@@ -118,7 +118,7 @@ export async function listSlotsForGenerator(db, templateId) {
   return rows;
 }
 
-export async function findTrackForSlot(db, slot, scheduledAtLocal, timezone, remainingSeconds) {
+export async function findTrackForSlot(db, slot, scheduledAtLocal, timezone) {
   const { rows } = await db.query(
     `
     WITH candidates AS (
@@ -136,8 +136,8 @@ export async function findTrackForSlot(db, slot, scheduledAtLocal, timezone, rem
       LEFT JOIN artists a ON a.id = t.artist_id
       WHERE t.active = TRUE
         AND (
-          ($7::integer IS NOT NULL AND t.subcategory_id = $7)
-          OR ($7::integer IS NULL AND sc.category_id = $3)
+          ($6::integer IS NOT NULL AND t.subcategory_id = $6)
+          OR ($6::integer IS NULL AND sc.category_id = $3)
         )
         AND (
           $4::integer = 0
@@ -180,7 +180,6 @@ export async function findTrackForSlot(db, slot, scheduledAtLocal, timezone, rem
     SELECT *
     FROM candidates
     WHERE play_duration > 0
-      AND play_duration <= $6
     ORDER BY random()
     LIMIT 1
     `,
@@ -190,7 +189,6 @@ export async function findTrackForSlot(db, slot, scheduledAtLocal, timezone, rem
       slot.category_id,
       slot.track_protection,
       slot.artist_protection,
-      remainingSeconds,
       slot.subcategory_id
     ]
   );
