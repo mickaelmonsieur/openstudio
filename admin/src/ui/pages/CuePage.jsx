@@ -1,14 +1,14 @@
 import { useEffect, useRef, useState } from 'react';
 
 const CUE_MARKERS = [
-  { field: 'cue_in', label: 'CUE IN', color: '#1e88e5' },
-  { field: 'intro', label: 'INTRO', color: '#43a047' },
-  { field: 'hook_in', label: 'HOOK IN', color: '#f9a825' },
-  { field: 'hook_out', label: 'HOOK OUT', color: '#8e24aa' },
-  { field: 'loop_in', label: 'LOOP IN', color: '#00acc1' },
-  { field: 'loop_out', label: 'LOOP OUT', color: '#fb8c00' },
-  { field: 'outro', label: 'OUTRO', color: '#7cb342' },
-  { field: 'cue_out', label: 'CUE OUT', color: '#6d4c41' }
+  { field: 'cue_in', label: 'CUE IN', color: '#00a3ff', flagTop: 20 },
+  { field: 'intro', label: 'INTRO', color: '#00d084', flagTop: 50 },
+  { field: 'hook_in', label: 'HOOK IN', color: '#ffd23f', flagTop: 40 },
+  { field: 'hook_out', label: 'HOOK OUT', color: '#b86cff', flagTop: 70 },
+  { field: 'loop_in', label: 'LOOP IN', color: '#00e5ff', flagTop: 80 },
+  { field: 'loop_out', label: 'LOOP OUT', color: '#ff9f1c', flagTop: 110 },
+  { field: 'outro', label: 'OUTRO', color: '#9cff3f', flagTop: 100 },
+  { field: 'cue_out', label: 'CUE OUT', color: '#ff4fd8', flagTop: 30 }
 ];
 
 export function CuePage({ trackId }) {
@@ -287,7 +287,57 @@ function drawCueMarkers(ctx, cuePoints, duration, width, height, pixelRatio) {
     ctx.moveTo(x, 0);
     ctx.lineTo(x, height);
     ctx.stroke();
+
+    drawCueMarkerFlag(ctx, marker, x, width, pixelRatio);
   }
+}
+
+function drawCueMarkerFlag(ctx, marker, x, width, pixelRatio) {
+  const paddingX = 6 * pixelRatio;
+  const flagHeight = 18 * pixelRatio;
+  const radius = 4 * pixelRatio;
+  const pointerSize = 5 * pixelRatio;
+  const top = marker.flagTop * pixelRatio;
+
+  ctx.save();
+  ctx.font = `${11 * pixelRatio}px system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif`;
+  ctx.textBaseline = 'middle';
+  ctx.textAlign = 'left';
+
+  const textWidth = ctx.measureText(marker.label).width;
+  const flagWidth = textWidth + paddingX * 2;
+  const left = Math.max(4 * pixelRatio, Math.min(width - flagWidth - 4 * pixelRatio, x - flagWidth / 2));
+  const centerX = Math.max(left + pointerSize, Math.min(left + flagWidth - pointerSize, x));
+
+  ctx.fillStyle = marker.color;
+  roundedRect(ctx, left, top, flagWidth, flagHeight, radius);
+  ctx.fill();
+
+  ctx.beginPath();
+  ctx.moveTo(centerX - pointerSize, top + flagHeight);
+  ctx.lineTo(centerX + pointerSize, top + flagHeight);
+  ctx.lineTo(centerX, top + flagHeight + pointerSize);
+  ctx.closePath();
+  ctx.fill();
+
+  ctx.fillStyle = '#10151a';
+  ctx.fillText(marker.label, left + paddingX, top + flagHeight / 2);
+  ctx.restore();
+}
+
+function roundedRect(ctx, x, y, width, height, radius) {
+  const r = Math.min(radius, width / 2, height / 2);
+  ctx.beginPath();
+  ctx.moveTo(x + r, y);
+  ctx.lineTo(x + width - r, y);
+  ctx.quadraticCurveTo(x + width, y, x + width, y + r);
+  ctx.lineTo(x + width, y + height - r);
+  ctx.quadraticCurveTo(x + width, y + height, x + width - r, y + height);
+  ctx.lineTo(x + r, y + height);
+  ctx.quadraticCurveTo(x, y + height, x, y + height - r);
+  ctx.lineTo(x, y + r);
+  ctx.quadraticCurveTo(x, y, x + r, y);
+  ctx.closePath();
 }
 
 function playbackRatio(currentTime, duration) {
