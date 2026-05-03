@@ -881,6 +881,10 @@ h1 {
   gap: 12px;
 }
 
+.form-row.three-columns {
+  grid-template-columns: repeat(3, 1fr);
+}
+
 .day-picker {
   display: grid;
   gap: 8px;

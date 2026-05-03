@@ -8,6 +8,7 @@ import { usersResource } from './resources/users.js';
 import { StationsPage } from './pages/StationsPage.jsx';
 import { SchedulesPage } from './pages/SchedulesPage.jsx';
 import { TemplatesPage } from './pages/TemplatesPage.jsx';
+import { EventsPage } from './pages/EventsPage.jsx';
 import { TracksPage } from './pages/TracksPage.jsx';
 import { CuePage } from './pages/CuePage.jsx';
 import { LogPage } from './pages/LogPage.jsx';
@@ -196,6 +197,14 @@ export function App() {
       return (
         <section className="content-panel">
           <SchedulesPage />
+        </section>
+      );
+    }
+
+    if (activeModule.path === '/events') {
+      return (
+        <section className="content-panel">
+          <EventsPage />
         </section>
       );
     }
