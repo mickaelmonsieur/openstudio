@@ -121,6 +121,8 @@ function validateTrack(data, options = {}) {
 
   const duration = parseOptionalFloat(data?.duration, 0);
   const parsedSampleRate = parseOptionalPositiveInteger(data?.sample_rate);
+  const cue_in = parseOptionalFloat(data?.cue_in, 0);
+  const cue_out = data?.cue_out != null && data?.cue_out !== '' ? parseOptionalFloat(data.cue_out, null) : null;
 
   if (duration === false) {
     return { ok: false, error: 'Duration is invalid.' };
@@ -144,7 +146,9 @@ function validateTrack(data, options = {}) {
       active,
       duration,
       sample_rate,
-      path: trackPath
+      path: trackPath,
+      cue_in: cue_in === false ? 0 : (cue_in ?? 0),
+      cue_out: cue_out === false ? null : cue_out
     }
   };
 }

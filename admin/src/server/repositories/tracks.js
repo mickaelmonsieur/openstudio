@@ -127,9 +127,11 @@ export async function createTrack(db, data) {
       sample_rate,
       path,
       subcategory_id,
-      active
+      active,
+      cue_in,
+      cue_out
     )
-    VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+    VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
     RETURNING id
     `,
     [
@@ -142,7 +144,9 @@ export async function createTrack(db, data) {
       data.sample_rate || 44100,
       data.path,
       data.subcategory_id || null,
-      data.active
+      data.active,
+      data.cue_in ?? 0,
+      data.cue_out ?? null
     ]
   );
 

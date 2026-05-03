@@ -117,7 +117,9 @@ async function runFolderImportJob(databaseConfig, job) {
           sample_rate: draft.sample_rate,
           path: filePath,
           subcategory_id: job.subcategory_id,
-          active: true
+          active: true,
+          cue_in: draft.cue_in ?? 0,
+          cue_out: draft.cue_out ?? null
         });
 
         job.created += 1;

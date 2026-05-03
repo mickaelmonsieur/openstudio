@@ -11,7 +11,9 @@ export function TrackEditModal({ mode = 'edit', track, artists, genres, subcateg
     sample_rate:    track.sample_rate    ?? 44100,
     path:           track.path           ?? '',
     subcategory_id: track.subcategory_id ?? '',
-    active:         track.active ?? true
+    active:         track.active ?? true,
+    cue_in:         track.cue_in         ?? 0,
+    cue_out:        track.cue_out        ?? null
   });
 
   const grouped = groupByCategory(subcategories);

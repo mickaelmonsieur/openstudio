@@ -1,9 +1,11 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
-import { parseFile } from 'music-metadata';
+import { parseBuffer } from 'music-metadata';
+import { FLACDecoder } from '@wasm-audio-decoders/flac';
 import { findOrCreateArtist } from '../repositories/artists.js';
 import { findGenreByName } from '../repositories/tracks.js';
 import { defaultLibraryRoot } from '../lib/platform.js';
+import { detectCuePoints } from './cue-detection.js';
 
 export async function importFlacTrack(db, file, libraryRoot = '') {
   if (!file?.path || !file?.originalname) {
@@ -27,7 +29,9 @@ export async function importFlacTrack(db, file, libraryRoot = '') {
 }
 
 export async function buildFlacTrackDraft(db, filePath, displayName, options = {}) {
-  const metadata = await parseFile(filePath);
+  const fileBuffer = await fs.readFile(filePath);
+
+  const metadata = await parseBuffer(fileBuffer);
   assertFlacMetadata(metadata);
 
   const common = metadata.common || {};
@@ -43,6 +47,8 @@ export async function buildFlacTrackDraft(db, filePath, displayName, options = {
   const album = firstText(common.album);
   const year = parseYear(common.year || common.date);
 
+  const { cue_in, cue_out } = await decodeCuePoints(fileBuffer);
+
   return {
     artist_id: artist?.id || '',
     artist_name: artist?.name || '',
@@ -55,8 +61,21 @@ export async function buildFlacTrackDraft(db, filePath, displayName, options = {
     sample_rate: Number(format.sampleRate || 44100),
     path: filePath,
     subcategory_id: '',
-    active: true
+    active: true,
+    cue_in,
+    cue_out
   };
+}
+
+async function decodeCuePoints(fileBuffer) {
+  try {
+    const decoder = new FLACDecoder();
+    await decoder.ready;
+    const decoded = await decoder.decodeFile(new Uint8Array(fileBuffer));
+    return detectCuePoints(decoded.channelData, decoded.sampleRate, decoded.samplesDecoded);
+  } catch {
+    return { cue_in: 0, cue_out: null };
+  }
 }
 
 function assertFlacMetadata(metadata) {
