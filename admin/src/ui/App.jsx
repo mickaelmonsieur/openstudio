@@ -9,6 +9,8 @@ import { StationsPage } from './pages/StationsPage.jsx';
 import { SchedulesPage } from './pages/SchedulesPage.jsx';
 import { TemplatesPage } from './pages/TemplatesPage.jsx';
 import { EventsPage } from './pages/EventsPage.jsx';
+import { PlaylistsPage } from './pages/PlaylistsPage.jsx';
+import { PlaylistEditorPage } from './pages/PlaylistEditorPage.jsx';
 import { TracksPage } from './pages/TracksPage.jsx';
 import { CuePage } from './pages/CuePage.jsx';
 import { LogPage } from './pages/LogPage.jsx';
@@ -34,6 +36,8 @@ const moduleGroups = [
     title: 'Automation',
     items: [
       { label: 'Templates', path: '/templates' },
+      { label: 'Playlists', path: '/playlists' },
+      { label: 'Playlist Editor', path: '/playlist-editor' },
       { label: 'Schedules', path: '/schedules' },
       { label: 'Events', path: '/events' }
     ]
@@ -189,6 +193,22 @@ export function App() {
       return (
         <section className="content-panel wide-panel">
           <TemplatesPage />
+        </section>
+      );
+    }
+
+    if (activeModule.path === '/playlists') {
+      return (
+        <section className="content-panel">
+          <PlaylistsPage />
+        </section>
+      );
+    }
+
+    if (activeModule.path === '/playlist-editor') {
+      return (
+        <section className="content-panel wide-panel">
+          <PlaylistEditorPage />
         </section>
       );
     }
