@@ -17,6 +17,7 @@ import { LogPage } from './pages/LogPage.jsx';
 import { playLogResource } from './resources/play-log.js';
 import { automixLogResource } from './resources/automix-log.js';
 import { FileScanPage } from './pages/FileScanPage.jsx';
+import { RebaseLibraryPage } from './pages/RebaseLibraryPage.jsx';
 import { AdvertisersPage } from './pages/AdvertisersPage.jsx';
 import { ContactsPage } from './pages/ContactsPage.jsx';
 import { CampaignsPage } from './pages/CampaignsPage.jsx';
@@ -63,7 +64,8 @@ const moduleGroups = [
       { label: 'Users', path: '/users' },
       { label: 'Play Log', path: '/play-log' },
       { label: 'Auto Mix Log', path: '/auto-mix-log' },
-      { label: 'Scan Files', path: '/scan-files' }
+      { label: 'Scan Files', path: '/scan-files' },
+      { label: 'Rebase Library', path: '/rebase-library' }
     ]
   }
 ];
@@ -287,6 +289,14 @@ export function App() {
       return (
         <section className="content-panel">
           <FileScanPage />
+        </section>
+      );
+    }
+
+    if (activeModule.path === '/rebase-library') {
+      return (
+        <section className="content-panel">
+          <RebaseLibraryPage />
         </section>
       );
     }
