@@ -13,6 +13,7 @@ import { registerUserRoutes } from './routes/users.js';
 import { registerTrackRoutes } from './routes/tracks.js';
 import { registerPlayLogRoutes } from './routes/play-log.js';
 import { registerAutomixLogRoutes } from './routes/automix-log.js';
+import { registerFileScanRoutes } from './routes/file-scan.js';
 import { registerPlaylistRoutes } from './routes/playlists.js';
 import { registerQueueRoutes } from './routes/queue.js';
 import { registerAdvertisingRoutes } from './routes/advertising.js';
@@ -171,6 +172,7 @@ export async function createOpenStudioAdminServer(config) {
   registerAdvertisingRoutes(webApp, () => readDatabaseConfig(dataDir));
   registerPlayLogRoutes(webApp, () => readDatabaseConfig(dataDir));
   registerAutomixLogRoutes(webApp, () => readDatabaseConfig(dataDir));
+  registerFileScanRoutes(webApp, () => readDatabaseConfig(dataDir));
   await attachWebUi(webApp);
 
   const controlApp = express();

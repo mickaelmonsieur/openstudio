@@ -16,6 +16,7 @@ import { CuePage } from './pages/CuePage.jsx';
 import { LogPage } from './pages/LogPage.jsx';
 import { playLogResource } from './resources/play-log.js';
 import { automixLogResource } from './resources/automix-log.js';
+import { FileScanPage } from './pages/FileScanPage.jsx';
 import { AdvertisersPage } from './pages/AdvertisersPage.jsx';
 import { ContactsPage } from './pages/ContactsPage.jsx';
 import { CampaignsPage } from './pages/CampaignsPage.jsx';
@@ -61,7 +62,8 @@ const moduleGroups = [
       { label: 'Database', path: '/database' },
       { label: 'Users', path: '/users' },
       { label: 'Play Log', path: '/play-log' },
-      { label: 'Auto Mix Log', path: '/auto-mix-log' }
+      { label: 'Auto Mix Log', path: '/auto-mix-log' },
+      { label: 'Scan Files', path: '/scan-files' }
     ]
   }
 ];
@@ -277,6 +279,14 @@ export function App() {
       return (
         <section className="content-panel">
           <LogPage resource={automixLogResource} />
+        </section>
+      );
+    }
+
+    if (activeModule.path === '/scan-files') {
+      return (
+        <section className="content-panel">
+          <FileScanPage />
         </section>
       );
     }
