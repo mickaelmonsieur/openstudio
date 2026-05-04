@@ -1,5 +1,3 @@
-const HOUR_LIMIT_SECONDS = 3599.999;
-
 export async function getQueueTimezone(db) {
   const { rows } = await db.query(`
     SELECT timezone
@@ -161,10 +159,6 @@ async function recalculateQueueHour(db, date, hour, ids, timezone) {
     const cueOut = Number(rows[0].cue_out || 0);
     const stretchRate = Number(rows[0].stretch_rate || 1);
     const playDuration = Math.max(0, (cueOut - cueIn) / stretchRate);
-
-    if (offsetSeconds + playDuration > HOUR_LIMIT_SECONDS) {
-      throw new Error('This order exceeds the selected hour.');
-    }
 
     await db.query(
       `

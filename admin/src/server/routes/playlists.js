@@ -1,5 +1,6 @@
 import { withDatabase } from '../db/client.js';
 import {
+  copyQueuePeriod,
   deleteQueueInPeriod,
   getConfiguredTimezone,
   listQueueCoverage
@@ -67,6 +68,29 @@ export function registerPlaylistRoutes(app, getDatabaseConfig) {
     if (!job) { res.status(404).json({ error: 'Generation job not found.' }); return; }
 
     res.json({ job });
+  }));
+
+  app.post('/api/playlists/copy', asyncRoute(async (req, res) => {
+    const result = validateRange(req.body);
+    if (!result.ok) { res.status(400).json({ error: result.error }); return; }
+
+    const destDate = String(req.body?.dest_date || '').trim();
+    const destHour = parseHour(req.body?.dest_hour);
+    if (!DATE_RE.test(destDate)) { res.status(400).json({ error: 'Destination date is required.' }); return; }
+    if (destHour === null) { res.status(400).json({ error: 'Destination hour is invalid.' }); return; }
+
+    const copied = await withDatabase(getDatabaseConfig(), async (db) => {
+      const timezone = await getConfiguredTimezone(db);
+      return copyQueuePeriod(
+        db,
+        hourBoundary(result.value.fromDate, result.value.fromHour),
+        hourBoundary(result.value.toDate, result.value.toHour),
+        hourBoundary(destDate, destHour),
+        timezone
+      );
+    });
+
+    res.json({ copied });
   }));
 
   app.delete('/api/playlists/queue', asyncRoute(async (req, res) => {

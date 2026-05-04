@@ -26,6 +26,7 @@ export function PlaylistEditorPage() {
   const [formError, setFormError] = useState(null);
   const [saving, setSaving] = useState(false);
   const [ordering, setOrdering] = useState(false);
+  const [draggingId, setDraggingId] = useState(null);
   const [deleteTarget, setDeleteTarget] = useState(null);
   const [trackSearch, setTrackSearch] = useState('');
   const [trackResults, setTrackResults] = useState([]);
@@ -131,6 +132,20 @@ export function PlaylistEditorPage() {
     }
   }
 
+  function handleDrop(targetRow) {
+    if (ordering || !draggingId) return;
+    if (targetRow.id === draggingId) return;
+
+    const fromIndex = rows.findIndex((row) => row.id === draggingId);
+    const toIndex = rows.findIndex((row) => row.id === targetRow.id);
+    if (fromIndex < 0 || toIndex < 0) return;
+
+    const nextRows = [...rows];
+    const [moved] = nextRows.splice(fromIndex, 1);
+    nextRows.splice(toIndex, 0, moved);
+    saveOrder(nextRows);
+  }
+
   async function moveRow(row, direction) {
     if (ordering) return;
     const fromIndex = rows.findIndex((entry) => entry.id === row.id);
@@ -234,7 +249,26 @@ export function PlaylistEditorPage() {
               {rows.length === 0 ? (
                 <tr><td className="empty-cell" colSpan={6}>No playlist entries for this hour.</td></tr>
               ) : rows.map((row, index) => (
-                <tr key={row.id}>
+                <tr
+                  key={row.id}
+                  className={[
+                    'draggable-row',
+                    draggingId === row.id ? 'dragging-row' : ''
+                  ].filter(Boolean).join(' ')}
+                  draggable={!ordering}
+                  onDragEnd={() => setDraggingId(null)}
+                  onDragOver={(event) => event.preventDefault()}
+                  onDragStart={(event) => {
+                    setDraggingId(row.id);
+                    event.dataTransfer.effectAllowed = 'move';
+                    event.dataTransfer.setData('text/plain', String(row.id));
+                  }}
+                  onDrop={(event) => {
+                    event.preventDefault();
+                    handleDrop(row);
+                    setDraggingId(null);
+                  }}
+                >
                   <td>{row.scheduled_time}</td>
                   <td>{row.artist || '—'}</td>
                   <td>{row.title || '—'}</td>
@@ -256,6 +290,21 @@ export function PlaylistEditorPage() {
                 </tr>
               ))}
             </tbody>
+            {rows.length > 0 ? (() => {
+              const endTime = computeEndTime(rows, scheduledHour);
+              return (
+                <tfoot>
+                  <tr>
+                    <td style={{ color: endTime.complete ? '#16a34a' : '#dc2626', fontWeight: 600, fontVariantNumeric: 'tabular-nums' }}>
+                      {endTime.time}
+                    </td>
+                    <td colSpan={5} style={{ color: endTime.complete ? '#16a34a' : '#dc2626', fontSize: '0.8em' }}>
+                      {endTime.complete ? '✓ Hour complete' : '✗ Hour incomplete'}
+                    </td>
+                  </tr>
+                </tfoot>
+              );
+            })() : null}
           </table>
         </div>
       )}
@@ -352,6 +401,29 @@ function formatHour(hour) {
 function formatPlayDuration(row) {
   const duration = Math.max(0, Number(row.cue_out || 0) - Number(row.cue_in || 0));
   return formatSeconds(duration);
+}
+
+function computeEndTime(rows, scheduledHour) {
+  const last = rows[rows.length - 1];
+  const [h, m, s] = last.scheduled_time.split(':').map(Number);
+  const scheduledSeconds = h * 3600 + m * 60 + s;
+
+  const cueIn = Number(last.cue_in ?? 0);
+  const cueOut = Number(last.cue_out ?? 0);
+  const stretchRate = Number(last.stretch_rate ?? 1);
+  const playDuration = Math.max(0, (cueOut - cueIn) / stretchRate);
+
+  const endSeconds = scheduledSeconds + playDuration;
+  const offsetInHour = endSeconds - scheduledHour * 3600;
+
+  const eh = Math.floor(endSeconds / 3600) % 24;
+  const em = Math.floor((endSeconds % 3600) / 60);
+  const es = Math.floor(endSeconds % 60);
+
+  return {
+    time: `${pad(eh)}:${pad(em)}:${pad(es)}`,
+    complete: offsetInHour >= 3599
+  };
 }
 
 function formatSeconds(value) {

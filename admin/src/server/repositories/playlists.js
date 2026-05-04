@@ -59,6 +59,28 @@ export async function deleteQueueInPeriod(db, fromLocal, toLocal, timezone) {
   return rowCount;
 }
 
+export async function copyQueuePeriod(db, fromLocal, toLocal, destLocal, timezone) {
+  const { rowCount } = await db.query(
+    `
+    INSERT INTO queue (track_id, cue_in, cue_out, stretch_rate, played, priority, fixed_time, scheduled_at)
+    SELECT
+      track_id,
+      cue_in,
+      cue_out,
+      stretch_rate,
+      FALSE,
+      priority,
+      fixed_time,
+      scheduled_at + (($3::timestamp AT TIME ZONE $4) - ($1::timestamp AT TIME ZONE $4))
+    FROM queue
+    WHERE scheduled_at >= ($1::timestamp AT TIME ZONE $4)
+      AND scheduled_at < (($2::timestamp + INTERVAL '1 hour') AT TIME ZONE $4)
+    `,
+    [fromLocal, toLocal, destLocal, timezone]
+  );
+  return rowCount;
+}
+
 export async function listQueueCoverage(db, timezone, days = 42) {
   const { rows } = await db.query(
     `

@@ -15,6 +15,11 @@ export function PlaylistsPage() {
   const [job, setJob] = useState(null);
   const [deleteConfirm, setDeleteConfirm] = useState(false);
   const [deleting, setDeleting] = useState(false);
+  const [copyMode, setCopyMode] = useState(false);
+  const [destDate, setDestDate] = useState(today);
+  const [destHour, setDestHour] = useState(0);
+  const [copyConfirm, setCopyConfirm] = useState(false);
+  const [copying, setCopying] = useState(false);
   const [coverage, setCoverage] = useState({ rows: [], timezone: '' });
   const [coverageError, setCoverageError] = useState(null);
 
@@ -97,6 +102,46 @@ export function PlaylistsPage() {
       setError(err.message);
     } finally {
       setDeleting(false);
+    }
+  }
+
+  async function copyQueue() {
+    setCopying(true);
+    setError(null);
+
+    try {
+      const payload = await fetchJson('/api/playlists/copy', {
+        method: 'POST',
+        body: JSON.stringify({
+          from_date: fromDate,
+          from_hour: fromHour,
+          to_date: toDate,
+          to_hour: toHour,
+          dest_date: destDate,
+          dest_hour: destHour
+        })
+      });
+      setCopyConfirm(false);
+      setCopyMode(false);
+      setJob({
+        id: `copy-${Date.now()}`,
+        status: 'completed',
+        total: 1,
+        processed: 1,
+        created: payload.copied || 0,
+        skipped: 0,
+        skippedHours: 0,
+        current: '',
+        messages: [{
+          at: new Date().toISOString(),
+          message: `Copied ${payload.copied || 0} entr${payload.copied === 1 ? 'y' : 'ies'} from ${rangeLabel()} to ${destDate} ${formatHour(destHour)}.`
+        }]
+      });
+      await loadCoverage();
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setCopying(false);
     }
   }
 
@@ -183,8 +228,19 @@ export function PlaylistsPage() {
               {running ? 'Generating...' : 'Generate'}
             </button>
             <button
+              className="ghost-button"
+              disabled={running || deleting || copying}
+              onClick={() => {
+                setError(null);
+                setCopyMode((prev) => !prev);
+              }}
+              type="button"
+            >
+              Copy
+            </button>
+            <button
               className="danger-button solid scary-button"
-              disabled={running || deleting}
+              disabled={running || deleting || copying}
               onClick={() => {
                 setError(null);
                 setDeleteConfirm(true);
@@ -194,6 +250,48 @@ export function PlaylistsPage() {
               Delete
             </button>
           </div>
+
+          {copyMode ? (
+            <div className="form-row">
+              <label>
+                <span>Paste from date</span>
+                <input
+                  required
+                  type="date"
+                  value={destDate}
+                  onChange={(event) => setDestDate(event.target.value)}
+                />
+              </label>
+              <label>
+                <span>Paste from hour</span>
+                <select value={destHour} onChange={(event) => setDestHour(Number(event.target.value))}>
+                  {HOURS.map((hour) => (
+                    <option key={hour} value={hour}>{formatHour(hour)}</option>
+                  ))}
+                </select>
+              </label>
+              <div className="form-actions">
+                <button
+                  className="primary-button"
+                  disabled={copying}
+                  onClick={() => {
+                    setError(null);
+                    setCopyConfirm(true);
+                  }}
+                  type="button"
+                >
+                  {copying ? 'Copying...' : 'Paste'}
+                </button>
+                <button
+                  className="ghost-button"
+                  onClick={() => setCopyMode(false)}
+                  type="button"
+                >
+                  Cancel
+                </button>
+              </div>
+            </div>
+          ) : null}
         </form>
 
         {job ? (
@@ -268,6 +366,16 @@ export function PlaylistsPage() {
           ))}
         </div>
       </section>
+
+      {copyConfirm ? (
+        <ConfirmDialog
+          busy={copying}
+          message={`This will copy all playlist entries from ${rangeLabel()} and paste them starting at ${destDate} ${formatHour(destHour)}. Existing entries at the destination will not be replaced.`}
+          title="Copy Playlists"
+          onCancel={() => setCopyConfirm(false)}
+          onConfirm={copyQueue}
+        />
+      ) : null}
 
       {deleteConfirm ? (
         <ConfirmDialog
