@@ -55,6 +55,7 @@ fn main_window_settings() -> window::Settings {
         size: Size::new(1240.0, 820.0),
         min_size: Some(Size::new(960.0, 640.0)),
         position: window::Position::Centered,
+        exit_on_close_request: false,
         ..window::Settings::default()
     }
 }
@@ -503,6 +504,9 @@ enum Dialog {
         error: Option<String>,
         focus_index: usize,
     },
+    ConfirmClose {
+        window_id: window::Id,
+    },
 }
 
 #[derive(Debug, Clone)]
@@ -604,6 +608,8 @@ enum Message {
     ConfigTimezoneChanged(String),
     ConfigSave,
     ConfigSaved(Result<(), String>),
+    CloseRequested(window::Id),
+    ConfirmQuit,
     LockToggle,
     LoginFieldChanged(LoginField, String),
     LoginFocusNext,
@@ -1333,6 +1339,22 @@ impl App {
                 Task::none()
             }
 
+            Message::CloseRequested(window_id) => {
+                if Some(window_id) == self.main_window {
+                    self.dialog = Some(Dialog::ConfirmClose { window_id });
+                } else {
+                    return window::close(window_id);
+                }
+                Task::none()
+            }
+
+            Message::ConfirmQuit => {
+                if let Some(Dialog::ConfirmClose { window_id }) = self.dialog {
+                    return window::close(window_id);
+                }
+                Task::none()
+            }
+
             Message::LockToggle => {
                 if self.is_locked {
                     self.dialog = Some(Dialog::Login {
@@ -1444,7 +1466,8 @@ impl App {
         let clock =
             iced::time::every(std::time::Duration::from_secs(1)).map(|_| Message::ClockTick);
         let windows = window::close_events().map(Message::WindowClosed);
-        let mut subscriptions = vec![keyboard, clock, windows];
+        let close_requests = window::close_requests().map(Message::CloseRequested);
+        let mut subscriptions = vec![keyboard, clock, windows, close_requests];
 
         if self.audio.any_active() {
             let poll =
@@ -2288,7 +2311,8 @@ impl App {
             None
             | Some(Dialog::EditDbConfig { .. })
             | Some(Dialog::EditConfig { .. })
-            | Some(Dialog::Login { .. }) => self.active_instant_page_name(),
+            | Some(Dialog::Login { .. })
+            | Some(Dialog::ConfirmClose { .. }) => self.active_instant_page_name(),
         };
 
         let page_id = match self.active_instant_page_id() {
@@ -3209,6 +3233,27 @@ impl App {
                 .padding(16)
                 .style(panel_style(rgb(31, 46, 55), rgb(220, 100, 80)))
             }
+            Some(Dialog::ConfirmClose { .. }) => container(
+                column![
+                    text("Close OpenStudio?")
+                        .size(14)
+                        .style(text_color(rgb(226, 238, 245))),
+                    text("This will cut the broadcast.")
+                        .size(12)
+                        .style(text_color(rgb(220, 180, 100))),
+                    row![
+                        Space::with_width(Length::Fill),
+                        self.dialog_button("Cancel", Message::DialogCancel, rgb(62, 83, 97)),
+                        self.dialog_button("Quit", Message::ConfirmQuit, rgb(180, 55, 45)),
+                    ]
+                    .spacing(8)
+                    .align_y(Alignment::Center),
+                ]
+                .spacing(16),
+            )
+            .width(Length::Fixed(340.0))
+            .padding(20)
+            .style(panel_style(rgb(31, 46, 55), rgb(180, 55, 45))),
             None => container(Space::new(Length::Shrink, Length::Shrink)),
         };
 
