@@ -36,6 +36,7 @@ function emptyAction() {
 function emptyForm() {
   return {
     name:       '',
+    is_fixed:   true,
     event_type: 2,
     days_mask:  127,
     hours_mask: 0,
@@ -52,6 +53,7 @@ function emptyForm() {
 function rowToForm(row) {
   return {
     name:        row.name        || '',
+    is_fixed:    row.is_fixed    ?? true,
     event_type:  row.event_type  ?? 2,
     days_mask:   row.days_mask   ?? 127,
     hours_mask:  row.hours_mask  ?? 0,
@@ -265,6 +267,7 @@ export function EventsPage() {
             <thead>
               <tr>
                 <th style={{ width: '130px' }}>Name</th>
+                <th style={{ width: '70px' }}>Timing</th>
                 <th style={{ width: '120px' }}>Type</th>
                 <th>Trigger</th>
                 <th>Actions</th>
@@ -275,10 +278,15 @@ export function EventsPage() {
             </thead>
             <tbody>
               {rows.length === 0 ? (
-                <tr><td className="empty-cell" colSpan={7}>No events.</td></tr>
+                <tr><td className="empty-cell" colSpan={8}>No events.</td></tr>
               ) : rows.map((row) => (
                 <tr key={row.id}>
                   <td style={{ fontWeight: 500 }}>{row.name || '—'}</td>
+                  <td>
+                    {row.is_fixed
+                      ? <span className="timing-badge timing-badge--fixed">Fixed</span>
+                      : <span className="timing-badge timing-badge--float">Float</span>}
+                  </td>
                   <td style={{ fontSize: '0.8em', color: '#91a9b7' }}>
                     {EVENT_TYPES.find((t) => t.id === row.event_type)?.short ?? '—'}
                   </td>
@@ -392,6 +400,21 @@ export function EventsPage() {
                   />
                   <NumberField label="Minute" max={59} min={0} value={formData.minute} onChange={(value) => update('minute', value)} />
                   <NumberField label="Second" max={59} min={0} value={formData.second} onChange={(value) => update('second', value)} />
+                </div>
+
+                {/* Fixed / Floating */}
+                <div className="timing-toggle">
+                  <span>Timing</span>
+                  <div className="timing-toggle-group">
+                    <label className={`timing-option${formData.is_fixed ? ' timing-option--active' : ''}`}>
+                      <input type="radio" name="is_fixed" checked={formData.is_fixed} onChange={() => update('is_fixed', true)} />
+                      Fixed
+                    </label>
+                    <label className={`timing-option${!formData.is_fixed ? ' timing-option--active' : ''}`}>
+                      <input type="radio" name="is_fixed" checked={!formData.is_fixed} onChange={() => update('is_fixed', false)} />
+                      Floating
+                    </label>
+                  </div>
                 </div>
               </div>
 

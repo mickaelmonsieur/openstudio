@@ -223,6 +223,18 @@ export async function insertQueueEntry(db, track, scheduledAtLocal, timezone, pr
   );
 }
 
+export async function insertQueueEntryWithCutoff(db, track, maxDuration, scheduledAtLocal, timezone, priority) {
+  const cutCueOut = track.cue_in + maxDuration;
+  const actualCueOut = Math.min(track.cue_out, cutCueOut);
+  await db.query(
+    `
+    INSERT INTO queue (track_id, cue_in, cue_out, priority, fixed_time, scheduled_at)
+    VALUES ($1, $2, $3, $4, FALSE, $5::timestamp AT TIME ZONE $6)
+    `,
+    [track.id, track.cue_in, actualCueOut, priority, scheduledAtLocal, timezone]
+  );
+}
+
 export async function insertFixedQueueEntry(db, track, priority, scheduledAtLocal, timezone) {
   await db.query(
     `
@@ -256,6 +268,7 @@ export async function listEventsForHour(db, date, dayKey, hour) {
     SELECT
       ce.id          AS event_id,
       ce.event_type,
+      ce.is_fixed,
       ce.minute,
       ce.second,
       ce.priority,

@@ -196,7 +196,8 @@ CREATE TABLE clock_events (
     minute      SMALLINT NOT NULL DEFAULT 0  CHECK (minute BETWEEN 0 AND 59),
     second      SMALLINT NOT NULL DEFAULT 0  CHECK (second BETWEEN 0 AND 59),
     priority    SMALLINT NOT NULL DEFAULT 0,
-    duration    REAL     NOT NULL DEFAULT 0
+    duration    REAL     NOT NULL DEFAULT 0,
+    is_fixed    BOOLEAN  NOT NULL DEFAULT TRUE
 );
 
 CREATE INDEX idx_clock_events_type ON clock_events (event_type);

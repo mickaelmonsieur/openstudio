@@ -9,6 +9,7 @@ import {
   getTrackById,
   insertFixedQueueEntry,
   insertQueueEntry,
+  insertQueueEntryWithCutoff,
   listEventsForHour,
   listSlotsForGenerator
 } from '../repositories/playlists.js';
@@ -118,6 +119,16 @@ class QueueGenerator {
     this.job.current = label;
 
     const schedule = await getScheduleForHour(this.db, hourInfo.dayKey, hourInfo.hour);
+    const eventRows = await listEventsForHour(this.db, hourInfo.date, hourInfo.dayKey, hourInfo.hour);
+
+    // Sort events by their scheduled position within the hour
+    const pendingEvents = [...eventRows].sort((a, b) => {
+      const ta = a.minute * 60 + a.second;
+      const tb = b.minute * 60 + b.second;
+      return ta !== tb ? ta - tb : b.priority - a.priority;
+    });
+    let eventIdx = 0;
+
     if (!schedule) {
       this.job.skippedHours += 1;
       addMessage(this.job, `Skipped hour ${label}: no schedule.`);
@@ -133,6 +144,24 @@ class QueueGenerator {
         for (const slot of slots) {
           if (offsetSeconds >= HOUR_LIMIT_SECONDS) break;
 
+          // Insert floating events whose scheduled time has been reached
+          while (eventIdx < pendingEvents.length) {
+            const ev = pendingEvents[eventIdx];
+            const evTime = ev.minute * 60 + ev.second;
+            if (ev.is_fixed || evTime > offsetSeconds) break;
+            await this.insertEventAction(ev, hourInfo, offsetSeconds);
+            eventIdx++;
+          }
+
+          // Find the nearest upcoming fixed event to determine if we must cut this slot short
+          let cutoffSeconds = Infinity;
+          for (let i = eventIdx; i < pendingEvents.length; i++) {
+            if (pendingEvents[i].is_fixed) {
+              const t = pendingEvents[i].minute * 60 + pendingEvents[i].second;
+              if (t > offsetSeconds) { cutoffSeconds = t; break; }
+            }
+          }
+
           const scheduledAtLocal = localTimestamp(hourInfo.date, hourInfo.hour, offsetSeconds);
           const track = await findTrackForSlot(this.db, slot, scheduledAtLocal, this.timezone);
 
@@ -142,10 +171,31 @@ class QueueGenerator {
           }
 
           const playDuration = Number(track.play_duration || 0);
-          await insertQueueEntry(this.db, track, scheduledAtLocal, this.timezone, slot.position);
-          offsetSeconds += playDuration;
-          createdForHour += 1;
-          this.job.created += 1;
+
+          if (Number.isFinite(cutoffSeconds) && offsetSeconds + playDuration > cutoffSeconds) {
+            // Track would extend past the fixed event — cut it short
+            const maxDuration = cutoffSeconds - offsetSeconds;
+            if (maxDuration > 0) {
+              await insertQueueEntryWithCutoff(this.db, track, maxDuration, scheduledAtLocal, this.timezone, slot.position);
+              createdForHour++;
+              this.job.created++;
+            }
+            offsetSeconds = cutoffSeconds;
+
+            // Insert all events at or before the cutoff time
+            while (eventIdx < pendingEvents.length) {
+              const ev = pendingEvents[eventIdx];
+              const evTime = ev.minute * 60 + ev.second;
+              if (evTime > cutoffSeconds) break;
+              await this.insertEventAction(ev, hourInfo, ev.is_fixed ? evTime : cutoffSeconds);
+              eventIdx++;
+            }
+          } else {
+            await insertQueueEntry(this.db, track, scheduledAtLocal, this.timezone, slot.position);
+            offsetSeconds += playDuration;
+            createdForHour++;
+            this.job.created++;
+          }
         }
 
         addMessage(
@@ -155,32 +205,30 @@ class QueueGenerator {
       }
     }
 
-    await this.generateEventActions(hourInfo);
+    // Insert any events that remain after all slots (or when there is no schedule)
+    while (eventIdx < pendingEvents.length) {
+      const ev = pendingEvents[eventIdx];
+      const evTime = ev.minute * 60 + ev.second;
+      await this.insertEventAction(ev, hourInfo, ev.is_fixed ? evTime : 0);
+      eventIdx++;
+    }
   }
 
-  async generateEventActions(hourInfo) {
-    const eventRows = await listEventsForHour(
-      this.db, hourInfo.date, hourInfo.dayKey, hourInfo.hour
-    );
-    if (eventRows.length === 0) return;
+  async insertEventAction(ev, hourInfo, atSeconds) {
+    const scheduledAtLocal = localTimestamp(hourInfo.date, hourInfo.hour, atSeconds);
 
-    for (const ev of eventRows) {
-      const offsetSeconds = ev.minute * 60 + ev.second;
-      const scheduledAtLocal = localTimestamp(hourInfo.date, hourInfo.hour, offsetSeconds);
-
-      if (ev.action_type === 2) {
-        const track = await getTrackById(this.db, ev.track_id);
-        if (!track) continue;
-        await insertFixedQueueEntry(this.db, track, ev.priority, scheduledAtLocal, this.timezone);
-        this.job.created += 1;
-      } else if (ev.action_type === 1) {
-        const slots = await listSlotsForGenerator(this.db, ev.template_id);
-        if (slots.length === 0) continue;
-        const track = await findTrackForSlot(this.db, slots[0], scheduledAtLocal, this.timezone);
-        if (!track) { this.job.skipped += 1; continue; }
-        await insertFixedQueueEntry(this.db, track, ev.priority, scheduledAtLocal, this.timezone);
-        this.job.created += 1;
-      }
+    if (ev.action_type === 2) {
+      const track = await getTrackById(this.db, ev.track_id);
+      if (!track) return;
+      await insertFixedQueueEntry(this.db, track, ev.priority, scheduledAtLocal, this.timezone);
+      this.job.created++;
+    } else if (ev.action_type === 1) {
+      const slots = await listSlotsForGenerator(this.db, ev.template_id);
+      if (slots.length === 0) return;
+      const track = await findTrackForSlot(this.db, slots[0], scheduledAtLocal, this.timezone);
+      if (!track) { this.job.skipped++; return; }
+      await insertFixedQueueEntry(this.db, track, ev.priority, scheduledAtLocal, this.timezone);
+      this.job.created++;
     }
   }
 }

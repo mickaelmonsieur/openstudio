@@ -110,6 +110,7 @@ function validate(data) {
     ok: true,
     value: {
       name: String(data?.name ?? '').slice(0, 64),
+      is_fixed: data?.is_fixed !== false,
       event_type,
       days_mask:  [2, 3].includes(event_type) ? days_mask  : 0,
       hours_mask: [3, 5].includes(event_type) ? hours_mask : 0,

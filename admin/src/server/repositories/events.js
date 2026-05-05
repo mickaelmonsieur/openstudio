@@ -1,6 +1,7 @@
 const SELECT_COLS = `
   ce.id,
   ce.name,
+  ce.is_fixed,
   ce.event_type,
   ce.days_mask,
   ce.hours_mask,
@@ -67,11 +68,11 @@ export async function createEvent(db, data) {
   const { rows } = await db.query(
     `
     INSERT INTO clock_events
-      (name, event_type, days_mask, hours_mask, event_date, hour, minute, second, priority, duration)
-    VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+      (name, is_fixed, event_type, days_mask, hours_mask, event_date, hour, minute, second, priority, duration)
+    VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
     RETURNING id
     `,
-    [data.name || '', data.event_type, data.days_mask, data.hours_mask, data.event_date,
+    [data.name || '', data.is_fixed, data.event_type, data.days_mask, data.hours_mask, data.event_date,
      data.hour, data.minute, data.second, data.priority, data.duration]
   );
   const eventId = rows[0].id;
@@ -84,18 +85,19 @@ export async function updateEvent(db, id, data) {
     `
     UPDATE clock_events
     SET name        = $2,
-        event_type  = $3,
-        days_mask   = $4,
-        hours_mask  = $5,
-        event_date  = $6,
-        hour        = $7,
-        minute      = $8,
-        second      = $9,
-        priority    = $10,
-        duration    = $11
+        is_fixed    = $3,
+        event_type  = $4,
+        days_mask   = $5,
+        hours_mask  = $6,
+        event_date  = $7,
+        hour        = $8,
+        minute      = $9,
+        second      = $10,
+        priority    = $11,
+        duration    = $12
     WHERE id = $1
     `,
-    [id, data.name || '', data.event_type, data.days_mask, data.hours_mask, data.event_date,
+    [id, data.name || '', data.is_fixed, data.event_type, data.days_mask, data.hours_mask, data.event_date,
      data.hour, data.minute, data.second, data.priority, data.duration]
   );
   await db.query(`DELETE FROM event_actions WHERE event_id = $1`, [id]);
