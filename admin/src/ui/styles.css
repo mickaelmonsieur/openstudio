@@ -1125,7 +1125,24 @@ h1 {
 }
 
 .event-modal {
-  width: min(660px, 100%);
+  width: min(900px, 100%);
+}
+
+.event-form-grid {
+  grid-template-columns: 230px 1fr;
+  gap: 14px 28px;
+  align-items: start;
+}
+
+.event-col-left,
+.event-col-right {
+  display: grid;
+  gap: 14px;
+  align-content: start;
+}
+
+.event-form-full {
+  grid-column: 1 / -1;
 }
 
 .event-actions-section {

@@ -312,167 +312,173 @@ export function EventsPage() {
               <button className="icon-button" type="button" onClick={() => setModal(null)}>×</button>
             </header>
 
-            <form className="resource-form" onSubmit={save}>
+            <form className="resource-form event-form-grid" onSubmit={save}>
 
-              {/* Type */}
-              <label>
-                <span>Type</span>
-                <select value={et} onChange={(e) => updateType(Number(e.target.value))}>
-                  {EVENT_TYPES.map((t) => (
-                    <option key={t.id} value={t.id}>{t.label}</option>
-                  ))}
-                </select>
-              </label>
-
-              <hr className="form-separator" />
-
-              {/* Date — types 1, 4, 5 */}
-              {showDate ? (
+              {/* ── Left column ── */}
+              <div className="event-col-left">
                 <label>
-                  <span>{dateLabel}</span>
-                  <input
-                    required
-                    type="date"
-                    value={formData.event_date}
-                    onChange={(e) => update('event_date', e.target.value)}
-                  />
+                  <span>Type</span>
+                  <select value={et} onChange={(e) => updateType(Number(e.target.value))}>
+                    {EVENT_TYPES.map((t) => (
+                      <option key={t.id} value={t.id}>{t.label}</option>
+                    ))}
+                  </select>
                 </label>
-              ) : null}
 
-              {/* Day checkboxes — types 2, 3 */}
-              {showDays ? (
-                <div className="day-picker">
-                  <span>Days</span>
-                  <div className="day-picker-row">
-                    {DAYS.map((d) => (
-                      <label key={d.bit} className="day-toggle">
-                        <input
-                          type="checkbox"
-                          checked={getBit(formData.days_mask, d.bit)}
-                          onChange={() => updateDayBit(d.bit)}
-                        />
-                        <span>{d.label}</span>
-                      </label>
-                    ))}
+                <hr className="form-separator" />
+
+                {/* Date — types 1, 4, 5 */}
+                {showDate ? (
+                  <label>
+                    <span>{dateLabel}</span>
+                    <input
+                      required
+                      type="date"
+                      value={formData.event_date}
+                      onChange={(e) => update('event_date', e.target.value)}
+                    />
+                  </label>
+                ) : null}
+
+                {/* Day checkboxes — types 2, 3 */}
+                {showDays ? (
+                  <div className="day-picker">
+                    <span>Days</span>
+                    <div className="day-picker-row">
+                      {DAYS.map((d) => (
+                        <label key={d.bit} className="day-toggle">
+                          <input
+                            type="checkbox"
+                            checked={getBit(formData.days_mask, d.bit)}
+                            onChange={() => updateDayBit(d.bit)}
+                          />
+                          <span>{d.label}</span>
+                        </label>
+                      ))}
+                    </div>
                   </div>
-                </div>
-              ) : null}
+                ) : null}
 
-              {/* Hour checkboxes — types 3, 5 */}
-              {showHours ? (
-                <div className="hour-picker">
-                  <span>Hours</span>
-                  <div className="hour-picker-grid">
-                    {HOURS_LIST.map((h) => (
-                      <label key={h} className="hour-toggle">
-                        <input
-                          type="checkbox"
-                          checked={getBit(formData.hours_mask, h)}
-                          onChange={() => updateHourBit(h)}
-                        />
-                        <span>{h}h</span>
-                      </label>
-                    ))}
-                  </div>
+                {/* Hour / Minute / Second */}
+                <div className="form-row three-columns">
+                  <NumberField
+                    label="Hour"
+                    max={23} min={0}
+                    value={formData.hour}
+                    disabled={hourDisabled}
+                    onChange={(value) => update('hour', value)}
+                  />
+                  <NumberField label="Minute" max={59} min={0} value={formData.minute} onChange={(value) => update('minute', value)} />
+                  <NumberField label="Second" max={59} min={0} value={formData.second} onChange={(value) => update('second', value)} />
                 </div>
-              ) : null}
-
-              {/* Hour / Minute / Second */}
-              <div className="form-row three-columns">
-                <NumberField
-                  label="Hour"
-                  max={23} min={0}
-                  value={formData.hour}
-                  disabled={hourDisabled}
-                  onChange={(value) => update('hour', value)}
-                />
-                <NumberField label="Minute" max={59} min={0} value={formData.minute} onChange={(value) => update('minute', value)} />
-                <NumberField label="Second" max={59} min={0} value={formData.second} onChange={(value) => update('second', value)} />
               </div>
 
-              <hr className="form-separator" />
+              {/* ── Right column ── */}
+              <div className="event-col-right">
+                {/* Hour checkboxes — types 3, 5 */}
+                {showHours ? (
+                  <>
+                    <div className="hour-picker">
+                      <span>Hours</span>
+                      <div className="hour-picker-grid">
+                        {HOURS_LIST.map((h) => (
+                          <label key={h} className="hour-toggle">
+                            <input
+                              type="checkbox"
+                              checked={getBit(formData.hours_mask, h)}
+                              onChange={() => updateHourBit(h)}
+                            />
+                            <span>{h}h</span>
+                          </label>
+                        ))}
+                      </div>
+                    </div>
+                    <hr className="form-separator" />
+                  </>
+                ) : null}
 
-              {/* Actions */}
-              <div className="event-actions-section">
-                <span className="event-actions-label">Actions</span>
-                {formData.actions.map((action, i) => (
-                  <div key={i} className="event-action-row">
-                    <select
-                      value={action.action_type}
-                      onChange={(e) => updateAction(i, 'action_type', Number(e.target.value))}
-                    >
-                      {ACTION_TYPES.map((t) => (
-                        <option key={t.id} value={t.id}>{t.label}</option>
-                      ))}
-                    </select>
-                    {action.action_type === 1 ? (
+                {/* Actions */}
+                <div className="event-actions-section">
+                  <span className="event-actions-label">Actions</span>
+                  {formData.actions.map((action, i) => (
+                    <div key={i} className="event-action-row">
                       <select
-                        value={action.template_id}
-                        onChange={(e) => updateAction(i, 'template_id', e.target.value)}
+                        value={action.action_type}
+                        onChange={(e) => updateAction(i, 'action_type', Number(e.target.value))}
                       >
-                        <option value="">— select —</option>
-                        {templates.map((t) => (
-                          <option key={t.id} value={t.id}>{t.name}</option>
+                        {ACTION_TYPES.map((t) => (
+                          <option key={t.id} value={t.id}>{t.label}</option>
                         ))}
                       </select>
-                    ) : (
-                      <div className="track-picker-inline">
-                        <div className="track-picker">
-                          <input
-                            type="search"
-                            placeholder="Search tracks…"
-                            value={action.track_search}
-                            onChange={(e) => updateAction(i, 'track_search', e.target.value)}
-                            onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); searchTracksForAction(i); } }}
-                          />
-                          <button className="ghost-button" disabled={action.track_loading} type="button" onClick={() => searchTracksForAction(i)}>
-                            {action.track_loading ? 'Searching…' : 'Search'}
-                          </button>
-                        </div>
-                        {action.track_label ? (
-                          <div className="selected-track">Selected: <strong>{action.track_label}</strong></div>
-                        ) : null}
-                        {action.track_results.length > 0 ? (
-                          <div className="track-results">
-                            {action.track_results.map((track) => (
-                              <button key={track.id} type="button" onClick={() => selectTrackForAction(i, track)}>
-                                {[track.artist, track.title].filter(Boolean).join(' — ') || `Track #${track.id}`}
-                              </button>
-                            ))}
+                      {action.action_type === 1 ? (
+                        <select
+                          value={action.template_id}
+                          onChange={(e) => updateAction(i, 'template_id', e.target.value)}
+                        >
+                          <option value="">— select —</option>
+                          {templates.map((t) => (
+                            <option key={t.id} value={t.id}>{t.name}</option>
+                          ))}
+                        </select>
+                      ) : (
+                        <div className="track-picker-inline">
+                          <div className="track-picker">
+                            <input
+                              type="search"
+                              placeholder="Search tracks…"
+                              value={action.track_search}
+                              onChange={(e) => updateAction(i, 'track_search', e.target.value)}
+                              onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); searchTracksForAction(i); } }}
+                            />
+                            <button className="ghost-button" disabled={action.track_loading} type="button" onClick={() => searchTracksForAction(i)}>
+                              {action.track_loading ? 'Searching…' : 'Search'}
+                            </button>
                           </div>
-                        ) : null}
-                      </div>
-                    )}
-                    {formData.actions.length > 1 ? (
-                      <button className="icon-button" type="button" title="Remove" onClick={() => removeAction(i)}>×</button>
-                    ) : null}
-                  </div>
-                ))}
-                <button className="ghost-button add-action-button" type="button" onClick={addAction}>
-                  + Add action
-                </button>
+                          {action.track_label ? (
+                            <div className="selected-track">Selected: <strong>{action.track_label}</strong></div>
+                          ) : null}
+                          {action.track_results.length > 0 ? (
+                            <div className="track-results">
+                              {action.track_results.map((track) => (
+                                <button key={track.id} type="button" onClick={() => selectTrackForAction(i, track)}>
+                                  {[track.artist, track.title].filter(Boolean).join(' — ') || `Track #${track.id}`}
+                                </button>
+                              ))}
+                            </div>
+                          ) : null}
+                        </div>
+                      )}
+                      {formData.actions.length > 1 ? (
+                        <button className="icon-button" type="button" title="Remove" onClick={() => removeAction(i)}>×</button>
+                      ) : null}
+                    </div>
+                  ))}
+                  <button className="ghost-button add-action-button" type="button" onClick={addAction}>
+                    + Add action
+                  </button>
+                </div>
+
+                <hr className="form-separator" />
+
+                {/* Priority + Duration */}
+                <div className="form-row">
+                  <NumberField label="Priority" max={32767} min={-32768} value={formData.priority} onChange={(value) => update('priority', value)} />
+                  <label>
+                    <span>Duration (s)</span>
+                    <input
+                      min="0"
+                      step="0.001"
+                      type="number"
+                      value={formData.duration}
+                      onChange={(e) => update('duration', Number(e.target.value))}
+                    />
+                  </label>
+                </div>
               </div>
 
-              <hr className="form-separator" />
+              {formError ? <div className="form-error event-form-full">{formError}</div> : null}
 
-              {/* Priority + Duration */}
-              <div className="form-row">
-                <NumberField label="Priority" max={32767} min={-32768} value={formData.priority} onChange={(value) => update('priority', value)} />
-                <label>
-                  <span>Duration (s)</span>
-                  <input
-                    min="0"
-                    step="0.001"
-                    type="number"
-                    value={formData.duration}
-                    onChange={(e) => update('duration', Number(e.target.value))}
-                  />
-                </label>
-              </div>
-
-              {formError ? <div className="form-error">{formError}</div> : null}
-
-              <div className="form-actions">
+              <div className="form-actions event-form-full">
                 <button className="ghost-button" type="button" onClick={() => setModal(null)}>Cancel</button>
                 <button className="primary-button" disabled={saving} type="submit">
                   {saving ? 'Saving...' : 'Save'}
