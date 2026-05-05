@@ -81,31 +81,6 @@ export function TrackEditModal({ mode = 'edit', track, artists, genres, subcateg
                   <input maxLength={64} type="text" value={formData.album} onChange={(e) => update('album', e.target.value)} />
                 </label>
 
-                <div className="form-row">
-                  <label>
-                    <span>Year</span>
-                    <input max={2100} min={1900} type="number" value={formData.year} onChange={(e) => update('year', e.target.value)} />
-                  </label>
-                  <label>
-                    <span>Priority</span>
-                    <input type="number" value={formData.priority} onChange={(e) => update('priority', Number(e.target.value))} />
-                  </label>
-                </div>
-
-                <label className="checkbox-field">
-                  <span>Active</span>
-                  <input checked={formData.active} type="checkbox" onChange={(e) => update('active', e.target.checked)} />
-                </label>
-
-                {mode === 'create' ? (
-                  <div className="import-summary">
-                    <span>{formData.path}</span>
-                    <strong>{formatDuration(formData.duration)} - {formData.sample_rate || 44100} Hz</strong>
-                  </div>
-                ) : null}
-              </div>
-
-              <div className="event-col-right">
                 <label>
                   <span>Genre</span>
                   <select value={formData.genre_id} onChange={(e) => update('genre_id', e.target.value)}>
@@ -114,6 +89,13 @@ export function TrackEditModal({ mode = 'edit', track, artists, genres, subcateg
                   </select>
                 </label>
 
+                <label className="checkbox-field">
+                  <span>Active</span>
+                  <input checked={formData.active} type="checkbox" onChange={(e) => update('active', e.target.checked)} />
+                </label>
+              </div>
+
+              <div className="event-col-right">
                 <label>
                   <span>Category</span>
                   <select required value={formData.subcategory_id} onChange={(e) => update('subcategory_id', e.target.value)}>
@@ -140,6 +122,17 @@ export function TrackEditModal({ mode = 'edit', track, artists, genres, subcateg
 
                 <div className="form-row">
                   <label>
+                    <span>Year</span>
+                    <input max={2100} min={1900} type="number" value={formData.year} onChange={(e) => update('year', e.target.value)} />
+                  </label>
+                  <label>
+                    <span>Priority</span>
+                    <input type="number" value={formData.priority} onChange={(e) => update('priority', Number(e.target.value))} />
+                  </label>
+                </div>
+
+                <div className="form-row">
+                  <label>
                     <span>Start date</span>
                     <input type="date" value={formData.start_date} onChange={(e) => update('start_date', e.target.value)} />
                   </label>
@@ -149,13 +142,20 @@ export function TrackEditModal({ mode = 'edit', track, artists, genres, subcateg
                   </label>
                 </div>
               </div>
+
+              {mode === 'create' ? (
+                <div className="import-summary event-form-full">
+                  <span>{formData.path}</span>
+                  <strong>{formatDuration(formData.duration)} - {formData.sample_rate || 44100} Hz</strong>
+                </div>
+              ) : null}
             </>
           ) : null}
 
           {/* ── Details tab ── */}
           {tab === 'details' ? (
             <>
-              <div className="event-col-left">
+              <div className="form-row event-form-full">
                 <label>
                   <span>Mood</span>
                   <select value={formData.mood_id} onChange={(e) => update('mood_id', e.target.value)}>
@@ -163,7 +163,6 @@ export function TrackEditModal({ mode = 'edit', track, artists, genres, subcateg
                     {moods.map((m) => <option key={m.id} value={m.id}>{m.name}</option>)}
                   </select>
                 </label>
-
                 <label>
                   <span>Language</span>
                   <select value={formData.language} onChange={(e) => update('language', e.target.value)}>
@@ -171,7 +170,9 @@ export function TrackEditModal({ mode = 'edit', track, artists, genres, subcateg
                     {languages.map((l) => <option key={l.alpha2} value={l.alpha2}>{l.name}</option>)}
                   </select>
                 </label>
+              </div>
 
+              <div className="form-row three-columns event-form-full">
                 <label>
                   <span>Gender</span>
                   <select value={formData.gender} onChange={(e) => update('gender', e.target.value === '' ? '' : Number(e.target.value))}>
@@ -179,31 +180,26 @@ export function TrackEditModal({ mode = 'edit', track, artists, genres, subcateg
                     {GENDER_OPTIONS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
                   </select>
                 </label>
-              </div>
-
-              <div className="event-col-right">
-                <div className="form-row">
-                  <label>
-                    <span>Start type</span>
-                    <select value={formData.start_type} onChange={(e) => update('start_type', e.target.value === '' ? '' : Number(e.target.value))}>
-                      <option value="">— None —</option>
-                      {START_END_TYPES.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
-                    </select>
-                  </label>
-                  <label>
-                    <span>End type</span>
-                    <select value={formData.end_type} onChange={(e) => update('end_type', e.target.value === '' ? '' : Number(e.target.value))}>
-                      <option value="">— None —</option>
-                      {START_END_TYPES.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
-                    </select>
-                  </label>
-                </div>
-
                 <label>
-                  <span>Comment</span>
-                  <textarea rows={4} value={formData.comment} onChange={(e) => update('comment', e.target.value)} />
+                  <span>Start type</span>
+                  <select value={formData.start_type} onChange={(e) => update('start_type', e.target.value === '' ? '' : Number(e.target.value))}>
+                    <option value="">— None —</option>
+                    {START_END_TYPES.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
+                  </select>
+                </label>
+                <label>
+                  <span>End type</span>
+                  <select value={formData.end_type} onChange={(e) => update('end_type', e.target.value === '' ? '' : Number(e.target.value))}>
+                    <option value="">— None —</option>
+                    {START_END_TYPES.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
+                  </select>
                 </label>
               </div>
+
+              <label className="event-form-full">
+                <span>Comment</span>
+                <textarea rows={4} value={formData.comment} onChange={(e) => update('comment', e.target.value)} />
+              </label>
             </>
           ) : null}
 
