@@ -18,18 +18,34 @@ const LIST_COLUMNS = `
   t.path,
   t.active,
   t.subcategory_id,
-  a.name  AS artist,
-  g.name  AS genre,
-  sc.name AS subcategory,
-  c.name  AS category
+  t.start_date,
+  t.end_date,
+  t.priority,
+  t.track_type_id,
+  t.mood_id,
+  t.language,
+  t.gender,
+  t.start_type,
+  t.end_type,
+  t.comment,
+  a.name   AS artist,
+  g.name   AS genre,
+  sc.name  AS subcategory,
+  c.name   AS category,
+  tt.name  AS track_type_name,
+  tm.name  AS mood_name,
+  tl.lang_en AS language_name
 `;
 
 const FROM_JOIN = `
   FROM tracks t
-  LEFT JOIN artists       a  ON a.id  = t.artist_id
-  LEFT JOIN genres        g  ON g.id  = t.genre_id
-  LEFT JOIN subcategories sc ON sc.id = t.subcategory_id
-  LEFT JOIN categories    c  ON c.id  = sc.category_id
+  LEFT JOIN artists        a  ON a.id   = t.artist_id
+  LEFT JOIN genres         g  ON g.id   = t.genre_id
+  LEFT JOIN subcategories  sc ON sc.id  = t.subcategory_id
+  LEFT JOIN categories     c  ON c.id   = sc.category_id
+  LEFT JOIN track_types    tt ON tt.id  = t.track_type_id
+  LEFT JOIN track_moods    tm ON tm.id  = t.mood_id
+  LEFT JOIN track_languages tl ON tl.alpha2 = t.language
 `;
 
 export async function countTracks(db, search = '', categoryId = null) {
@@ -118,25 +134,18 @@ export async function createTrack(db, data) {
   const { rows } = await db.query(
     `
     INSERT INTO tracks (
-      artist_id,
-      genre_id,
-      title,
-      album,
-      year,
-      duration,
-      sample_rate,
-      path,
-      subcategory_id,
-      active,
-      cue_in,
-      cue_out
+      artist_id, genre_id, title, album, year,
+      duration, sample_rate, path, subcategory_id, active,
+      cue_in, cue_out,
+      start_date, end_date, priority, track_type_id,
+      mood_id, language, gender, start_type, end_type, comment
     )
-    VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
+    VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22)
     RETURNING id
     `,
     [
       data.artist_id || null,
-      data.genre_id,
+      data.genre_id || null,
       data.title,
       data.album,
       data.year || null,
@@ -146,7 +155,17 @@ export async function createTrack(db, data) {
       data.subcategory_id || null,
       data.active,
       data.cue_in ?? 0,
-      data.cue_out ?? null
+      data.cue_out ?? null,
+      data.start_date || null,
+      data.end_date   || null,
+      data.priority   ?? 0,
+      data.track_type_id || null,
+      data.mood_id       || null,
+      data.language      || null,
+      data.gender        ?? null,
+      data.start_type    ?? null,
+      data.end_type      ?? null,
+      data.comment       || ''
     ]
   );
 
@@ -177,10 +196,40 @@ export async function updateTrack(db, id, data) {
         album          = $5,
         year           = $6,
         subcategory_id = $7,
-        active         = $8
+        active         = $8,
+        start_date     = $9,
+        end_date       = $10,
+        priority       = $11,
+        track_type_id  = $12,
+        mood_id        = $13,
+        language       = $14,
+        gender         = $15,
+        start_type     = $16,
+        end_type       = $17,
+        comment        = $18,
+        updated_at     = NOW()
     WHERE id = $1
     `,
-    [id, data.artist_id, data.genre_id, data.title, data.album, data.year || null, data.subcategory_id || null, data.active]
+    [
+      id,
+      data.artist_id     || null,
+      data.genre_id      || null,
+      data.title,
+      data.album,
+      data.year          || null,
+      data.subcategory_id|| null,
+      data.active,
+      data.start_date    || null,
+      data.end_date      || null,
+      data.priority      ?? 0,
+      data.track_type_id || null,
+      data.mood_id       || null,
+      data.language      || null,
+      data.gender        ?? null,
+      data.start_type    ?? null,
+      data.end_type      ?? null,
+      data.comment       || ''
+    ]
   );
 
   return rowCount > 0;
@@ -274,6 +323,21 @@ export async function listTracksForOptions(db) {
     WHERE t.active = TRUE
     ORDER BY a.name NULLS LAST, t.title
   `);
+  return rows;
+}
+
+export async function listTrackTypes(db) {
+  const { rows } = await db.query(`SELECT id, name FROM track_types ORDER BY name`);
+  return rows;
+}
+
+export async function listTrackMoods(db) {
+  const { rows } = await db.query(`SELECT id, name FROM track_moods ORDER BY name`);
+  return rows;
+}
+
+export async function listTrackLanguages(db) {
+  const { rows } = await db.query(`SELECT alpha2, lang_en AS name FROM track_languages ORDER BY lang_en`);
   return rows;
 }
 

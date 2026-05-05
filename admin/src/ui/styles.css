@@ -1016,6 +1016,44 @@ h1 {
   font-size: 20px;
 }
 
+.modal-tabs {
+  display: flex;
+  gap: 0;
+  margin-bottom: 16px;
+  border-bottom: 2px solid #2e4555;
+}
+
+.modal-tab {
+  padding: 7px 18px;
+  font-size: 13px;
+  font-weight: 500;
+  color: #91a9b7;
+  background: transparent;
+  border: 1px solid transparent;
+  border-bottom: none;
+  border-radius: 4px 4px 0 0;
+  cursor: pointer;
+  transition: color 0.15s, background 0.15s;
+  position: relative;
+  bottom: -2px;
+}
+
+.modal-tab:hover {
+  color: #d5e3eb;
+  background: #1e2f3a;
+}
+
+.modal-tab--active {
+  color: #edf7fb;
+  background: #22323c;
+  border-color: #2e4555;
+  border-bottom-color: #22323c;
+}
+
+.track-edit-modal {
+  width: min(800px, 100%);
+}
+
 .resource-form {
   display: grid;
   gap: 14px;

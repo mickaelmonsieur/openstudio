@@ -20,6 +20,9 @@ export function TracksPage() {
   const [artists, setArtists] = useState([]);
   const [genres, setGenres] = useState([]);
   const [subcategories, setSubcategories] = useState([]);
+  const [trackTypes, setTrackTypes] = useState([]);
+  const [moods, setMoods] = useState([]);
+  const [languages, setLanguages] = useState([]);
 
   const [editTrack, setEditTrack] = useState(null);
   const [importDraft, setImportDraft] = useState(null);
@@ -59,6 +62,9 @@ export function TracksPage() {
       setArtists(artistsPayload.rows || []);
       setGenres(optionsPayload.genres || []);
       setSubcategories(optionsPayload.subcategories || []);
+      setTrackTypes(optionsPayload.trackTypes || []);
+      setMoods(optionsPayload.moods || []);
+      setLanguages(optionsPayload.languages || []);
     } catch (err) {
       setError(err.message);
     }
@@ -311,9 +317,12 @@ export function TracksPage() {
           artists={artists}
           error={formError}
           genres={genres}
+          languages={languages}
+          moods={moods}
           saving={saving}
           subcategories={subcategories}
           track={editTrack}
+          trackTypes={trackTypes}
           onClose={() => setEditTrack(null)}
           onSubmit={saveTrack}
         />
@@ -324,10 +333,13 @@ export function TracksPage() {
           artists={artists}
           error={formError}
           genres={genres}
+          languages={languages}
           mode="create"
+          moods={moods}
           saving={saving}
           subcategories={subcategories}
           track={importDraft}
+          trackTypes={trackTypes}
           onClose={() => setImportDraft(null)}
           onSubmit={saveImportedTrack}
         />

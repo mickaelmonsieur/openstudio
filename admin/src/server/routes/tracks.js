@@ -12,6 +12,9 @@ import {
   hasScheduledQueue,
   listGenres,
   listSubcategoriesWithCategory,
+  listTrackTypes,
+  listTrackMoods,
+  listTrackLanguages,
   listTracks,
   updateTrackCuePoint,
   updateTrack
@@ -110,8 +113,27 @@ function validateTrack(data, options = {}) {
     return { ok: false, error: 'Year is invalid.' };
   }
 
+  const start_date     = String(data?.start_date || '').trim() || null;
+  const end_date       = String(data?.end_date   || '').trim() || null;
+  const priority       = data?.priority != null ? Number(data.priority) : 0;
+  const track_type_id  = parseOptionalPositiveInteger(data?.track_type_id);
+  const mood_id        = parseOptionalPositiveInteger(data?.mood_id);
+  const language       = String(data?.language || '').trim().slice(0, 2) || null;
+  const gender         = (data?.gender != null && data?.gender !== '') ? Number(data.gender) : null;
+  const start_type     = (data?.start_type != null && data?.start_type !== '') ? Number(data.start_type) : null;
+  const end_type       = (data?.end_type   != null && data?.end_type   !== '') ? Number(data.end_type)   : null;
+  const comment        = String(data?.comment || '').trim();
+
+  if (track_type_id === false) return { ok: false, error: 'Track type is invalid.' };
+  if (mood_id       === false) return { ok: false, error: 'Mood is invalid.' };
+  if (gender   !== null && ![0,1,2].includes(gender))     return { ok: false, error: 'Gender is invalid.' };
+  if (start_type !== null && ![0,1,2,3].includes(start_type)) return { ok: false, error: 'Start type is invalid.' };
+  if (end_type   !== null && ![0,1,2,3].includes(end_type))   return { ok: false, error: 'End type is invalid.' };
+
+  const detailFields = { start_date, end_date, priority, track_type_id, mood_id, language, gender, start_type, end_type, comment };
+
   if (!options.requirePath) {
-    return { ok: true, value: { title, album, artist_id, genre_id, subcategory_id, year, active } };
+    return { ok: true, value: { title, album, artist_id, genre_id, subcategory_id, year, active, ...detailFields } };
   }
 
   const trackPath = String(data?.path || '').trim();
@@ -137,18 +159,11 @@ function validateTrack(data, options = {}) {
   return {
     ok: true,
     value: {
-      title,
-      album,
-      artist_id,
-      genre_id,
-      subcategory_id,
-      year,
-      active,
-      duration,
-      sample_rate,
-      path: trackPath,
+      title, album, artist_id, genre_id, subcategory_id, year, active,
+      duration, sample_rate, path: trackPath,
       cue_in: cue_in === false ? 0 : (cue_in ?? 0),
-      cue_out: cue_out === false ? null : cue_out
+      cue_out: cue_out === false ? null : cue_out,
+      ...detailFields
     }
   };
 }
@@ -205,10 +220,16 @@ export function registerTrackRoutes(app, getDatabaseConfig) {
 
   // Must be declared before /api/tracks/:id to avoid "options" being parsed as an id
   app.get('/api/tracks/options', asyncRoute(async (_req, res) => {
-    const [genres, subcategories] = await withDatabase(getDatabaseConfig(), (db) =>
-      Promise.all([listGenres(db), listSubcategoriesWithCategory(db)])
+    const [genres, subcategories, trackTypes, moods, languages] = await withDatabase(getDatabaseConfig(), (db) =>
+      Promise.all([
+        listGenres(db),
+        listSubcategoriesWithCategory(db),
+        listTrackTypes(db),
+        listTrackMoods(db),
+        listTrackLanguages(db)
+      ])
     );
-    res.json({ genres, subcategories });
+    res.json({ genres, subcategories, trackTypes, moods, languages });
   }));
 
   app.get('/api/tracks/folders', asyncRoute(async (req, res) => {
