@@ -18,6 +18,7 @@ import { playLogResource } from './resources/play-log.js';
 import { automixLogResource } from './resources/automix-log.js';
 import { FileScanPage } from './pages/FileScanPage.jsx';
 import { RebaseLibraryPage } from './pages/RebaseLibraryPage.jsx';
+import { ImportPage } from './pages/ImportPage.jsx';
 import { AdvertisersPage } from './pages/AdvertisersPage.jsx';
 import { ContactsPage } from './pages/ContactsPage.jsx';
 import { CampaignsPage } from './pages/CampaignsPage.jsx';
@@ -61,6 +62,7 @@ const moduleGroups = [
     title: 'Admin',
     items: [
       { label: 'Database', path: '/database' },
+      { label: 'Import / Export', path: '/import' },
       { label: 'Users', path: '/users' },
       { label: 'Play Log', path: '/play-log' },
       { label: 'Auto Mix Log', path: '/auto-mix-log' },
@@ -289,6 +291,14 @@ export function App() {
       return (
         <section className="content-panel">
           <FileScanPage />
+        </section>
+      );
+    }
+
+    if (activeModule.path === '/import') {
+      return (
+        <section className="content-panel">
+          <ImportPage />
         </section>
       );
     }
