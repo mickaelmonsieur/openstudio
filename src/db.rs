@@ -567,6 +567,15 @@ impl Database {
         Ok(())
     }
 
+    pub fn check_credentials(&self, login: &str, password: &str) -> Result<bool, DbError> {
+        let mut client = self.client.lock().map_err(|_| DbError::LockPoisoned)?;
+        let rows = client.query(
+            "SELECT 1 FROM users WHERE login = $1 AND password_hash = crypt($2, password_hash) AND active = TRUE",
+            &[&login, &password],
+        )?;
+        Ok(!rows.is_empty())
+    }
+
     pub fn insert_instant_slot(
         &self,
         page_id: i32,

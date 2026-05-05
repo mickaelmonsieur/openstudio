@@ -77,7 +77,9 @@ impl App {
             rgb(72, 161, 235),
             rgb(112, 188, 255),
         ));
-        play_button = play_button.on_press(Message::TogglePlay);
+        if !self.is_locked {
+            play_button = play_button.on_press(Message::TogglePlay);
+        }
 
         let mut stop_button = button(
             container(
@@ -98,7 +100,9 @@ impl App {
             rgb(216, 66, 62),
             rgb(105, 140, 164),
         ));
-        stop_button = stop_button.on_press(Message::Stop);
+        if !self.is_locked {
+            stop_button = stop_button.on_press(Message::Stop);
+        }
 
         let mut restart_button = button(
             container(
@@ -119,7 +123,9 @@ impl App {
             rgb(78, 121, 153),
             rgb(105, 140, 164),
         ));
-        restart_button = restart_button.on_press(Message::Restart);
+        if !self.is_locked {
+            restart_button = restart_button.on_press(Message::Restart);
+        }
 
         let rewind_button = self.transport_seek_button(
             text(Bootstrap::RewindFill.to_string())
@@ -227,7 +233,7 @@ impl App {
         icon: Element<'static, Message>,
         offset: i64,
     ) -> button::Button<'static, Message> {
-        button(
+        let btn = button(
             container(icon)
                 .width(Length::Fill)
                 .height(Length::Fill)
@@ -241,8 +247,12 @@ impl App {
             rgb(61, 94, 121),
             rgb(78, 121, 153),
             rgb(105, 140, 164),
-        ))
-        .on_press(Message::Seek(offset))
+        ));
+        if self.is_locked {
+            btn
+        } else {
+            btn.on_press(Message::Seek(offset))
+        }
     }
 
     pub fn time_box(

@@ -208,6 +208,13 @@ fn current_date() -> String {
     String::from("---")
 }
 
+fn login_input_id() -> iced::widget::text_input::Id {
+    iced::widget::text_input::Id::new("login_field")
+}
+fn pass_input_id() -> iced::widget::text_input::Id {
+    iced::widget::text_input::Id::new("pass_field")
+}
+
 // ── State ─────────────────────────────────────────────────────────────────────
 
 struct App {
@@ -252,6 +259,7 @@ struct App {
     app_config: db::AppConfig,
     timezone_options: Vec<String>,
     dialog: Option<Dialog>,
+    is_locked: bool,
 }
 
 impl Default for App {
@@ -367,6 +375,7 @@ impl Default for App {
             app_config,
             timezone_options,
             dialog: None,
+            is_locked: false,
         };
         app.ensure_configured_timezone_option();
         app.load_instant_pages_from_db();
@@ -488,6 +497,18 @@ enum Dialog {
         user: String,
         password: String,
     },
+    Login {
+        login: String,
+        password: String,
+        error: Option<String>,
+        focus_index: usize,
+    },
+}
+
+#[derive(Debug, Clone)]
+enum LoginField {
+    Login,
+    Password,
 }
 
 #[derive(Debug, Clone)]
@@ -583,6 +604,12 @@ enum Message {
     ConfigTimezoneChanged(String),
     ConfigSave,
     ConfigSaved(Result<(), String>),
+    LockToggle,
+    LoginFieldChanged(LoginField, String),
+    LoginFocusNext,
+    LoginKeyEnter,
+    LoginSubmit,
+    LoginResult(Result<bool, String>),
 }
 
 // ── Update ────────────────────────────────────────────────────────────────────
@@ -1305,13 +1332,115 @@ impl App {
                 }
                 Task::none()
             }
+
+            Message::LockToggle => {
+                if self.is_locked {
+                    self.dialog = Some(Dialog::Login {
+                        login: String::new(),
+                        password: String::new(),
+                        error: None,
+                        focus_index: 0,
+                    });
+                    return iced::widget::text_input::focus(login_input_id());
+                } else {
+                    self.is_locked = true;
+                }
+                Task::none()
+            }
+
+            Message::LoginFieldChanged(field, value) => {
+                if let Some(Dialog::Login { login, password, .. }) = &mut self.dialog {
+                    match field {
+                        LoginField::Login => *login = value,
+                        LoginField::Password => *password = value,
+                    }
+                }
+                Task::none()
+            }
+
+            Message::LoginFocusNext => {
+                if let Some(Dialog::Login { focus_index, .. }) = &mut self.dialog {
+                    *focus_index = (*focus_index + 1) % 4;
+                    let idx = *focus_index;
+                    return match idx {
+                        0 => iced::widget::text_input::focus(login_input_id()),
+                        1 => iced::widget::text_input::focus(pass_input_id()),
+                        // Blur tous les text_inputs pour que Enter atteigne la subscription
+                        _ => iced::widget::text_input::focus(
+                            iced::widget::text_input::Id::new("__none__"),
+                        ),
+                    };
+                }
+                Task::none()
+            }
+
+            Message::LoginKeyEnter => {
+                if let Some(Dialog::Login { focus_index, .. }) = &self.dialog {
+                    if *focus_index == 3 {
+                        self.dialog = None;
+                        return Task::none();
+                    }
+                }
+                self.update(Message::LoginSubmit)
+            }
+
+            Message::LoginSubmit => {
+                if let Some(Dialog::Login { login, password, .. }) = &self.dialog {
+                    if let Some(db) = self.db.clone() {
+                        let login = login.clone();
+                        let password = password.clone();
+                        return Task::perform(
+                            async move {
+                                tokio::task::spawn_blocking(move || {
+                                    db.check_credentials(&login, &password)
+                                        .map_err(|e| e.to_string())
+                                })
+                                .await
+                                .unwrap_or_else(|e| Err(e.to_string()))
+                            },
+                            Message::LoginResult,
+                        );
+                    }
+                }
+                Task::none()
+            }
+
+            Message::LoginResult(result) => {
+                match result {
+                    Ok(true) => {
+                        self.dialog = None;
+                        self.is_locked = false;
+                    }
+                    Ok(false) => {
+                        if let Some(Dialog::Login { error, .. }) = &mut self.dialog {
+                            *error = Some("Login ou mot de passe incorrect.".into());
+                        }
+                    }
+                    Err(e) => {
+                        if let Some(Dialog::Login { error, .. }) = &mut self.dialog {
+                            *error = Some(format!("Erreur: {e}"));
+                        }
+                    }
+                }
+                Task::none()
+            }
         }
     }
 
     fn subscription(&self) -> Subscription<Message> {
-        let keyboard = iced::keyboard::on_key_press(|key, _modifiers| {
-            matches!(key, Key::Named(Named::Space)).then_some(Message::TogglePlay)
-        });
+        let keyboard = if matches!(&self.dialog, Some(Dialog::Login { .. })) {
+            iced::keyboard::on_key_press(|key, _| match key {
+                Key::Named(Named::Tab) => Some(Message::LoginFocusNext),
+                Key::Named(Named::Enter) => Some(Message::LoginKeyEnter),
+                _ => None,
+            })
+        } else if !self.is_locked {
+            iced::keyboard::on_key_press(|key, _modifiers| {
+                matches!(key, Key::Named(Named::Space)).then_some(Message::TogglePlay)
+            })
+        } else {
+            Subscription::none()
+        };
         let clock =
             iced::time::every(std::time::Duration::from_secs(1)).map(|_| Message::ClockTick);
         let windows = window::close_events().map(Message::WindowClosed);
@@ -2156,9 +2285,10 @@ impl App {
                     trimmed.chars().take(64).collect()
                 }
             }
-            None | Some(Dialog::EditDbConfig { .. }) | Some(Dialog::EditConfig { .. }) => {
-                self.active_instant_page_name()
-            }
+            None
+            | Some(Dialog::EditDbConfig { .. })
+            | Some(Dialog::EditConfig { .. })
+            | Some(Dialog::Login { .. }) => self.active_instant_page_name(),
         };
 
         let page_id = match self.active_instant_page_id() {
@@ -2559,10 +2689,42 @@ impl App {
             return self.track_picker_window(window_id, picker);
         }
 
+        let middle: Element<_> = if self.is_locked {
+            container(
+                column![
+                    text(Bootstrap::LockFill.to_string())
+                        .font(BOOTSTRAP_FONT)
+                        .size(48)
+                        .style(text_color(rgb(80, 100, 115))),
+                    text("Studio verrouillé")
+                        .size(16)
+                        .style(text_color(rgb(100, 125, 145))),
+                    text("Cliquez sur le cadenas pour vous identifier.")
+                        .size(12)
+                        .style(text_color(rgb(70, 90, 105))),
+                ]
+                .spacing(12)
+                .align_x(Alignment::Center),
+            )
+            .width(Length::Fill)
+            .height(Length::Fill)
+            .center_x(Length::Fill)
+            .center_y(Length::Fill)
+            .style(block_style(rgb(7, 11, 13)))
+            .into()
+        } else {
+            column![
+                self.progress_strip(),
+                responsive(|size| self.main_stage(size.width < 980.0)),
+            ]
+            .width(Length::Fill)
+            .height(Length::Fill)
+            .into()
+        };
+
         let content: Element<_> = column![
             self.deck_header(false),
-            self.progress_strip(),
-            responsive(|size| self.main_stage(size.width < 980.0)),
+            middle,
             self.footer_bar(),
         ]
         .width(Length::Fill)
@@ -2650,17 +2812,30 @@ impl App {
 
         let cfg_btn = icon_btn(
             Bootstrap::GearFill,
-            self.db.is_some().then_some(Message::ConfigOpen),
-            if self.db.is_some() {
-                active_color
-            } else {
+            (!self.is_locked && self.db.is_some()).then_some(Message::ConfigOpen),
+            if self.is_locked || self.db.is_none() {
                 inactive_color
+            } else {
+                active_color
             },
         );
         let db_btn = icon_btn(
             Bootstrap::DatabaseFill,
-            Some(Message::DbConfigOpen),
-            db_icon_color,
+            (!self.is_locked).then_some(Message::DbConfigOpen),
+            if self.is_locked { inactive_color } else { db_icon_color },
+        );
+        let lock_btn = icon_btn(
+            if self.is_locked {
+                Bootstrap::LockFill
+            } else {
+                Bootstrap::UnlockFill
+            },
+            Some(Message::LockToggle),
+            if self.is_locked {
+                rgb(220, 100, 80)
+            } else {
+                inactive_color
+            },
         );
         let auto_mix_color = if self.autodj_enabled {
             rgb(221, 230, 237)
@@ -2702,7 +2877,7 @@ impl App {
                 .height(Length::Fill)
                 .padding([0, 12])
                 .center_y(Length::Fill),
-                row![cfg_btn, db_btn].spacing(0).align_y(Alignment::Center),
+                row![lock_btn, cfg_btn, db_btn].spacing(0).align_y(Alignment::Center),
             ]
             .align_y(Alignment::Center)
             .width(Length::Fill)
@@ -2935,6 +3110,104 @@ impl App {
                 .width(Length::Fixed(380.0))
                 .padding(16)
                 .style(panel_style(rgb(31, 46, 55), accent_purple()))
+            }
+            Some(Dialog::Login {
+                login,
+                password,
+                error,
+                focus_index,
+            }) => {
+                let lbl = |s: &'static str| text(s).size(11).style(text_color(rgb(160, 180, 195)));
+                let error_row: Element<_> = if let Some(msg) = error {
+                    text(msg.clone())
+                        .size(12)
+                        .style(text_color(rgb(220, 100, 80)))
+                        .into()
+                } else {
+                    Space::new(Length::Shrink, Length::Shrink).into()
+                };
+                let unlock_focused = *focus_index == 2;
+                let cancel_focused = *focus_index == 3;
+                let btn_unlock = button(text("Déverrouiller").size(12))
+                    .padding([7, 14])
+                    .on_press(Message::LoginSubmit)
+                    .style(move |_, status: button::Status| button::Style {
+                        background: Some(Background::Color(match status {
+                            button::Status::Hovered | button::Status::Pressed => rgb(73, 98, 115),
+                            _ => accent_purple(),
+                        })),
+                        text_color: Color::WHITE,
+                        border: Border {
+                            color: if unlock_focused { Color::WHITE } else { rgb(29, 43, 52) },
+                            width: if unlock_focused { 1.5 } else { 1.0 },
+                            radius: 2.0.into(),
+                        },
+                        ..Default::default()
+                    });
+                let btn_cancel = button(text("Annuler").size(12))
+                    .padding([7, 14])
+                    .on_press(Message::DialogCancel)
+                    .style(move |_, status: button::Status| button::Style {
+                        background: Some(Background::Color(match status {
+                            button::Status::Hovered | button::Status::Pressed => rgb(73, 98, 115),
+                            _ => rgb(62, 83, 97),
+                        })),
+                        text_color: Color::WHITE,
+                        border: Border {
+                            color: if cancel_focused { Color::WHITE } else { rgb(29, 43, 52) },
+                            width: if cancel_focused { 1.5 } else { 1.0 },
+                            radius: 2.0.into(),
+                        },
+                        ..Default::default()
+                    });
+                container(
+                    column![
+                        row![
+                            text(Bootstrap::LockFill.to_string())
+                                .font(BOOTSTRAP_FONT)
+                                .size(16)
+                                .style(text_color(rgb(160, 180, 195))),
+                            text("Déverrouillage requis")
+                                .size(14)
+                                .style(text_color(rgb(226, 238, 245))),
+                        ]
+                        .spacing(8)
+                        .align_y(Alignment::Center),
+                        column![
+                            lbl("Login"),
+                            text_input("", login)
+                                .id(login_input_id())
+                                .on_input(|v| Message::LoginFieldChanged(LoginField::Login, v))
+                                .padding(7)
+                                .size(13)
+                                .width(Length::Fill),
+                        ]
+                        .spacing(4),
+                        column![
+                            lbl("Mot de passe"),
+                            text_input("", password)
+                                .id(pass_input_id())
+                                .on_input(|v| Message::LoginFieldChanged(LoginField::Password, v))
+                                .secure(true)
+                                .padding(7)
+                                .size(13)
+                                .width(Length::Fill),
+                        ]
+                        .spacing(4),
+                        error_row,
+                        row![
+                            Space::with_width(Length::Fill),
+                            btn_cancel,
+                            btn_unlock,
+                        ]
+                        .spacing(8)
+                        .align_y(Alignment::Center),
+                    ]
+                    .spacing(12),
+                )
+                .width(Length::Fixed(360.0))
+                .padding(16)
+                .style(panel_style(rgb(31, 46, 55), rgb(220, 100, 80)))
             }
             None => container(Space::new(Length::Shrink, Length::Shrink)),
         };
