@@ -1,5 +1,5 @@
 use super::styles::*;
-use crate::{App, Message};
+use crate::{audio, App, Message};
 use iced::alignment::{Horizontal, Vertical};
 use iced::widget::{button, column, container, row, scrollable, text, Column, Space};
 use iced::{Alignment, Background, Border, Color, Element, Length};
@@ -178,18 +178,6 @@ impl App {
             ..Default::default()
         });
 
-        let right_col = column![
-            speaker,
-            Space::with_height(Length::Fill),
-            text(duration)
-                .size(10)
-                .style(text_color(rgb(192, 211, 224))),
-        ]
-        .align_x(Alignment::Center)
-        .padding([4, 0])
-        .width(Length::Fixed(46.0))
-        .height(Length::Fill);
-
         let number_button = button(
             container(
                 text(index.to_string())
@@ -218,6 +206,55 @@ impl App {
             },
             ..Default::default()
         });
+
+        let fwd_color = if previewing {
+            rgb(100, 180, 220)
+        } else {
+            rgb(55, 72, 83)
+        };
+        let mut fwd_btn = button(
+            container(
+                text(Bootstrap::FastForwardFill.to_string())
+                    .font(BOOTSTRAP_FONT)
+                    .size(11)
+                    .style(text_color(fwd_color)),
+            )
+            .center_x(Length::Fill)
+            .center_y(Length::Fill),
+        )
+        .width(Length::Fixed(22.0))
+        .height(Length::Fixed(24.0))
+        .padding(0)
+        .style(move |_, status| button::Style {
+            background: Some(Background::Color(match status {
+                button::Status::Hovered | button::Status::Pressed => rgb(30, 50, 65),
+                _ => Color::TRANSPARENT,
+            })),
+            border: Border {
+                color: Color::TRANSPARENT,
+                width: 0.0,
+                radius: 0.0.into(),
+            },
+            ..Default::default()
+        });
+        if previewing {
+            fwd_btn = fwd_btn.on_press(Message::Player(
+                audio::PlayerId::Preview,
+                audio::PlayerCommand::SeekRelative(5000),
+            ));
+        }
+
+        let right_col = column![
+            row![speaker, fwd_btn].align_y(Alignment::Center),
+            Space::with_height(Length::Fill),
+            text(duration)
+                .size(10)
+                .style(text_color(rgb(192, 211, 224))),
+        ]
+        .align_x(Alignment::Center)
+        .padding([4, 0])
+        .width(Length::Fixed(68.0))
+        .height(Length::Fill);
 
         let inner = row![
             number_button,
