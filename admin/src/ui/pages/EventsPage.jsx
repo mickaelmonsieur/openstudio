@@ -35,6 +35,7 @@ function emptyAction() {
 
 function emptyForm() {
   return {
+    name:       '',
     event_type: 2,
     days_mask:  127,
     hours_mask: 0,
@@ -50,6 +51,7 @@ function emptyForm() {
 
 function rowToForm(row) {
   return {
+    name:        row.name        || '',
     event_type:  row.event_type  ?? 2,
     days_mask:   row.days_mask   ?? 127,
     hours_mask:  row.hours_mask  ?? 0,
@@ -80,6 +82,7 @@ export function EventsPage() {
   const [templates, setTemplates] = useState([]);
   const [total, setTotal]       = useState(0);
   const [page, setPage]         = useState(1);
+  const [filter, setFilter]     = useState('all');
   const [loading, setLoading]   = useState(true);
   const [error, setError]       = useState(null);
   const [modal, setModal]       = useState(null);
@@ -90,13 +93,15 @@ export function EventsPage() {
 
   const totalPages = Math.max(1, Math.ceil(total / LIMIT));
 
-  useEffect(() => { load(); }, [page]); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => { load(); }, [page, filter]); // eslint-disable-line react-hooks/exhaustive-deps
 
   async function load() {
     setLoading(true);
     setError(null);
     try {
-      const params = new URLSearchParams({ page: String(page), limit: String(LIMIT) });
+      const params = filter === 'today'
+        ? new URLSearchParams({ filter: 'today' })
+        : new URLSearchParams({ page: String(page), limit: String(LIMIT) });
       const [eventsPayload, optionsPayload] = await Promise.all([
         fetchJson(`/api/events?${params}`),
         fetchJson('/api/events/options')
@@ -109,6 +114,11 @@ export function EventsPage() {
     } finally {
       setLoading(false);
     }
+  }
+
+  function switchFilter(newFilter) {
+    setFilter(newFilter);
+    setPage(1);
   }
 
   function openAdd() {
@@ -237,6 +247,10 @@ export function EventsPage() {
           <h2>Events</h2>
         </div>
         <div className="header-actions">
+          <div className="filter-tabs">
+            <button className={`filter-tab${filter === 'all'   ? ' filter-tab--active' : ''}`} type="button" onClick={() => switchFilter('all')}>All events</button>
+            <button className={`filter-tab${filter === 'today' ? ' filter-tab--active' : ''}`} type="button" onClick={() => switchFilter('today')}>Today</button>
+          </div>
           <button className="primary-button" type="button" onClick={openAdd}>Add</button>
         </div>
       </header>
@@ -250,7 +264,8 @@ export function EventsPage() {
           <table className="data-table">
             <thead>
               <tr>
-                <th style={{ width: '130px' }}>Type</th>
+                <th style={{ width: '130px' }}>Name</th>
+                <th style={{ width: '120px' }}>Type</th>
                 <th>Trigger</th>
                 <th>Actions</th>
                 <th style={{ width: '80px' }}>Priority</th>
@@ -260,9 +275,10 @@ export function EventsPage() {
             </thead>
             <tbody>
               {rows.length === 0 ? (
-                <tr><td className="empty-cell" colSpan={6}>No events.</td></tr>
+                <tr><td className="empty-cell" colSpan={7}>No events.</td></tr>
               ) : rows.map((row) => (
                 <tr key={row.id}>
+                  <td style={{ fontWeight: 500 }}>{row.name || '—'}</td>
                   <td style={{ fontSize: '0.8em', color: '#91a9b7' }}>
                     {EVENT_TYPES.find((t) => t.id === row.event_type)?.short ?? '—'}
                   </td>
@@ -313,6 +329,12 @@ export function EventsPage() {
             </header>
 
             <form className="resource-form event-form-grid" onSubmit={save}>
+
+              {/* ── Full width: Name ── */}
+              <label className="event-form-full">
+                <span>Name</span>
+                <input maxLength={64} type="text" value={formData.name} onChange={(e) => update('name', e.target.value)} />
+              </label>
 
               {/* ── Left column ── */}
               <div className="event-col-left">

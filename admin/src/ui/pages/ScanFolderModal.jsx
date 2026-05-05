@@ -1,12 +1,13 @@
 import { useEffect, useState } from 'react';
 
-export function ScanFolderModal({ genres, stationId, subcategories, onClose, onFinished }) {
+export function ScanFolderModal({ genres, trackTypes = [], stationId, subcategories, onClose, onFinished }) {
   const [root, setRoot] = useState(null);
   const [childrenByPath, setChildrenByPath] = useState({});
   const [expanded, setExpanded] = useState({});
   const [selectedPath, setSelectedPath] = useState('');
   const [genreId, setGenreId] = useState('');
   const [subcategoryId, setSubcategoryId] = useState('');
+  const [trackTypeId, setTrackTypeId] = useState('');
   const [includeSubfolders, setIncludeSubfolders] = useState(true);
   const [loadingPath, setLoadingPath] = useState('');
   const [error, setError] = useState(null);
@@ -94,6 +95,7 @@ export function ScanFolderModal({ genres, stationId, subcategories, onClose, onF
           folderPath: selectedPath,
           genre_id: genreId,
           subcategory_id: subcategoryId,
+          track_type_id: trackTypeId || undefined,
           includeSubfolders,
           station_id: stationId || undefined
         })
@@ -142,6 +144,16 @@ export function ScanFolderModal({ genres, stationId, subcategories, onClose, onF
                   <option value="">Select a genre...</option>
                   {genres.map((genre) => (
                     <option key={genre.id} value={genre.id}>{genre.name}</option>
+                  ))}
+                </select>
+              </label>
+
+              <label>
+                <span>Type</span>
+                <select value={trackTypeId} onChange={(e) => setTrackTypeId(e.target.value)}>
+                  <option value="">— None —</option>
+                  {trackTypes.map((t) => (
+                    <option key={t.id} value={t.id}>{t.name}</option>
                   ))}
                 </select>
               </label>

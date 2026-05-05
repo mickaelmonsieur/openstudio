@@ -350,6 +350,7 @@ export function TracksPage() {
           genres={genres}
           stationId={stationId}
           subcategories={subcategories}
+          trackTypes={trackTypes}
           onClose={() => setScanFolderOpen(false)}
           onFinished={loadTracks}
         />

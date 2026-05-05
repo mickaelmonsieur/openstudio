@@ -1,5 +1,6 @@
 const SELECT_COLS = `
   ce.id,
+  ce.name,
   ce.event_type,
   ce.days_mask,
   ce.hours_mask,
@@ -66,11 +67,11 @@ export async function createEvent(db, data) {
   const { rows } = await db.query(
     `
     INSERT INTO clock_events
-      (event_type, days_mask, hours_mask, event_date, hour, minute, second, priority, duration)
-    VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+      (name, event_type, days_mask, hours_mask, event_date, hour, minute, second, priority, duration)
+    VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
     RETURNING id
     `,
-    [data.event_type, data.days_mask, data.hours_mask, data.event_date,
+    [data.name || '', data.event_type, data.days_mask, data.hours_mask, data.event_date,
      data.hour, data.minute, data.second, data.priority, data.duration]
   );
   const eventId = rows[0].id;
@@ -82,23 +83,41 @@ export async function updateEvent(db, id, data) {
   await db.query(
     `
     UPDATE clock_events
-    SET event_type  = $2,
-        days_mask   = $3,
-        hours_mask  = $4,
-        event_date  = $5,
-        hour        = $6,
-        minute      = $7,
-        second      = $8,
-        priority    = $9,
-        duration    = $10
+    SET name        = $2,
+        event_type  = $3,
+        days_mask   = $4,
+        hours_mask  = $5,
+        event_date  = $6,
+        hour        = $7,
+        minute      = $8,
+        second      = $9,
+        priority    = $10,
+        duration    = $11
     WHERE id = $1
     `,
-    [id, data.event_type, data.days_mask, data.hours_mask, data.event_date,
+    [id, data.name || '', data.event_type, data.days_mask, data.hours_mask, data.event_date,
      data.hour, data.minute, data.second, data.priority, data.duration]
   );
   await db.query(`DELETE FROM event_actions WHERE event_id = $1`, [id]);
   await insertActions(db, id, data.actions);
   return getEvent(db, id);
+}
+
+export async function listEventsForToday(db) {
+  const { rows } = await db.query(`
+    SELECT ${SELECT_COLS} ${FROM_JOIN}
+    WHERE (
+      (ce.event_type = 1 AND ce.event_date = CURRENT_DATE)
+      OR
+      (ce.event_type IN (2, 3) AND (ce.days_mask >> ((EXTRACT(DOW FROM CURRENT_DATE)::integer + 6) % 7)) & 1 = 1)
+      OR
+      (ce.event_type IN (4, 5) AND
+        EXTRACT(MONTH FROM ce.event_date)::integer = EXTRACT(MONTH FROM CURRENT_DATE)::integer AND
+        EXTRACT(DAY   FROM ce.event_date)::integer = EXTRACT(DAY   FROM CURRENT_DATE)::integer)
+    )
+    ${GROUP_BY} ${ORDER}
+  `);
+  return rows;
 }
 
 export async function deleteEvent(db, id) {

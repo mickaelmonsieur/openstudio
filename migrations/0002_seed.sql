@@ -582,35 +582,36 @@ INSERT INTO "template_slots" ("id", "template_id", "position", "category_id", "s
 SELECT setval(pg_get_serial_sequence('"template_slots"', 'id'), MAX(id)) FROM "template_slots";
 
 -- event_type=2: recurring every day (days_mask=127) at a specific hour — one row per hour for TOP HORAIRE
-INSERT INTO clock_events (id, event_type, days_mask, hours_mask, hour, minute, second, priority, duration) VALUES
-    ( 1, 2, 127, 0,  0, 59, 45, 0, 10),
-    ( 2, 2, 127, 0,  1, 59, 45, 0, 10),
-    ( 3, 2, 127, 0,  2, 59, 45, 0, 10),
-    ( 4, 2, 127, 0,  3, 59, 45, 0, 10),
-    ( 5, 2, 127, 0,  4, 59, 45, 0, 10),
-    ( 6, 2, 127, 0,  5, 59, 45, 0, 10),
-    ( 7, 2, 127, 0,  6, 59, 45, 0, 10),
-    ( 8, 2, 127, 0,  7, 59, 45, 0, 10),
-    ( 9, 2, 127, 0,  8, 59, 45, 0, 10),
-    (10, 2, 127, 0,  9, 59, 45, 0, 10),
-    (11, 2, 127, 0, 10, 59, 45, 0, 10),
-    (12, 2, 127, 0, 11, 59, 45, 0, 10),
-    (13, 2, 127, 0, 12, 59, 45, 0, 10),
-    (14, 2, 127, 0, 13, 59, 45, 0, 10),
-    (15, 2, 127, 0, 14, 59, 45, 0, 10),
-    (16, 2, 127, 0, 15, 59, 45, 0, 10),
-    (17, 2, 127, 0, 16, 59, 45, 0, 10),
-    (18, 2, 127, 0, 17, 59, 45, 0, 10),
-    (19, 2, 127, 0, 18, 59, 45, 0, 10),
-    (20, 2, 127, 0, 19, 59, 45, 0, 10),
-    (21, 2, 127, 0, 20, 59, 45, 0, 10),
-    (22, 2, 127, 0, 21, 59, 45, 0, 10),
-    (23, 2, 127, 0, 22, 59, 45, 0, 10),
-    (24, 2, 127, 0, 23, 59, 45, 0, 10),
+INSERT INTO clock_events (id, name, event_type, days_mask, hours_mask, hour, minute, second, priority, duration) VALUES
+    ( 1, 'TOP HORAIRE', 2, 127, 0,  0, 59, 45, 0, 10),
+    ( 2, 'TOP HORAIRE', 2, 127, 0,  1, 59, 45, 0, 10),
+    ( 3, 'TOP HORAIRE', 2, 127, 0,  2, 59, 45, 0, 10),
+    ( 4, 'TOP HORAIRE', 2, 127, 0,  3, 59, 45, 0, 10),
+    ( 5, 'TOP HORAIRE', 2, 127, 0,  4, 59, 45, 0, 10),
+    ( 6, 'TOP HORAIRE', 2, 127, 0,  5, 59, 45, 0, 10),
+    ( 7, 'TOP HORAIRE', 2, 127, 0,  6, 59, 45, 0, 10),
+    ( 8, 'TOP HORAIRE', 2, 127, 0,  7, 59, 45, 0, 10),
+    ( 9, 'TOP HORAIRE', 2, 127, 0,  8, 59, 45, 0, 10),
+    (10, 'TOP HORAIRE', 2, 127, 0,  9, 59, 45, 0, 10),
+    (11, 'TOP HORAIRE', 2, 127, 0, 10, 59, 45, 0, 10),
+    (12, 'TOP HORAIRE', 2, 127, 0, 11, 59, 45, 0, 10),
+    (13, 'TOP HORAIRE', 2, 127, 0, 12, 59, 45, 0, 10),
+    (14, 'TOP HORAIRE', 2, 127, 0, 13, 59, 45, 0, 10),
+    (15, 'TOP HORAIRE', 2, 127, 0, 14, 59, 45, 0, 10),
+    (16, 'TOP HORAIRE', 2, 127, 0, 15, 59, 45, 0, 10),
+    (17, 'TOP HORAIRE', 2, 127, 0, 16, 59, 45, 0, 10),
+    (18, 'TOP HORAIRE', 2, 127, 0, 17, 59, 45, 0, 10),
+    (19, 'TOP HORAIRE', 2, 127, 0, 18, 59, 45, 0, 10),
+    (20, 'TOP HORAIRE', 2, 127, 0, 19, 59, 45, 0, 10),
+    (21, 'TOP HORAIRE', 2, 127, 0, 20, 59, 45, 0, 10),
+    (22, 'TOP HORAIRE', 2, 127, 0, 21, 59, 45, 0, 10),
+    (23, 'TOP HORAIRE', 2, 127, 0, 22, 59, 45, 0, 10),
+    (24, 'TOP HORAIRE', 2, 127, 0, 23, 59, 45, 0, 10);
 -- event_type=3: recurring every day at every hour (hours_mask=16777215) — PUB slots
-    (25, 3, 127, 16777215, 0,  5,  0, 0, 60),
-    (26, 3, 127, 16777215, 0, 27,  0, 0, 60),
-    (27, 3, 127, 16777215, 0, 47,  0, 0, 60);
+INSERT INTO clock_events (id, name, event_type, days_mask, hours_mask, hour, minute, second, priority, duration) VALUES
+    (25, 'PUB', 3, 127, 16777215, 0,  5,  0, 0, 60),
+    (26, 'PUB', 3, 127, 16777215, 0, 27,  0, 0, 60),
+    (27, 'PUB', 3, 127, 16777215, 0, 47,  0, 0, 60);
 SELECT setval('clock_events_id_seq', 27);
 
 -- action_type=1: Template

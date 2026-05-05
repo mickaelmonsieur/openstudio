@@ -4,6 +4,7 @@ import {
   createEvent,
   deleteEvent,
   listEvents,
+  listEventsForToday,
   updateEvent
 } from '../repositories/events.js';
 import { listTemplates } from '../repositories/formats.js';
@@ -108,6 +109,7 @@ function validate(data) {
   return {
     ok: true,
     value: {
+      name: String(data?.name ?? '').slice(0, 64),
       event_type,
       days_mask:  [2, 3].includes(event_type) ? days_mask  : 0,
       hours_mask: [3, 5].includes(event_type) ? hours_mask : 0,
@@ -141,6 +143,11 @@ export function registerEventRoutes(app, getDatabaseConfig) {
   }));
 
   app.get('/api/events', asyncRoute(async (req, res) => {
+    if (req.query.filter === 'today') {
+      const rows = await withDatabase(getDatabaseConfig(), (db) => listEventsForToday(db));
+      res.json({ rows, total: rows.length, page: 1, limit: rows.length });
+      return;
+    }
     const { page, limit, offset } = parsePagination(req.query);
     const [total, rows] = await withDatabase(getDatabaseConfig(), (db) =>
       Promise.all([countEvents(db), listEvents(db, { limit, offset })])

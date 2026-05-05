@@ -49,6 +49,7 @@ export function startFolderImport(databaseConfig, options) {
     includeSubfolders: Boolean(options.includeSubfolders),
     subcategory_id: options.subcategory_id,
     genre_id: options.genre_id,
+    track_type_id: options.track_type_id || null,
     total: 0,
     processed: 0,
     created: 0,
@@ -117,6 +118,7 @@ async function runFolderImportJob(databaseConfig, job) {
           sample_rate: draft.sample_rate,
           path: filePath,
           subcategory_id: job.subcategory_id,
+          track_type_id: job.track_type_id,
           active: true,
           cue_in: draft.cue_in ?? 0,
           cue_out: draft.cue_out ?? null

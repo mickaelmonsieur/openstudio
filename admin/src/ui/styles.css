@@ -1016,6 +1016,37 @@ h1 {
   font-size: 20px;
 }
 
+.filter-tabs {
+  display: flex;
+  gap: 4px;
+  background: #18262e;
+  border: 1px solid #2e4555;
+  border-radius: 6px;
+  padding: 3px;
+}
+
+.filter-tab {
+  padding: 5px 14px;
+  font-size: 13px;
+  font-weight: 500;
+  color: #91a9b7;
+  background: transparent;
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s;
+}
+
+.filter-tab:hover {
+  color: #d5e3eb;
+  background: #243543;
+}
+
+.filter-tab--active {
+  color: #edf7fb;
+  background: #2e4555;
+}
+
 .header-active-toggle {
   display: flex;
   align-items: center;

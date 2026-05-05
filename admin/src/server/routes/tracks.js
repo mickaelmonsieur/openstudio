@@ -246,6 +246,7 @@ export function registerTrackRoutes(app, getDatabaseConfig) {
     const folderPath = String(req.body?.folderPath || '').trim();
     const genre_id = parseOptionalPositiveInteger(req.body?.genre_id);
     const subcategory_id = parseOptionalPositiveInteger(req.body?.subcategory_id);
+    const track_type_id = parseOptionalPositiveInteger(req.body?.track_type_id);
 
     if (!folderPath) {
       res.status(400).json({ error: 'Folder is required.' });
@@ -262,6 +263,11 @@ export function registerTrackRoutes(app, getDatabaseConfig) {
       return;
     }
 
+    if (track_type_id === false) {
+      res.status(400).json({ error: 'Track type is invalid.' });
+      return;
+    }
+
     const stationId = parseId(req.body?.station_id);
     const libraryRoot = await resolveLibraryRoot(getDatabaseConfig, stationId);
 
@@ -269,6 +275,7 @@ export function registerTrackRoutes(app, getDatabaseConfig) {
       folderPath,
       genre_id,
       subcategory_id,
+      track_type_id,
       includeSubfolders: req.body?.includeSubfolders !== false,
       libraryRoot
     });
