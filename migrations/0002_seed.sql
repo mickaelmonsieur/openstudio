@@ -2,7 +2,7 @@
 
 CREATE EXTENSION IF NOT EXISTS pgcrypto;
 
-INSERT INTO genres (id, name) OVERRIDING SYSTEM VALUE VALUES
+INSERT INTO genres (id, name) VALUES
     (1,'Acapella'),(2,'Acid'),(3,'Acid Jazz'),(4,'Acid Punk'),(5,'Acoustic'),
     (6,'Alternative'),(7,'Alternative Rock'),(8,'Ambient'),(9,'Anime'),(10,'Avantgarde'),
     (11,'Ballad'),(12,'Bass'),(13,'Beat'),(14,'Bebob'),(15,'Big Band'),
@@ -73,7 +73,7 @@ INSERT INTO genres (id, name) OVERRIDING SYSTEM VALUE VALUES
     (336,'80s Dance'),(337,'Autre');
 SELECT setval('genres_id_seq', 337);
 
-INSERT INTO sectors (id, name) OVERRIDING SYSTEM VALUE VALUES
+INSERT INTO sectors (id, name) VALUES
     (1,  'Automotive'),
     (2,  'Construction & Real Estate'),
     (3,  'Consumer Goods & Retail'),
@@ -96,18 +96,18 @@ INSERT INTO sectors (id, name) OVERRIDING SYSTEM VALUE VALUES
     (20, 'Other');
 SELECT setval('sectors_id_seq', 20);
 
-INSERT INTO templates (id, name) OVERRIDING SYSTEM VALUE VALUES
+INSERT INTO templates (id, name) VALUES
     (1, 'PUB'),
     (2, 'TOP HORAIRE'),
     (3, 'SEMAINE'),
     (4, 'HIT ONLY');
 SELECT setval('templates_id_seq', 4);
 
-INSERT INTO stations (id, name, library_path) OVERRIDING SYSTEM VALUE VALUES
+INSERT INTO stations (id, name, library_path) VALUES
     (1, 'DEMO', '/Users/Shared/OpenStudio/Library/demo');
 SELECT setval('stations_id_seq', 1);
 
-INSERT INTO categories (id, name, protected) OVERRIDING SYSTEM VALUE VALUES
+INSERT INTO categories (id, name, protected) VALUES
     (1, 'Jingles',      TRUE),
     (2, 'Music',        TRUE),
     (3, 'Intervention', TRUE),
@@ -118,7 +118,7 @@ INSERT INTO categories (id, name, protected) OVERRIDING SYSTEM VALUE VALUES
     (8, 'Pub',          TRUE);
 SELECT setval('categories_id_seq', 8);
 
-INSERT INTO subcategories (id, category_id, name, hidden, protected) OVERRIDING SYSTEM VALUE VALUES
+INSERT INTO subcategories (id, category_id, name, hidden, protected) VALUES
     (1,  1, 'Jingles',    FALSE,  FALSE),
     (2,  1, 'Jin.W-E',    FALSE,  FALSE),
     (3,  1, 'Jin.Ete',    FALSE,  FALSE),
@@ -148,7 +148,7 @@ INSERT INTO subcategories (id, category_id, name, hidden, protected) OVERRIDING 
     (27, 8, 'Pub',          FALSE, FALSE);
 SELECT setval('subcategories_id_seq', 27);
 
-INSERT INTO artists (id, name, last_broadcast_at) OVERRIDING SYSTEM VALUE VALUES
+INSERT INTO artists (id, name, last_broadcast_at) VALUES
     (1, 'Mylène Farmer', NULL),
     (2, 'ABC', NULL),
     (3, 'Taylor Swift', NULL),
@@ -164,7 +164,7 @@ INSERT INTO tracks (
     id, artist_id, genre_id, title, album, year, duration, sample_rate,
     cue_in, cue_out, intro, outro, hook_in, hook_out, loop_in, loop_out,
     path, subcategory_id, active
-) OVERRIDING SYSTEM VALUE VALUES
+) VALUES
     (1,  1,  99, 'XXL',                         'Anamorphosee',        1995, 260.38858, 44100, 0, NULL,      0,  0, 0, 0, 0, 0, '/Users/Shared/OpenStudio/Library/demo/DECK0/Mylène Farmer - XXL.flac',                                      19, TRUE),
     (2,  2, 333, 'The Look Of Love, Pt.1',      'The Lexicon Of Love', 1982, 209.53334, 44100, 0, NULL,      0,  0, 0, 0, 0, 0, '/Users/Shared/OpenStudio/Library/demo/DECK0/ABC - The Look Of Love, Pt.1.flac',                              19, TRUE),
     (3,  3,  99, 'Cruel Summer',                'Lover',               2019, 178.42667, 44100, 0, NULL,      0,  0, 0, 0, 0, 0, '/Users/Shared/OpenStudio/Library/demo/DECK0/Taylor Swift - Cruel Summer.flac',                               19, TRUE),
@@ -181,51 +181,74 @@ INSERT INTO tracks (
     (14, 9, NULL, 'Vive le w-e, vive la musique', '',                  2000,  16.54964, 44100, 0, 11.080453, 0,  0, 0, 0, 0, 0, '/Users/Shared/OpenStudio/Library/demo/JINGLES/RADIO CONTACT - Vive le w-e, vive la musique.flac',        2, TRUE);
 SELECT setval('tracks_id_seq', 14);
 
-INSERT INTO template_slots (id, template_id, category_id, subcategory_id, comment, track_protection, artist_protection) OVERRIDING SYSTEM VALUE VALUES
-    (4,   3, 2,   12, '1ER DISQUE',                   9000, 3600),
-    (5,   3, 2,   13, '2EME DISQUE (Annees 2000)',     9000, 3600),
-    (6,   3, 1,   14, 'RETOUR PUB',                    600,    0),
-    (7,   3, 2,   15, '1ER DISQUE',                   9000, 3600),
-    (8,   3, 2,   16, 'SOUVENIR1',                    9000, 3600),
-    (9,   3, 1,   17, '',                               600,    0),
-    (10,  3, 2,   18, 'SOUVENIR2',                    9000, 3600),
-    (11,  3, 1,   19, '',                               600,    0),
-    (12,  3, 2,   20, '20 MINUTES',                   9000, 3600),
-    (13,  3, 1,   21, '',                               600,    0),
-    (14,  3, 2,   12, 'SEUL AVANT PUB (Annee 2010)',  9000, 3600),
-    (15,  3, 1,   13, '',                               600,    0),
-    (16,  3, 2,   14, '31 MINUTES',                   9000, 3600),
-    (17,  3, 1,   15, '',                               600,    0),
-    (18,  3, 2,   16, 'SOUVENIR1',                    9000, 3600),
-    (19,  3, 1,   17, '',                               600,    0),
-    (20,  3, 2,   18, 'SOUVENIR2',                    9000, 3600),
-    (21,  3, 1,   19, '',                               600,    0),
-    (22,  3, 2,   20, '41 MINUTES',                   9000, 3600),
-    (23,  3, 1,   21, '',                               600,    0),
-    (24,  3, 2,   12, 'SOUVENIR1',                    9000, 3600),
-    (25,  3, 1,   13, '',                               600,    0),
-    (26,  3, 2,   14, 'SOUVENIR2',                    9000,  600),
-    (27,  3, 1,   15, '',                               600,    0),
-    (28,  3, 2,   16, 'FIN HEURE',                    9000, 3600),
-    (29,  3, 2,   17, 'CD SECOURS',                   9000, 3600),
-    (30,  3, 2,   18, 'CD SECOURS',                   9000, 3600),
-    (31,  3, 2,   19, 'CD SECOURS',                   9000, 3600),
-    (32,  2, 7, NULL, 'Top Horaire',                          600,  600),
-    (33,  1, 4, NULL, 'Pub In',                         600,  600),
-    (34,  1, 8, NULL, 'ECRAN PUB',                      600,  600),
-    (35,  1, 5, NULL, 'Pub Out',                        600,  600);
-WITH ranked AS (
-    SELECT id, ROW_NUMBER() OVER (PARTITION BY template_id ORDER BY id)::INTEGER AS position
-    FROM template_slots
-)
-UPDATE template_slots ts
-SET position = ranked.position
-FROM ranked
-WHERE ranked.id = ts.id;
-SELECT setval('template_slots_id_seq', 35);
+-- Table: template_slots (62 rows)
+TRUNCATE TABLE "template_slots" RESTART IDENTITY CASCADE;
+INSERT INTO "template_slots" ("id", "template_id", "position", "category_id", "subcategory_id", "comment", "track_protection", "artist_protection") VALUES (4, 3, 1, 2, 12, '1ER DISQUE', 9000, 3600);
+INSERT INTO "template_slots" ("id", "template_id", "position", "category_id", "subcategory_id", "comment", "track_protection", "artist_protection") VALUES (5, 3, 2, 2, 13, '2EME DISQUE (Annees 2000)', 9000, 3600);
+INSERT INTO "template_slots" ("id", "template_id", "position", "category_id", "subcategory_id", "comment", "track_protection", "artist_protection") VALUES (6, 3, 3, 1, 14, 'RETOUR PUB', 600, 0);
+INSERT INTO "template_slots" ("id", "template_id", "position", "category_id", "subcategory_id", "comment", "track_protection", "artist_protection") VALUES (7, 3, 4, 2, 15, '1ER DISQUE', 9000, 3600);
+INSERT INTO "template_slots" ("id", "template_id", "position", "category_id", "subcategory_id", "comment", "track_protection", "artist_protection") VALUES (8, 3, 5, 2, 16, 'SOUVENIR1', 9000, 3600);
+INSERT INTO "template_slots" ("id", "template_id", "position", "category_id", "subcategory_id", "comment", "track_protection", "artist_protection") VALUES (9, 3, 6, 1, 17, '', 600, 0);
+INSERT INTO "template_slots" ("id", "template_id", "position", "category_id", "subcategory_id", "comment", "track_protection", "artist_protection") VALUES (10, 3, 7, 2, 18, 'SOUVENIR2', 9000, 3600);
+INSERT INTO "template_slots" ("id", "template_id", "position", "category_id", "subcategory_id", "comment", "track_protection", "artist_protection") VALUES (11, 3, 8, 1, 19, '', 600, 0);
+INSERT INTO "template_slots" ("id", "template_id", "position", "category_id", "subcategory_id", "comment", "track_protection", "artist_protection") VALUES (12, 3, 9, 2, 20, '20 MINUTES', 9000, 3600);
+INSERT INTO "template_slots" ("id", "template_id", "position", "category_id", "subcategory_id", "comment", "track_protection", "artist_protection") VALUES (13, 3, 10, 1, 21, '', 600, 0);
+INSERT INTO "template_slots" ("id", "template_id", "position", "category_id", "subcategory_id", "comment", "track_protection", "artist_protection") VALUES (14, 3, 11, 2, 12, 'SEUL AVANT PUB (Annee 2010)', 9000, 3600);
+INSERT INTO "template_slots" ("id", "template_id", "position", "category_id", "subcategory_id", "comment", "track_protection", "artist_protection") VALUES (15, 3, 12, 1, 13, '', 600, 0);
+INSERT INTO "template_slots" ("id", "template_id", "position", "category_id", "subcategory_id", "comment", "track_protection", "artist_protection") VALUES (16, 3, 13, 2, 14, '31 MINUTES', 9000, 3600);
+INSERT INTO "template_slots" ("id", "template_id", "position", "category_id", "subcategory_id", "comment", "track_protection", "artist_protection") VALUES (17, 3, 14, 1, 15, '', 600, 0);
+INSERT INTO "template_slots" ("id", "template_id", "position", "category_id", "subcategory_id", "comment", "track_protection", "artist_protection") VALUES (18, 3, 15, 2, 16, 'SOUVENIR1', 9000, 3600);
+INSERT INTO "template_slots" ("id", "template_id", "position", "category_id", "subcategory_id", "comment", "track_protection", "artist_protection") VALUES (19, 3, 16, 1, 17, '', 600, 0);
+INSERT INTO "template_slots" ("id", "template_id", "position", "category_id", "subcategory_id", "comment", "track_protection", "artist_protection") VALUES (20, 3, 17, 2, 18, 'SOUVENIR2', 9000, 3600);
+INSERT INTO "template_slots" ("id", "template_id", "position", "category_id", "subcategory_id", "comment", "track_protection", "artist_protection") VALUES (21, 3, 18, 1, 19, '', 600, 0);
+INSERT INTO "template_slots" ("id", "template_id", "position", "category_id", "subcategory_id", "comment", "track_protection", "artist_protection") VALUES (22, 3, 19, 2, 20, '41 MINUTES', 9000, 3600);
+INSERT INTO "template_slots" ("id", "template_id", "position", "category_id", "subcategory_id", "comment", "track_protection", "artist_protection") VALUES (23, 3, 20, 1, 21, '', 600, 0);
+INSERT INTO "template_slots" ("id", "template_id", "position", "category_id", "subcategory_id", "comment", "track_protection", "artist_protection") VALUES (24, 3, 21, 2, 12, 'SOUVENIR1', 9000, 3600);
+INSERT INTO "template_slots" ("id", "template_id", "position", "category_id", "subcategory_id", "comment", "track_protection", "artist_protection") VALUES (25, 3, 22, 1, 13, '', 600, 0);
+INSERT INTO "template_slots" ("id", "template_id", "position", "category_id", "subcategory_id", "comment", "track_protection", "artist_protection") VALUES (26, 3, 23, 2, 14, 'SOUVENIR2', 9000, 600);
+INSERT INTO "template_slots" ("id", "template_id", "position", "category_id", "subcategory_id", "comment", "track_protection", "artist_protection") VALUES (27, 3, 24, 1, 15, '', 600, 0);
+INSERT INTO "template_slots" ("id", "template_id", "position", "category_id", "subcategory_id", "comment", "track_protection", "artist_protection") VALUES (28, 3, 25, 2, 16, 'FIN HEURE', 9000, 3600);
+INSERT INTO "template_slots" ("id", "template_id", "position", "category_id", "subcategory_id", "comment", "track_protection", "artist_protection") VALUES (29, 3, 26, 2, 17, 'CD SECOURS', 9000, 3600);
+INSERT INTO "template_slots" ("id", "template_id", "position", "category_id", "subcategory_id", "comment", "track_protection", "artist_protection") VALUES (30, 3, 27, 2, 18, 'CD SECOURS', 9000, 3600);
+INSERT INTO "template_slots" ("id", "template_id", "position", "category_id", "subcategory_id", "comment", "track_protection", "artist_protection") VALUES (31, 3, 28, 2, 19, 'CD SECOURS', 9000, 3600);
+INSERT INTO "template_slots" ("id", "template_id", "position", "category_id", "subcategory_id", "comment", "track_protection", "artist_protection") VALUES (32, 2, 1, 7, NULL, 'Top Horaire', 600, 600);
+INSERT INTO "template_slots" ("id", "template_id", "position", "category_id", "subcategory_id", "comment", "track_protection", "artist_protection") VALUES (33, 1, 1, 4, NULL, 'Pub In', 600, 600);
+INSERT INTO "template_slots" ("id", "template_id", "position", "category_id", "subcategory_id", "comment", "track_protection", "artist_protection") VALUES (34, 1, 2, 8, NULL, 'ECRAN PUB', 600, 600);
+INSERT INTO "template_slots" ("id", "template_id", "position", "category_id", "subcategory_id", "comment", "track_protection", "artist_protection") VALUES (35, 1, 3, 5, NULL, 'Pub Out', 600, 600);
+INSERT INTO "template_slots" ("id", "template_id", "position", "category_id", "subcategory_id", "comment", "track_protection", "artist_protection") VALUES (36, 4, 1, 2, 21, '', 3600, 3600);
+INSERT INTO "template_slots" ("id", "template_id", "position", "category_id", "subcategory_id", "comment", "track_protection", "artist_protection") VALUES (37, 4, 30, 2, 21, '', 3600, 3600);
+INSERT INTO "template_slots" ("id", "template_id", "position", "category_id", "subcategory_id", "comment", "track_protection", "artist_protection") VALUES (38, 4, 29, 2, 21, '', 3600, 3600);
+INSERT INTO "template_slots" ("id", "template_id", "position", "category_id", "subcategory_id", "comment", "track_protection", "artist_protection") VALUES (39, 4, 28, 2, 21, '', 3600, 3600);
+INSERT INTO "template_slots" ("id", "template_id", "position", "category_id", "subcategory_id", "comment", "track_protection", "artist_protection") VALUES (40, 4, 27, 2, 21, '', 3600, 3600);
+INSERT INTO "template_slots" ("id", "template_id", "position", "category_id", "subcategory_id", "comment", "track_protection", "artist_protection") VALUES (41, 4, 26, 2, 21, '', 3600, 3600);
+INSERT INTO "template_slots" ("id", "template_id", "position", "category_id", "subcategory_id", "comment", "track_protection", "artist_protection") VALUES (42, 4, 25, 2, 21, '', 3600, 3600);
+INSERT INTO "template_slots" ("id", "template_id", "position", "category_id", "subcategory_id", "comment", "track_protection", "artist_protection") VALUES (43, 4, 24, 2, 21, '', 3600, 3600);
+INSERT INTO "template_slots" ("id", "template_id", "position", "category_id", "subcategory_id", "comment", "track_protection", "artist_protection") VALUES (44, 4, 23, 2, 21, '', 3600, 3600);
+INSERT INTO "template_slots" ("id", "template_id", "position", "category_id", "subcategory_id", "comment", "track_protection", "artist_protection") VALUES (45, 4, 22, 2, 21, '', 3600, 3600);
+INSERT INTO "template_slots" ("id", "template_id", "position", "category_id", "subcategory_id", "comment", "track_protection", "artist_protection") VALUES (46, 4, 21, 2, 21, '', 3600, 3600);
+INSERT INTO "template_slots" ("id", "template_id", "position", "category_id", "subcategory_id", "comment", "track_protection", "artist_protection") VALUES (47, 4, 20, 2, 21, '', 3600, 3600);
+INSERT INTO "template_slots" ("id", "template_id", "position", "category_id", "subcategory_id", "comment", "track_protection", "artist_protection") VALUES (48, 4, 19, 2, 21, '', 3600, 3600);
+INSERT INTO "template_slots" ("id", "template_id", "position", "category_id", "subcategory_id", "comment", "track_protection", "artist_protection") VALUES (49, 4, 18, 2, 21, '', 3600, 3600);
+INSERT INTO "template_slots" ("id", "template_id", "position", "category_id", "subcategory_id", "comment", "track_protection", "artist_protection") VALUES (50, 4, 17, 2, 21, '', 3600, 3600);
+INSERT INTO "template_slots" ("id", "template_id", "position", "category_id", "subcategory_id", "comment", "track_protection", "artist_protection") VALUES (51, 4, 16, 2, 21, '', 3600, 3600);
+INSERT INTO "template_slots" ("id", "template_id", "position", "category_id", "subcategory_id", "comment", "track_protection", "artist_protection") VALUES (52, 4, 15, 2, 21, '', 3600, 3600);
+INSERT INTO "template_slots" ("id", "template_id", "position", "category_id", "subcategory_id", "comment", "track_protection", "artist_protection") VALUES (53, 4, 14, 2, 21, '', 3600, 3600);
+INSERT INTO "template_slots" ("id", "template_id", "position", "category_id", "subcategory_id", "comment", "track_protection", "artist_protection") VALUES (54, 4, 13, 2, 21, '', 3600, 3600);
+INSERT INTO "template_slots" ("id", "template_id", "position", "category_id", "subcategory_id", "comment", "track_protection", "artist_protection") VALUES (55, 4, 12, 2, 21, '', 3600, 3600);
+INSERT INTO "template_slots" ("id", "template_id", "position", "category_id", "subcategory_id", "comment", "track_protection", "artist_protection") VALUES (56, 4, 11, 2, 21, '', 3600, 3600);
+INSERT INTO "template_slots" ("id", "template_id", "position", "category_id", "subcategory_id", "comment", "track_protection", "artist_protection") VALUES (57, 4, 10, 2, 21, '', 3600, 3600);
+INSERT INTO "template_slots" ("id", "template_id", "position", "category_id", "subcategory_id", "comment", "track_protection", "artist_protection") VALUES (58, 4, 9, 2, 21, '', 3600, 3600);
+INSERT INTO "template_slots" ("id", "template_id", "position", "category_id", "subcategory_id", "comment", "track_protection", "artist_protection") VALUES (59, 4, 8, 2, 21, '', 3600, 3600);
+INSERT INTO "template_slots" ("id", "template_id", "position", "category_id", "subcategory_id", "comment", "track_protection", "artist_protection") VALUES (60, 4, 7, 2, 21, '', 3600, 3600);
+INSERT INTO "template_slots" ("id", "template_id", "position", "category_id", "subcategory_id", "comment", "track_protection", "artist_protection") VALUES (61, 4, 6, 2, 21, '', 3600, 3600);
+INSERT INTO "template_slots" ("id", "template_id", "position", "category_id", "subcategory_id", "comment", "track_protection", "artist_protection") VALUES (62, 4, 5, 2, 21, '', 3600, 3600);
+INSERT INTO "template_slots" ("id", "template_id", "position", "category_id", "subcategory_id", "comment", "track_protection", "artist_protection") VALUES (63, 4, 4, 2, 21, '', 3600, 3600);
+INSERT INTO "template_slots" ("id", "template_id", "position", "category_id", "subcategory_id", "comment", "track_protection", "artist_protection") VALUES (64, 4, 3, 2, 21, '', 3600, 3600);
+INSERT INTO "template_slots" ("id", "template_id", "position", "category_id", "subcategory_id", "comment", "track_protection", "artist_protection") VALUES (65, 4, 2, 2, 21, '', 3600, 3600);
+SELECT setval(pg_get_serial_sequence('"template_slots"', 'id'), MAX(id)) FROM "template_slots";
 
 -- row 121 (hour=0 min=0 sec=0) is a catch-all sentinel; template_id NULL
-INSERT INTO clock_events (id, hour, minute, second, template_id, priority, duration) OVERRIDING SYSTEM VALUE VALUES
+INSERT INTO clock_events (id, hour, minute, second, template_id, priority, duration) VALUES
     (1,   0, 59, 45, 2, 0, 10),
     (2,   1, 59, 45, 2, 0, 10),
     (3,   2, 59, 45, 2, 0, 10),
@@ -324,18 +347,18 @@ INSERT INTO clock_events (id, hour, minute, second, template_id, priority, durat
     (120,23, 47,  0, 1, 0, 60);
 SELECT setval('clock_events_id_seq', 121);
 
-INSERT INTO schedules (id, from_hour, to_hour, monday, tuesday, wednesday, thursday, friday, saturday, sunday, template_id) OVERRIDING SYSTEM VALUE VALUES
-    (1, 0, 23, TRUE, TRUE, TRUE, TRUE, TRUE, TRUE, TRUE, 4);
+INSERT INTO schedules (id, from_hour, to_hour, days_mask, template_id) VALUES
+    (1, 0, 23, 127, 4);
 SELECT setval('schedules_id_seq', 1);
 
-INSERT INTO users_roles (id, name) OVERRIDING SYSTEM VALUE VALUES
+INSERT INTO users_roles (id, name) VALUES
     (1, 'SuperAdmin'),
     (2, 'Admin'),
     (3, 'Manager'),
     (4, 'User');
 SELECT setval('users_roles_id_seq', 4);
 
-INSERT INTO users (id, login, password_hash, active, role_id) OVERRIDING SYSTEM VALUE VALUES
+INSERT INTO users (id, login, password_hash, active, role_id) VALUES
     (1, 'admin', crypt('admin123', gen_salt('bf')), TRUE, 1);
 SELECT setval('users_id_seq', 1);
 
@@ -349,12 +372,12 @@ INSERT INTO configurations (
 )
 VALUES (false, false, 10, 2500, 1000, 'Europe/Paris');
 
-INSERT INTO "advertisers" ("id", "name", "sector_id", "address", "vat_number", "notes", "active", "client_since") OVERRIDING SYSTEM VALUE VALUES
+INSERT INTO "advertisers" ("id", "name", "sector_id", "address", "vat_number", "notes", "active", "client_since") VALUES
 (1,	'CARRELAGES PIRARD',	2,	'Rue du Travail 1, 4460 Grâce-Hollogne',	NULL,	'FAKE CUSTOMER',	'1',	'2000-01-01');
 
-INSERT INTO "contacts" ("id", "advertiser_id", "name", "role", "phone", "email", "primary_contact", "notes") OVERRIDING SYSTEM VALUE VALUES
+INSERT INTO "contacts" ("id", "advertiser_id", "name", "role", "phone", "email", "primary_contact", "notes") VALUES
 (1,	1,	'Monsieur Dracula',	'Manager',	'+32475151230',	'hello@pirard.local',	'1',	NULL);
 
-INSERT INTO "campaigns" ("id", "advertiser_id", "name", "total_broadcasts", "broadcast_count", "station_id", "active", "encoded_at", "start_date", "end_date", "last_aired_at") OVERRIDING SYSTEM VALUE VALUES
+INSERT INTO "campaigns" ("id", "advertiser_id", "name", "total_broadcasts", "broadcast_count", "station_id", "active", "encoded_at", "start_date", "end_date", "last_aired_at") VALUES
 (1,	1,	'HALLOWEEN 2026',	10000,	0,	1,	'1',	NULL,	'2026-01-01',	'2026-12-31',	NULL);
 

@@ -1,14 +1,56 @@
 import { useEffect, useState } from 'react';
 import { ConfirmDialog } from '../crud/ConfirmDialog.jsx';
 
+const EVENT_TYPES = [
+  { id: 1, label: 'One time Only',          short: 'One time' },
+  { id: 2, label: 'Repeat by Day',          short: 'By Day' },
+  { id: 3, label: 'Repeat by Day and Hour', short: 'By Day & Hour' },
+  { id: 4, label: 'Repeat by Date',         short: 'By Date' },
+  { id: 5, label: 'Repeat by Date and Hour', short: 'By Date & Hour' }
+];
+
+const DAYS = [
+  { bit: 0, label: 'Mon' },
+  { bit: 1, label: 'Tue' },
+  { bit: 2, label: 'Wed' },
+  { bit: 3, label: 'Thu' },
+  { bit: 4, label: 'Fri' },
+  { bit: 5, label: 'Sat' },
+  { bit: 6, label: 'Sun' }
+];
+
+const HOURS_LIST = Array.from({ length: 24 }, (_, i) => i);
+
+function getBit(mask, bit) { return ((mask >>> bit) & 1) === 1; }
+function toggleBit(mask, bit) { return mask ^ (1 << bit); }
+
 function emptyForm() {
   return {
+    event_type: 2,
+    days_mask: 127,
+    hours_mask: 0,
+    event_date: '',
     hour: 0,
     minute: 0,
     second: 0,
     template_id: '',
     priority: 0,
     duration: 0
+  };
+}
+
+function rowToForm(row) {
+  return {
+    event_type:  row.event_type  ?? 2,
+    days_mask:   row.days_mask   ?? 127,
+    hours_mask:  row.hours_mask  ?? 0,
+    event_date:  row.event_date  || '',
+    hour:        row.hour        ?? 0,
+    minute:      row.minute      ?? 0,
+    second:      row.second      ?? 0,
+    template_id: row.template_id ? String(row.template_id) : '',
+    priority:    row.priority    ?? 0,
+    duration:    row.duration    ?? 0
   };
 }
 
@@ -57,20 +99,25 @@ export function EventsPage() {
   }
 
   function openEdit(row) {
-    setFormData({
-      hour: row.hour ?? 0,
-      minute: row.minute ?? 0,
-      second: row.second ?? 0,
-      template_id: row.template_id ? String(row.template_id) : '',
-      priority: row.priority ?? 0,
-      duration: row.duration ?? 0
-    });
+    setFormData(rowToForm(row));
     setFormError(null);
     setModal({ mode: 'edit', row });
   }
 
   function update(key, value) {
     setFormData((prev) => ({ ...prev, [key]: value }));
+  }
+
+  function updateType(newType) {
+    setFormData((prev) => ({ ...prev, event_type: newType }));
+  }
+
+  function updateDayBit(bit) {
+    setFormData((prev) => ({ ...prev, days_mask: toggleBit(prev.days_mask, bit) }));
+  }
+
+  function updateHourBit(hour) {
+    setFormData((prev) => ({ ...prev, hours_mask: toggleBit(prev.hours_mask, hour) }));
   }
 
   async function save(event) {
@@ -108,6 +155,13 @@ export function EventsPage() {
     }
   }
 
+  const et = formData.event_type;
+  const showDate     = [1, 4, 5].includes(et);
+  const showDays     = [2, 3].includes(et);
+  const showHours    = [3, 5].includes(et);
+  const hourDisabled = [3, 5].includes(et);
+  const dateLabel    = [4, 5].includes(et) ? 'Date (year ignored)' : 'Date';
+
   return (
     <section className="crud-page">
       <header className="crud-header">
@@ -129,25 +183,35 @@ export function EventsPage() {
           <table className="data-table">
             <thead>
               <tr>
-                <th style={{ width: '120px' }}>Time</th>
+                <th style={{ width: '130px' }}>Type</th>
+                <th>Trigger</th>
                 <th>Template</th>
-                <th style={{ width: '100px' }}>Priority</th>
-                <th style={{ width: '110px' }}>Duration</th>
+                <th style={{ width: '80px' }}>Priority</th>
+                <th style={{ width: '90px' }}>Duration</th>
                 <th className="actions-column">Actions</th>
               </tr>
             </thead>
             <tbody>
               {rows.length === 0 ? (
-                <tr><td className="empty-cell" colSpan={5}>No events.</td></tr>
+                <tr><td className="empty-cell" colSpan={6}>No events.</td></tr>
               ) : rows.map((row) => (
                 <tr key={row.id}>
-                  <td>{formatTime(row)}</td>
+                  <td style={{ fontSize: '0.8em', color: '#91a9b7' }}>
+                    {EVENT_TYPES.find((t) => t.id === row.event_type)?.short ?? '—'}
+                  </td>
+                  <td style={{ fontFamily: 'monospace', fontSize: '0.85em' }}>
+                    {formatTrigger(row)}
+                  </td>
                   <td>{row.template_name || '—'}</td>
                   <td>{row.priority ?? 0}</td>
                   <td>{formatDuration(row.duration)}</td>
                   <td className="row-actions">
-                    <button aria-label="Edit" className="ghost-button table-icon-button" title="Edit" type="button" onClick={() => openEdit(row)}><i aria-hidden="true" className="bi bi-pencil" /></button>
-                    <button aria-label="Delete" className="danger-button table-icon-button" title="Delete" type="button" onClick={() => { setError(null); setDeleteTarget(row); }}><i aria-hidden="true" className="bi bi-trash" /></button>
+                    <button aria-label="Edit" className="ghost-button table-icon-button" title="Edit" type="button" onClick={() => openEdit(row)}>
+                      <i aria-hidden="true" className="bi bi-pencil" />
+                    </button>
+                    <button aria-label="Delete" className="danger-button table-icon-button" title="Delete" type="button" onClick={() => { setError(null); setDeleteTarget(row); }}>
+                      <i aria-hidden="true" className="bi bi-trash" />
+                    </button>
                   </td>
                 </tr>
               ))}
@@ -164,7 +228,7 @@ export function EventsPage() {
 
       {modal ? (
         <div className="modal-backdrop">
-          <section className="modal-panel" role="dialog" aria-modal="true">
+          <section className="modal-panel event-modal" role="dialog" aria-modal="true">
             <header className="modal-header">
               <div>
                 <p className="panel-kicker">{modal === 'add' ? 'Add' : 'Edit'}</p>
@@ -174,25 +238,97 @@ export function EventsPage() {
             </header>
 
             <form className="resource-form" onSubmit={save}>
-              <div className="form-row three-columns">
-                <NumberField label="Hour" max={23} min={0} value={formData.hour} onChange={(value) => update('hour', value)} />
-                <NumberField label="Minute" max={59} min={0} value={formData.minute} onChange={(value) => update('minute', value)} />
-                <NumberField label="Second" max={59} min={0} value={formData.second} onChange={(value) => update('second', value)} />
-              </div>
 
+              {/* Type */}
               <label>
-                <span>Template</span>
-                <select
-                  value={formData.template_id}
-                  onChange={(event) => update('template_id', event.target.value)}
-                >
-                  <option value="">— none —</option>
-                  {templates.map((template) => (
-                    <option key={template.id} value={template.id}>{template.name}</option>
+                <span>Type</span>
+                <select value={et} onChange={(e) => updateType(Number(e.target.value))}>
+                  {EVENT_TYPES.map((t) => (
+                    <option key={t.id} value={t.id}>{t.label}</option>
                   ))}
                 </select>
               </label>
 
+              <hr className="form-separator" />
+
+              {/* Date — types 1, 4, 5 */}
+              {showDate ? (
+                <label>
+                  <span>{dateLabel}</span>
+                  <input
+                    required
+                    type="date"
+                    value={formData.event_date}
+                    onChange={(e) => update('event_date', e.target.value)}
+                  />
+                </label>
+              ) : null}
+
+              {/* Day checkboxes — types 2, 3 */}
+              {showDays ? (
+                <div className="day-picker">
+                  <span>Days</span>
+                  <div className="day-picker-row">
+                    {DAYS.map((d) => (
+                      <label key={d.bit} className="day-toggle">
+                        <input
+                          type="checkbox"
+                          checked={getBit(formData.days_mask, d.bit)}
+                          onChange={() => updateDayBit(d.bit)}
+                        />
+                        <span>{d.label}</span>
+                      </label>
+                    ))}
+                  </div>
+                </div>
+              ) : null}
+
+              {/* Hour checkboxes — types 3, 5 */}
+              {showHours ? (
+                <div className="hour-picker">
+                  <span>Hours</span>
+                  <div className="hour-picker-grid">
+                    {HOURS_LIST.map((h) => (
+                      <label key={h} className="hour-toggle">
+                        <input
+                          type="checkbox"
+                          checked={getBit(formData.hours_mask, h)}
+                          onChange={() => updateHourBit(h)}
+                        />
+                        <span>{h}h</span>
+                      </label>
+                    ))}
+                  </div>
+                </div>
+              ) : null}
+
+              {/* Hour / Minute / Second */}
+              <div className="form-row three-columns">
+                <NumberField
+                  label="Hour"
+                  max={23} min={0}
+                  value={formData.hour}
+                  disabled={hourDisabled}
+                  onChange={(value) => update('hour', value)}
+                />
+                <NumberField label="Minute" max={59} min={0} value={formData.minute} onChange={(value) => update('minute', value)} />
+                <NumberField label="Second" max={59} min={0} value={formData.second} onChange={(value) => update('second', value)} />
+              </div>
+
+              <hr className="form-separator" />
+
+              {/* Template */}
+              <label>
+                <span>Template</span>
+                <select value={formData.template_id} onChange={(e) => update('template_id', e.target.value)}>
+                  <option value="">— none —</option>
+                  {templates.map((t) => (
+                    <option key={t.id} value={t.id}>{t.name}</option>
+                  ))}
+                </select>
+              </label>
+
+              {/* Priority + Duration */}
               <div className="form-row">
                 <NumberField label="Priority" max={32767} min={-32768} value={formData.priority} onChange={(value) => update('priority', value)} />
                 <label>
@@ -202,7 +338,7 @@ export function EventsPage() {
                     step="0.001"
                     type="number"
                     value={formData.duration}
-                    onChange={(event) => update('duration', Number(event.target.value))}
+                    onChange={(e) => update('duration', Number(e.target.value))}
                   />
                 </label>
               </div>
@@ -223,7 +359,7 @@ export function EventsPage() {
       {deleteTarget ? (
         <ConfirmDialog
           busy={saving}
-          message={`Delete event at ${formatTime(deleteTarget)}?`}
+          message={`Delete this event?`}
           title="Delete Event"
           onCancel={() => setDeleteTarget(null)}
           onConfirm={confirmDelete}
@@ -233,14 +369,15 @@ export function EventsPage() {
   );
 }
 
-function NumberField({ label, min, max, value, onChange }) {
+function NumberField({ label, min, max, value, disabled, onChange }) {
   return (
     <label>
       <span>{label}</span>
       <input
+        disabled={disabled}
         max={max}
         min={min}
-        required
+        required={!disabled}
         type="number"
         value={value}
         onChange={(event) => onChange(Number(event.target.value))}
@@ -249,8 +386,45 @@ function NumberField({ label, min, max, value, onChange }) {
   );
 }
 
-function formatTime(row) {
-  return `${pad(row.hour)}:${pad(row.minute)}:${pad(row.second)}`;
+// ── Formatting helpers ────────────────────────────────────────────────────────
+
+function formatDays(mask) {
+  const active = DAYS.filter((d) => getBit(mask, d.bit)).map((d) => d.label);
+  if (active.length === 0) return '—';
+  if (active.length === 7) return 'Every day';
+  return active.join(' ');
+}
+
+function formatHoursMask(mask) {
+  const active = HOURS_LIST.filter((h) => getBit(mask, h));
+  if (active.length === 0) return '—';
+  return active.map((h) => `${h}h`).join(' ');
+}
+
+function formatDateFull(dateStr) {
+  if (!dateStr) return '—';
+  return dateStr.slice(0, 10);
+}
+
+function formatDateDayMonth(dateStr) {
+  if (!dateStr) return '—';
+  const parts = dateStr.slice(0, 10).split('-');
+  return `${parts[2]}/${parts[1]}`;
+}
+
+function formatTrigger(row) {
+  const mm = pad(row.minute);
+  const ss = pad(row.second);
+  const hms = `${pad(row.hour)}:${mm}:${ss}`;
+
+  switch (row.event_type) {
+    case 1: return `${formatDateFull(row.event_date)}  ${hms}`;
+    case 2: return `${formatDays(row.days_mask)}  ${hms}`;
+    case 3: return `${formatDays(row.days_mask)}  ${formatHoursMask(row.hours_mask)}  :${mm}:${ss}`;
+    case 4: return `${formatDateDayMonth(row.event_date)}  ${hms}`;
+    case 5: return `${formatDateDayMonth(row.event_date)}  ${formatHoursMask(row.hours_mask)}  :${mm}:${ss}`;
+    default: return hms;
+  }
 }
 
 function pad(value) {
@@ -258,8 +432,8 @@ function pad(value) {
 }
 
 function formatDuration(value) {
-  const duration = Number(value || 0);
-  return Number.isFinite(duration) ? `${duration}s` : '—';
+  const d = Number(value || 0);
+  return Number.isFinite(d) ? `${d}s` : '—';
 }
 
 async function fetchJson(url, options = {}) {

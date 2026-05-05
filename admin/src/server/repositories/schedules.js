@@ -2,13 +2,7 @@ const SELECT_COLS = `
   s.id,
   s.from_hour,
   s.to_hour,
-  s.monday,
-  s.tuesday,
-  s.wednesday,
-  s.thursday,
-  s.friday,
-  s.saturday,
-  s.sunday,
+  s.days_mask,
   s.template_id,
   t.name AS template_name
 `;
@@ -46,17 +40,11 @@ export async function getSchedule(db, id) {
 export async function createSchedule(db, data) {
   const { rows } = await db.query(
     `
-    INSERT INTO schedules
-      (from_hour, to_hour, monday, tuesday, wednesday, thursday, friday, saturday, sunday, template_id)
-    VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)
+    INSERT INTO schedules (from_hour, to_hour, days_mask, template_id)
+    VALUES ($1, $2, $3, $4)
     RETURNING id
     `,
-    [
-      data.from_hour, data.to_hour,
-      data.monday, data.tuesday, data.wednesday,
-      data.thursday, data.friday, data.saturday, data.sunday,
-      data.template_id
-    ]
+    [data.from_hour, data.to_hour, data.days_mask, data.template_id]
   );
   return getSchedule(db, rows[0].id);
 }
@@ -67,23 +55,11 @@ export async function updateSchedule(db, id, data) {
     UPDATE schedules
     SET from_hour   = $2,
         to_hour     = $3,
-        monday      = $4,
-        tuesday     = $5,
-        wednesday   = $6,
-        thursday    = $7,
-        friday      = $8,
-        saturday    = $9,
-        sunday      = $10,
-        template_id = $11
+        days_mask   = $4,
+        template_id = $5
     WHERE id = $1
     `,
-    [
-      id,
-      data.from_hour, data.to_hour,
-      data.monday, data.tuesday, data.wednesday,
-      data.thursday, data.friday, data.saturday, data.sunday,
-      data.template_id
-    ]
+    [id, data.from_hour, data.to_hour, data.days_mask, data.template_id]
   );
   return getSchedule(db, id);
 }

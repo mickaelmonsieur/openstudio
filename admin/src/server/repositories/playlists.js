@@ -1,11 +1,7 @@
-const DAY_COLUMNS = {
-  sunday: 'sunday',
-  monday: 'monday',
-  tuesday: 'tuesday',
-  wednesday: 'wednesday',
-  thursday: 'thursday',
-  friday: 'friday',
-  saturday: 'saturday'
+// bit 0=Mon, 1=Tue, 2=Wed, 3=Thu, 4=Fri, 5=Sat, 6=Sun
+const DAY_BITS = {
+  monday: 0, tuesday: 1, wednesday: 2, thursday: 3,
+  friday: 4, saturday: 5, sunday: 6
 };
 
 export async function getConfiguredTimezone(db) {
@@ -100,21 +96,21 @@ export async function listQueueCoverage(db, timezone, days = 42) {
 }
 
 export async function getScheduleForHour(db, dayKey, hour) {
-  const column = DAY_COLUMNS[dayKey];
-  if (!column) throw new Error(`Invalid schedule day: ${dayKey}`);
+  const bit = DAY_BITS[dayKey];
+  if (bit === undefined) throw new Error(`Invalid schedule day: ${dayKey}`);
 
   const { rows } = await db.query(
     `
     SELECT s.id, s.template_id, t.name AS template_name
     FROM schedules s
     JOIN templates t ON t.id = s.template_id
-    WHERE s.${column} = TRUE
+    WHERE (s.days_mask & $2) > 0
       AND s.from_hour <= $1
       AND s.to_hour >= $1
     ORDER BY s.id
     LIMIT 1
     `,
-    [hour]
+    [hour, 1 << bit]
   );
   return rows[0] || null;
 }

@@ -31,7 +31,7 @@ export async function importFlacTrack(db, file, libraryRoot = '') {
 export async function buildFlacTrackDraft(db, filePath, displayName, options = {}) {
   const fileBuffer = await fs.readFile(filePath);
 
-  const metadata = await parseBuffer(fileBuffer);
+  const metadata = await parseBuffer(fileBuffer, { mimeType: 'audio/flac' });
   assertFlacMetadata(metadata);
 
   const common = metadata.common || {};

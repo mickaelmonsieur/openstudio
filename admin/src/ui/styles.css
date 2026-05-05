@@ -1091,6 +1091,49 @@ h1 {
   gap: 6px;
 }
 
+.hour-picker {
+  display: grid;
+  gap: 8px;
+  color: #d5e3eb;
+  font-size: 13px;
+}
+
+.hour-picker-grid {
+  display: grid;
+  grid-template-columns: repeat(12, 1fr);
+  gap: 2px;
+}
+
+.hour-toggle {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  cursor: pointer;
+}
+
+.hour-toggle input[type="checkbox"] {
+  width: 14px;
+  height: 14px;
+  accent-color: #6857d8;
+  cursor: pointer;
+}
+
+.hour-toggle span {
+  font-size: 10px;
+  color: #91a9b7;
+}
+
+.event-modal {
+  width: min(660px, 100%);
+}
+
+.form-separator {
+  border: none;
+  border-top: 1px solid #3a5060;
+  margin: 4px 0;
+}
+
 .day-toggle {
   display: flex;
   flex-direction: column;

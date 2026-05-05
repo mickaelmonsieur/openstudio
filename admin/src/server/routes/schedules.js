@@ -16,8 +16,6 @@ function parsePagination(query) {
   return { page, limit, offset: (page - 1) * limit };
 }
 
-const DAYS = ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday'];
-
 function parseId(value) {
   const id = Number(value);
   return Number.isInteger(id) && id > 0 ? id : null;
@@ -38,12 +36,12 @@ function validate(data) {
   const to_hour = parseHour(data?.to_hour);
   if (to_hour === null) return { ok: false, error: 'To hour is invalid.' };
 
-  const days = {};
-  for (const day of DAYS) {
-    days[day] = Boolean(data?.[day]);
+  const days_mask = Number(data?.days_mask ?? 0);
+  if (!(Number.isInteger(days_mask) && days_mask > 0 && days_mask <= 127)) {
+    return { ok: false, error: 'Select at least one day.' };
   }
 
-  return { ok: true, value: { template_id, from_hour, to_hour, ...days } };
+  return { ok: true, value: { template_id, from_hour, to_hour, days_mask } };
 }
 
 function asyncRoute(handler) {

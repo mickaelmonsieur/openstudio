@@ -2,21 +2,22 @@ import { useEffect, useState } from 'react';
 import { ConfirmDialog } from '../crud/ConfirmDialog.jsx';
 
 const DAYS = [
-  { key: 'monday',    label: 'Mon' },
-  { key: 'tuesday',   label: 'Tue' },
-  { key: 'wednesday', label: 'Wed' },
-  { key: 'thursday',  label: 'Thu' },
-  { key: 'friday',    label: 'Fri' },
-  { key: 'saturday',  label: 'Sat' },
-  { key: 'sunday',    label: 'Sun' }
+  { bit: 0, label: 'Mon' },
+  { bit: 1, label: 'Tue' },
+  { bit: 2, label: 'Wed' },
+  { bit: 3, label: 'Thu' },
+  { bit: 4, label: 'Fri' },
+  { bit: 5, label: 'Sat' },
+  { bit: 6, label: 'Sun' }
 ];
 
 const HOURS = Array.from({ length: 24 }, (_, i) => i);
 
+function getBit(mask, bit) { return ((mask >>> bit) & 1) === 1; }
+function toggleBit(mask, bit) { return mask ^ (1 << bit); }
+
 function emptyForm() {
-  const days = {};
-  for (const d of DAYS) days[d.key] = false;
-  return { template_id: '', from_hour: 0, to_hour: 23, ...days };
+  return { template_id: '', from_hour: 0, to_hour: 23, days_mask: 127 };
 }
 
 const LIMIT = 50;
@@ -68,13 +69,7 @@ export function SchedulesPage() {
       template_id: String(row.template_id ?? ''),
       from_hour:   row.from_hour ?? 0,
       to_hour:     row.to_hour   ?? 23,
-      monday:    Boolean(row.monday),
-      tuesday:   Boolean(row.tuesday),
-      wednesday: Boolean(row.wednesday),
-      thursday:  Boolean(row.thursday),
-      friday:    Boolean(row.friday),
-      saturday:  Boolean(row.saturday),
-      sunday:    Boolean(row.sunday)
+      days_mask:   row.days_mask ?? 127
     });
     setFormError(null);
     setModal({ mode: 'edit', row });
@@ -82,6 +77,10 @@ export function SchedulesPage() {
 
   function update(key, value) {
     setFormData((prev) => ({ ...prev, [key]: value }));
+  }
+
+  function updateDayBit(bit) {
+    setFormData((prev) => ({ ...prev, days_mask: toggleBit(prev.days_mask, bit) }));
   }
 
   async function save(event) {
@@ -155,7 +154,7 @@ export function SchedulesPage() {
                   <td>{row.id}</td>
                   <td>{row.template_name || '—'}</td>
                   <td>{formatHour(row.from_hour)} – {formatHour(row.to_hour)}</td>
-                  <td><DayBadges row={row} /></td>
+                  <td><DayBadges mask={row.days_mask ?? 127} /></td>
                   <td className="row-actions">
                     <button aria-label="Edit" className="ghost-button table-icon-button" title="Edit" type="button" onClick={() => openEdit(row)}><i aria-hidden="true" className="bi bi-pencil" /></button>
                     <button aria-label="Delete" className="danger-button table-icon-button" title="Delete" type="button" onClick={() => { setError(null); setDeleteTarget(row); }}><i aria-hidden="true" className="bi bi-trash" /></button>
@@ -230,11 +229,11 @@ export function SchedulesPage() {
                 <span>Days</span>
                 <div className="day-picker-row">
                   {DAYS.map((d) => (
-                    <label key={d.key} className="day-toggle">
+                    <label key={d.bit} className="day-toggle">
                       <input
-                        checked={Boolean(formData[d.key])}
                         type="checkbox"
-                        onChange={(e) => update(d.key, e.target.checked)}
+                        checked={getBit(formData.days_mask, d.bit)}
+                        onChange={() => updateDayBit(d.bit)}
                       />
                       <span>{d.label}</span>
                     </label>
@@ -268,11 +267,11 @@ export function SchedulesPage() {
   );
 }
 
-function DayBadges({ row }) {
+function DayBadges({ mask }) {
   return (
     <span className="day-badges">
       {DAYS.map((d) => (
-        <span key={d.key} className={`day-badge ${row[d.key] ? 'active' : ''}`}>
+        <span key={d.bit} className={`day-badge ${getBit(mask, d.bit) ? 'active' : ''}`}>
           {d.label}
         </span>
       ))}
