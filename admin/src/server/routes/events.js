@@ -7,6 +7,7 @@ import {
   updateEvent
 } from '../repositories/events.js';
 import { listTemplates } from '../repositories/formats.js';
+import { listTracksForOptions } from '../repositories/tracks.js';
 
 const LIMIT = 50;
 
@@ -40,6 +41,21 @@ function parseDate(value) {
   return Number.isNaN(date.getTime()) ? null : { full: `${y}-${m}-${d}`, month: m, day: d };
 }
 
+function validateAction(action, index) {
+  const action_type = parseBoundedInt(action?.action_type, 1, 2);
+  if (action_type === null) return { ok: false, error: `Action ${index + 1}: invalid type.` };
+
+  if (action_type === 1) {
+    const template_id = parseId(action?.template_id);
+    if (!template_id) return { ok: false, error: `Action ${index + 1}: template required.` };
+    return { ok: true, value: { action_type, template_id, track_id: null } };
+  }
+
+  const track_id = parseId(action?.track_id);
+  if (!track_id) return { ok: false, error: `Action ${index + 1}: track required.` };
+  return { ok: true, value: { action_type, template_id: null, track_id } };
+}
+
 function validate(data) {
   const event_type = parseBoundedInt(data?.event_type, 1, 5);
   if (event_type === null) return { ok: false, error: 'Invalid event type.' };
@@ -50,41 +66,43 @@ function validate(data) {
   const second = parseBoundedInt(data?.second, 0, 59);
   if (second === null) return { ok: false, error: 'Second must be between 0 and 59.' };
 
-  const template_id = data?.template_id ? parseId(data.template_id) : null;
-  if (data?.template_id && !template_id) return { ok: false, error: 'Invalid template.' };
-
   const priority = parseBoundedInt(data?.priority ?? 0, -32768, 32767);
   if (priority === null) return { ok: false, error: 'Priority must be an integer.' };
 
   const duration = parseNonNegativeNumber(data?.duration ?? 0);
   if (duration === null) return { ok: false, error: 'Duration must be zero or greater.' };
 
-  // hour: used by types 1, 2, 4 — ignored (forced 0) for types 3, 5
   const hourNeeded = [1, 2, 4].includes(event_type);
   const hour = hourNeeded ? parseBoundedInt(data?.hour, 0, 23) : 0;
   if (hourNeeded && hour === null) return { ok: false, error: 'Hour must be between 0 and 23.' };
 
-  // days_mask: required for types 2, 3
   const days_mask = Number(data?.days_mask ?? 0);
   if ([2, 3].includes(event_type) && !(Number.isInteger(days_mask) && days_mask > 0 && days_mask <= 127)) {
     return { ok: false, error: 'Select at least one day.' };
   }
 
-  // hours_mask: required for types 3, 5
   const hours_mask = Number(data?.hours_mask ?? 0);
   if ([3, 5].includes(event_type) && !(Number.isInteger(hours_mask) && hours_mask > 0)) {
     return { ok: false, error: 'Select at least one hour.' };
   }
 
-  // event_date: required for types 1, 4, 5
   let event_date = null;
   if ([1, 4, 5].includes(event_type)) {
     const parsed = parseDate(data?.event_date);
     if (!parsed) return { ok: false, error: 'A valid date is required.' };
-    // Types 4 & 5: year is ignored — normalize to 2000
     event_date = [4, 5].includes(event_type)
       ? `2000-${parsed.month}-${parsed.day}`
       : parsed.full;
+  }
+
+  const rawActions = Array.isArray(data?.actions) ? data.actions : [];
+  if (rawActions.length === 0) return { ok: false, error: 'At least one action is required.' };
+
+  const actions = [];
+  for (let i = 0; i < rawActions.length; i++) {
+    const result = validateAction(rawActions[i], i);
+    if (!result.ok) return result;
+    actions.push(result.value);
   }
 
   return {
@@ -97,9 +115,9 @@ function validate(data) {
       hour,
       minute,
       second,
-      template_id,
       priority,
-      duration
+      duration,
+      actions
     }
   };
 }
@@ -116,8 +134,10 @@ function asyncRoute(handler) {
 
 export function registerEventRoutes(app, getDatabaseConfig) {
   app.get('/api/events/options', asyncRoute(async (_req, res) => {
-    const templates = await withDatabase(getDatabaseConfig(), (db) => listTemplates(db));
-    res.json({ templates });
+    const [templates, tracks] = await withDatabase(getDatabaseConfig(), (db) =>
+      Promise.all([listTemplates(db), listTracksForOptions(db)])
+    );
+    res.json({ templates, tracks });
   }));
 
   app.get('/api/events', asyncRoute(async (req, res) => {

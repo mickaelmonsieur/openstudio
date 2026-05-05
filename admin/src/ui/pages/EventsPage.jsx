@@ -2,11 +2,16 @@ import { useEffect, useState } from 'react';
 import { ConfirmDialog } from '../crud/ConfirmDialog.jsx';
 
 const EVENT_TYPES = [
-  { id: 1, label: 'One time Only',          short: 'One time' },
-  { id: 2, label: 'Repeat by Day',          short: 'By Day' },
-  { id: 3, label: 'Repeat by Day and Hour', short: 'By Day & Hour' },
-  { id: 4, label: 'Repeat by Date',         short: 'By Date' },
+  { id: 1, label: 'One time Only',           short: 'One time' },
+  { id: 2, label: 'Repeat by Day',           short: 'By Day' },
+  { id: 3, label: 'Repeat by Day and Hour',  short: 'By Day & Hour' },
+  { id: 4, label: 'Repeat by Date',          short: 'By Date' },
   { id: 5, label: 'Repeat by Date and Hour', short: 'By Date & Hour' }
+];
+
+const ACTION_TYPES = [
+  { id: 1, label: 'Template' },
+  { id: 2, label: 'Track' }
 ];
 
 const DAYS = [
@@ -24,18 +29,22 @@ const HOURS_LIST = Array.from({ length: 24 }, (_, i) => i);
 function getBit(mask, bit) { return ((mask >>> bit) & 1) === 1; }
 function toggleBit(mask, bit) { return mask ^ (1 << bit); }
 
+function emptyAction() {
+  return { action_type: 1, template_id: '', track_id: '', track_label: '', track_search: '', track_results: [], track_loading: false };
+}
+
 function emptyForm() {
   return {
     event_type: 2,
-    days_mask: 127,
+    days_mask:  127,
     hours_mask: 0,
     event_date: '',
-    hour: 0,
-    minute: 0,
-    second: 0,
-    template_id: '',
-    priority: 0,
-    duration: 0
+    hour:       0,
+    minute:     0,
+    second:     0,
+    priority:   0,
+    duration:   0,
+    actions:    [emptyAction()]
   };
 }
 
@@ -48,25 +57,35 @@ function rowToForm(row) {
     hour:        row.hour        ?? 0,
     minute:      row.minute      ?? 0,
     second:      row.second      ?? 0,
-    template_id: row.template_id ? String(row.template_id) : '',
     priority:    row.priority    ?? 0,
-    duration:    row.duration    ?? 0
+    duration:    row.duration    ?? 0,
+    actions:     (row.actions || []).length > 0
+      ? row.actions.map((a) => ({
+          action_type:   a.action_type,
+          template_id:   a.template_id ? String(a.template_id) : '',
+          track_id:      a.track_id    ? String(a.track_id)    : '',
+          track_label:   a.track_name  || '',
+          track_search:  a.track_name  || '',
+          track_results: [],
+          track_loading: false
+        }))
+      : [emptyAction()]
   };
 }
 
 const LIMIT = 50;
 
 export function EventsPage() {
-  const [rows, setRows] = useState([]);
+  const [rows, setRows]         = useState([]);
   const [templates, setTemplates] = useState([]);
-  const [total, setTotal] = useState(0);
-  const [page, setPage] = useState(1);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState(null);
-  const [modal, setModal] = useState(null);
+  const [total, setTotal]       = useState(0);
+  const [page, setPage]         = useState(1);
+  const [loading, setLoading]   = useState(true);
+  const [error, setError]       = useState(null);
+  const [modal, setModal]       = useState(null);
   const [formData, setFormData] = useState(emptyForm);
   const [formError, setFormError] = useState(null);
-  const [saving, setSaving] = useState(false);
+  const [saving, setSaving]     = useState(false);
   const [deleteTarget, setDeleteTarget] = useState(null);
 
   const totalPages = Math.max(1, Math.ceil(total / LIMIT));
@@ -118,6 +137,54 @@ export function EventsPage() {
 
   function updateHourBit(hour) {
     setFormData((prev) => ({ ...prev, hours_mask: toggleBit(prev.hours_mask, hour) }));
+  }
+
+  function updateAction(index, key, value) {
+    setFormData((prev) => {
+      const actions = prev.actions.map((a, i) =>
+        i === index ? { ...a, [key]: value } : a
+      );
+      return { ...prev, actions };
+    });
+  }
+
+  function updateActionBatch(index, updates) {
+    setFormData((prev) => {
+      const actions = prev.actions.map((a, i) =>
+        i === index ? { ...a, ...updates } : a
+      );
+      return { ...prev, actions };
+    });
+  }
+
+  async function searchTracksForAction(index) {
+    const query = formData.actions[index].track_search.trim();
+    if (!query) return;
+    updateActionBatch(index, { track_loading: true, track_results: [] });
+    try {
+      const params = new URLSearchParams({ page: '1', limit: '25', q: query });
+      const payload = await fetchJson(`/api/tracks?${params}`);
+      updateActionBatch(index, { track_results: payload.rows || [], track_loading: false });
+    } catch (err) {
+      updateAction(index, 'track_loading', false);
+      setFormError(err.message);
+    }
+  }
+
+  function selectTrackForAction(index, track) {
+    const label = [track.artist, track.title].filter(Boolean).join(' — ') || `Track #${track.id}`;
+    updateActionBatch(index, { track_id: String(track.id), track_label: label, track_search: label, track_results: [] });
+  }
+
+  function addAction() {
+    setFormData((prev) => ({ ...prev, actions: [...prev.actions, emptyAction()] }));
+  }
+
+  function removeAction(index) {
+    setFormData((prev) => ({
+      ...prev,
+      actions: prev.actions.filter((_, i) => i !== index)
+    }));
   }
 
   async function save(event) {
@@ -185,7 +252,7 @@ export function EventsPage() {
               <tr>
                 <th style={{ width: '130px' }}>Type</th>
                 <th>Trigger</th>
-                <th>Template</th>
+                <th>Actions</th>
                 <th style={{ width: '80px' }}>Priority</th>
                 <th style={{ width: '90px' }}>Duration</th>
                 <th className="actions-column">Actions</th>
@@ -202,7 +269,15 @@ export function EventsPage() {
                   <td style={{ fontFamily: 'monospace', fontSize: '0.85em' }}>
                     {formatTrigger(row)}
                   </td>
-                  <td>{row.template_name || '—'}</td>
+                  <td style={{ fontSize: '0.85em' }}>
+                    {(row.actions || []).map((a, i) => (
+                      <span key={i} className="action-badge">
+                        {a.action_type === 2
+                          ? (a.track_name || '—')
+                          : (a.template_name || '—')}
+                      </span>
+                    ))}
+                  </td>
                   <td>{row.priority ?? 0}</td>
                   <td>{formatDuration(row.duration)}</td>
                   <td className="row-actions">
@@ -317,16 +392,68 @@ export function EventsPage() {
 
               <hr className="form-separator" />
 
-              {/* Template */}
-              <label>
-                <span>Template</span>
-                <select value={formData.template_id} onChange={(e) => update('template_id', e.target.value)}>
-                  <option value="">— none —</option>
-                  {templates.map((t) => (
-                    <option key={t.id} value={t.id}>{t.name}</option>
-                  ))}
-                </select>
-              </label>
+              {/* Actions */}
+              <div className="event-actions-section">
+                <span className="event-actions-label">Actions</span>
+                {formData.actions.map((action, i) => (
+                  <div key={i} className="event-action-row">
+                    <select
+                      value={action.action_type}
+                      onChange={(e) => updateAction(i, 'action_type', Number(e.target.value))}
+                    >
+                      {ACTION_TYPES.map((t) => (
+                        <option key={t.id} value={t.id}>{t.label}</option>
+                      ))}
+                    </select>
+                    {action.action_type === 1 ? (
+                      <select
+                        value={action.template_id}
+                        onChange={(e) => updateAction(i, 'template_id', e.target.value)}
+                      >
+                        <option value="">— select —</option>
+                        {templates.map((t) => (
+                          <option key={t.id} value={t.id}>{t.name}</option>
+                        ))}
+                      </select>
+                    ) : (
+                      <div className="track-picker-inline">
+                        <div className="track-picker">
+                          <input
+                            type="search"
+                            placeholder="Search tracks…"
+                            value={action.track_search}
+                            onChange={(e) => updateAction(i, 'track_search', e.target.value)}
+                            onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); searchTracksForAction(i); } }}
+                          />
+                          <button className="ghost-button" disabled={action.track_loading} type="button" onClick={() => searchTracksForAction(i)}>
+                            {action.track_loading ? 'Searching…' : 'Search'}
+                          </button>
+                        </div>
+                        {action.track_label ? (
+                          <div className="selected-track">Selected: <strong>{action.track_label}</strong></div>
+                        ) : null}
+                        {action.track_results.length > 0 ? (
+                          <div className="track-results">
+                            {action.track_results.map((track) => (
+                              <button key={track.id} type="button" onClick={() => selectTrackForAction(i, track)}>
+                                {[track.artist, track.title].filter(Boolean).join(' — ') || `Track #${track.id}`}
+                              </button>
+                            ))}
+                          </div>
+                        ) : null}
+                      </div>
+                    )}
+                    {formData.actions.length > 1 ? (
+                      <button className="icon-button" type="button" title="Remove" onClick={() => removeAction(i)}>×</button>
+                    ) : null}
+                  </div>
+                ))}
+                <button className="ghost-button add-action-button" type="button" onClick={addAction}>
+                  + Add action
+                </button>
+              </div>
+
+              <hr className="form-separator" />
 
               {/* Priority + Duration */}
               <div className="form-row">
@@ -359,7 +486,7 @@ export function EventsPage() {
       {deleteTarget ? (
         <ConfirmDialog
           busy={saving}
-          message={`Delete this event?`}
+          message="Delete this event?"
           title="Delete Event"
           onCancel={() => setDeleteTarget(null)}
           onConfirm={confirmDelete}

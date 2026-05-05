@@ -6,7 +6,10 @@ import {
   findTrackForSlot,
   getConfiguredTimezone,
   getScheduleForHour,
+  getTrackById,
+  insertFixedQueueEntry,
   insertQueueEntry,
+  listEventsForHour,
   listSlotsForGenerator
 } from '../repositories/playlists.js';
 
@@ -118,41 +121,67 @@ class QueueGenerator {
     if (!schedule) {
       this.job.skippedHours += 1;
       addMessage(this.job, `Skipped hour ${label}: no schedule.`);
-      return;
-    }
+    } else {
+      const slots = await listSlotsForGenerator(this.db, schedule.template_id);
+      if (slots.length === 0) {
+        this.job.skippedHours += 1;
+        addMessage(this.job, `Skipped hour ${label}: template ${schedule.template_name} has no slots.`);
+      } else {
+        let offsetSeconds = 0;
+        let createdForHour = 0;
 
-    const slots = await listSlotsForGenerator(this.db, schedule.template_id);
-    if (slots.length === 0) {
-      this.job.skippedHours += 1;
-      addMessage(this.job, `Skipped hour ${label}: template ${schedule.template_name} has no slots.`);
-      return;
-    }
+        for (const slot of slots) {
+          if (offsetSeconds >= HOUR_LIMIT_SECONDS) break;
 
-    let offsetSeconds = 0;
-    let createdForHour = 0;
+          const scheduledAtLocal = localTimestamp(hourInfo.date, hourInfo.hour, offsetSeconds);
+          const track = await findTrackForSlot(this.db, slot, scheduledAtLocal, this.timezone);
 
-    for (const slot of slots) {
-      if (offsetSeconds >= HOUR_LIMIT_SECONDS) break;
+          if (!track) {
+            this.job.skipped += 1;
+            continue;
+          }
 
-      const scheduledAtLocal = localTimestamp(hourInfo.date, hourInfo.hour, offsetSeconds);
-      const track = await findTrackForSlot(this.db, slot, scheduledAtLocal, this.timezone);
+          const playDuration = Number(track.play_duration || 0);
+          await insertQueueEntry(this.db, track, scheduledAtLocal, this.timezone, slot.position);
+          offsetSeconds += playDuration;
+          createdForHour += 1;
+          this.job.created += 1;
+        }
 
-      if (!track) {
-        this.job.skipped += 1;
-        continue;
+        addMessage(
+          this.job,
+          `${label}: ${createdForHour} track${createdForHour === 1 ? '' : 's'} from ${schedule.template_name}.`
+        );
       }
-
-      const playDuration = Number(track.play_duration || 0);
-      await insertQueueEntry(this.db, track, scheduledAtLocal, this.timezone, slot.position);
-      offsetSeconds += playDuration;
-      createdForHour += 1;
-      this.job.created += 1;
     }
 
-    addMessage(
-      this.job,
-      `${label}: ${createdForHour} track${createdForHour === 1 ? '' : 's'} from ${schedule.template_name}.`
+    await this.generateEventActions(hourInfo);
+  }
+
+  async generateEventActions(hourInfo) {
+    const eventRows = await listEventsForHour(
+      this.db, hourInfo.date, hourInfo.dayKey, hourInfo.hour
     );
+    if (eventRows.length === 0) return;
+
+    for (const ev of eventRows) {
+      const offsetSeconds = ev.minute * 60 + ev.second;
+      const scheduledAtLocal = localTimestamp(hourInfo.date, hourInfo.hour, offsetSeconds);
+
+      if (ev.action_type === 2) {
+        const track = await getTrackById(this.db, ev.track_id);
+        if (!track) continue;
+        await insertFixedQueueEntry(this.db, track, ev.priority, scheduledAtLocal, this.timezone);
+        this.job.created += 1;
+      } else if (ev.action_type === 1) {
+        const slots = await listSlotsForGenerator(this.db, ev.template_id);
+        if (slots.length === 0) continue;
+        const track = await findTrackForSlot(this.db, slots[0], scheduledAtLocal, this.timezone);
+        if (!track) { this.job.skipped += 1; continue; }
+        await insertFixedQueueEntry(this.db, track, ev.priority, scheduledAtLocal, this.timezone);
+        this.job.created += 1;
+      }
+    }
   }
 }
 

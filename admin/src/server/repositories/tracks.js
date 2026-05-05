@@ -266,6 +266,17 @@ export async function listGenres(db) {
   return rows;
 }
 
+export async function listTracksForOptions(db) {
+  const { rows } = await db.query(`
+    SELECT t.id, COALESCE(a.name || ' — ', '') || t.title AS label
+    FROM tracks t
+    LEFT JOIN artists a ON a.id = t.artist_id
+    WHERE t.active = TRUE
+    ORDER BY a.name NULLS LAST, t.title
+  `);
+  return rows;
+}
+
 export async function findGenreByName(db, name) {
   const normalizedName = String(name || '').trim();
   if (!normalizedName) return null;

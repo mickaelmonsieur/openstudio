@@ -1128,6 +1128,55 @@ h1 {
   width: min(660px, 100%);
 }
 
+.event-actions-section {
+  display: grid;
+  gap: 6px;
+}
+
+.event-actions-label {
+  font-size: 13px;
+  color: #d5e3eb;
+}
+
+.event-action-row {
+  display: grid;
+  grid-template-columns: 110px 1fr auto;
+  gap: 6px;
+  align-items: start;
+}
+
+.track-picker-inline {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.event-action-row select {
+  background: #1e2f3a;
+  border: 1px solid #2e4555;
+  border-radius: 6px;
+  color: #edf7fb;
+  font-size: 13px;
+  padding: 6px 8px;
+  width: 100%;
+}
+
+.add-action-button {
+  justify-self: start;
+  font-size: 12px;
+  padding: 4px 10px;
+}
+
+.action-badge {
+  display: inline-block;
+  background: #1e2f3a;
+  border-radius: 4px;
+  font-size: 0.8em;
+  padding: 2px 6px;
+  margin-right: 4px;
+  color: #91a9b7;
+}
+
 .form-separator {
   border: none;
   border-top: 1px solid #3a5060;

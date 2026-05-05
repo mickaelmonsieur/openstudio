@@ -222,3 +222,64 @@ export async function insertQueueEntry(db, track, scheduledAtLocal, timezone, pr
     [track.id, track.cue_in, track.cue_out, priority, scheduledAtLocal, timezone]
   );
 }
+
+export async function insertFixedQueueEntry(db, track, priority, scheduledAtLocal, timezone) {
+  await db.query(
+    `
+    INSERT INTO queue (track_id, cue_in, cue_out, priority, fixed_time, scheduled_at)
+    VALUES ($1, $2, $3, $4, TRUE, $5::timestamp AT TIME ZONE $6)
+    `,
+    [track.id, track.cue_in, track.cue_out, priority, scheduledAtLocal, timezone]
+  );
+}
+
+export async function getTrackById(db, id) {
+  const { rows } = await db.query(
+    `
+    SELECT id, cue_in, COALESCE(cue_out, duration) AS cue_out
+    FROM tracks
+    WHERE id = $1 AND active = TRUE
+    `,
+    [id]
+  );
+  return rows[0] || null;
+}
+
+export async function listEventsForHour(db, date, dayKey, hour) {
+  const bit = DAY_BITS[dayKey];
+  if (bit === undefined) throw new Error(`Invalid schedule day: ${dayKey}`);
+  const dayBit  = 1 << bit;
+  const hourBit = 1 << hour;
+
+  const { rows } = await db.query(
+    `
+    SELECT
+      ce.id          AS event_id,
+      ce.event_type,
+      ce.minute,
+      ce.second,
+      ce.priority,
+      ce.duration,
+      ea.id          AS action_id,
+      ea.action_type,
+      ea.template_id,
+      ea.track_id
+    FROM clock_events ce
+    JOIN event_actions ea ON ea.event_id = ce.id
+    WHERE (
+      (ce.event_type = 1 AND ce.event_date = $1::date AND ce.hour = $3)
+      OR (ce.event_type = 2 AND (ce.days_mask & $2) > 0 AND ce.hour = $3)
+      OR (ce.event_type = 3 AND (ce.days_mask & $2) > 0 AND (ce.hours_mask & $4) > 0)
+      OR (ce.event_type = 4
+          AND TO_CHAR(ce.event_date, 'MM-DD') = TO_CHAR($1::date, 'MM-DD')
+          AND ce.hour = $3)
+      OR (ce.event_type = 5
+          AND TO_CHAR(ce.event_date, 'MM-DD') = TO_CHAR($1::date, 'MM-DD')
+          AND (ce.hours_mask & $4) > 0)
+    )
+    ORDER BY ce.minute, ce.second, ce.priority DESC, ce.id, ea.id
+    `,
+    [date, dayBit, hour, hourBit]
+  );
+  return rows;
+}
