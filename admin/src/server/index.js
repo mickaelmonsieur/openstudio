@@ -19,6 +19,9 @@ import { registerDatabaseToolsRoutes } from './routes/database-tools.js';
 import { registerPlaylistRoutes } from './routes/playlists.js';
 import { registerQueueRoutes } from './routes/queue.js';
 import { registerAdvertisingRoutes } from './routes/advertising.js';
+import { registerPurgeRoutes } from './routes/purge.js';
+import { registerOptimizeRoutes } from './routes/optimize.js';
+import { registerResetLastPlayedRoutes } from './routes/reset-last-played.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const adminRoot = path.resolve(__dirname, '../..');
@@ -177,6 +180,9 @@ export async function createOpenStudioAdminServer(config) {
   registerFileScanRoutes(webApp, () => readDatabaseConfig(dataDir));
   registerLibraryRoutes(webApp, () => readDatabaseConfig(dataDir));
   registerDatabaseToolsRoutes(webApp, () => readDatabaseConfig(dataDir));
+  registerPurgeRoutes(webApp, () => readDatabaseConfig(dataDir));
+  registerOptimizeRoutes(webApp, () => readDatabaseConfig(dataDir));
+  registerResetLastPlayedRoutes(webApp, () => readDatabaseConfig(dataDir));
   await attachWebUi(webApp);
 
   const controlApp = express();

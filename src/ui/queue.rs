@@ -83,20 +83,6 @@ impl App {
                     .into(),
                 Some(Message::QueueMoveBottom),
             ),
-            self.toolbar_cell(
-                text(Bootstrap::FoldertwoOpen.to_string())
-                    .font(BOOTSTRAP_FONT)
-                    .size(14)
-                    .into(),
-                None,
-            ),
-            self.toolbar_cell(
-                text(Bootstrap::FloppyFill.to_string())
-                    .font(BOOTSTRAP_FONT)
-                    .size(14)
-                    .into(),
-                None,
-            ),
         ]
         .spacing(1)
         .height(Length::Fixed(32.0));

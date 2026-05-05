@@ -18,6 +18,9 @@ import { playLogResource } from './resources/play-log.js';
 import { automixLogResource } from './resources/automix-log.js';
 import { FileScanPage } from './pages/FileScanPage.jsx';
 import { RebaseLibraryPage } from './pages/RebaseLibraryPage.jsx';
+import { CleanupPage } from './pages/CleanupPage.jsx';
+import { OptimizePage } from './pages/OptimizePage.jsx';
+import { ResetLastPlayedPage } from './pages/ResetLastPlayedPage.jsx';
 import { ImportPage } from './pages/ImportPage.jsx';
 import { AdvertisersPage } from './pages/AdvertisersPage.jsx';
 import { ContactsPage } from './pages/ContactsPage.jsx';
@@ -59,15 +62,23 @@ const moduleGroups = [
     ]
   },
   {
+    title: 'Utilities',
+    items: [
+      { label: 'Scan Files', path: '/scan-files' },
+      { label: 'Rebase Library', path: '/rebase-library' },
+      { label: 'Cleanup', path: '/cleanup' },
+      { label: 'Optimize Database', path: '/optimize' },
+      { label: 'Reset Last Played', path: '/reset-last-played' }
+    ]
+  },
+  {
     title: 'Admin',
     items: [
       { label: 'Database', path: '/database' },
       { label: 'Import / Export', path: '/import' },
       { label: 'Users', path: '/users' },
       { label: 'Play Log', path: '/play-log' },
-      { label: 'Auto Mix Log', path: '/auto-mix-log' },
-      { label: 'Scan Files', path: '/scan-files' },
-      { label: 'Rebase Library', path: '/rebase-library' }
+      { label: 'Auto Mix Log', path: '/auto-mix-log' }
     ]
   }
 ];
@@ -307,6 +318,30 @@ export function App() {
       return (
         <section className="content-panel">
           <RebaseLibraryPage />
+        </section>
+      );
+    }
+
+    if (activeModule.path === '/cleanup') {
+      return (
+        <section className="content-panel">
+          <CleanupPage />
+        </section>
+      );
+    }
+
+    if (activeModule.path === '/optimize') {
+      return (
+        <section className="content-panel">
+          <OptimizePage />
+        </section>
+      );
+    }
+
+    if (activeModule.path === '/reset-last-played') {
+      return (
+        <section className="content-panel">
+          <ResetLastPlayedPage />
         </section>
       );
     }
