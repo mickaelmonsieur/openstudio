@@ -8,6 +8,7 @@ import {
   reorderQueueHour,
   updateQueueEntryInHour
 } from '../repositories/queue.js';
+import { generatePlaylistHtml, htmlToPdf } from '../services/queue-pdf.js';
 
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 
@@ -96,6 +97,46 @@ function asyncRoute(handler) {
 }
 
 export function registerQueueRoutes(app, getDatabaseConfig) {
+  app.get('/queue/print', asyncRoute(async (req, res) => {
+    const dateStr = String(req.query.date || '').trim();
+    if (!DATE_RE.test(dateStr)) { res.status(400).send('Date invalide.'); return; }
+
+    const mode = req.query.mode === 'day' ? 'day' : 'hour';
+    let hourList;
+    if (mode === 'day') {
+      hourList = Array.from({ length: 24 }, (_, i) => i);
+    } else {
+      const h = parseHour(req.query.hour);
+      if (h === null) { res.status(400).send('Heure invalide.'); return; }
+      hourList = [h];
+    }
+
+    const pdf = await withDatabase(getDatabaseConfig(), async (db) => {
+      const timezone = await getQueueTimezone(db);
+      const hourBlocks = [];
+      for (const hour of hourList) {
+        const rows = await listQueueHour(db, { date: dateStr, hour, timezone });
+        if (rows.length > 0 || mode === 'hour') {
+          hourBlocks.push({ date: dateStr, hour, rows });
+        }
+      }
+      if (hourBlocks.length === 0) {
+        const err = new Error('Aucune piste pour cette période.');
+        err.statusCode = 404;
+        throw err;
+      }
+      const html = generatePlaylistHtml(hourBlocks, timezone);
+      return htmlToPdf(html);
+    });
+
+    const hourStr = mode === 'hour'
+      ? `-${String(parseHour(req.query.hour) ?? 0).padStart(2, '0')}h`
+      : '';
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('Content-Disposition', `attachment; filename="playlist-${dateStr}${hourStr}.pdf"`);
+    res.send(Buffer.from(pdf));
+  }));
+
   app.get('/api/queue', asyncRoute(async (req, res) => {
     const result = validateHour(req.query);
     if (!result.ok) { res.status(400).json({ error: result.error }); return; }

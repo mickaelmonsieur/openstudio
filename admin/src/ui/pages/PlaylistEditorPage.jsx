@@ -237,6 +237,22 @@ export function PlaylistEditorPage() {
               ))}
             </select>
           </label>
+          <a
+            className="ghost-button"
+            href={`/queue/print?date=${scheduledDate}&hour=${scheduledHour}&mode=hour`}
+            target="_blank"
+            rel="noreferrer"
+          >
+            PDF Heure
+          </a>
+          <a
+            className="ghost-button"
+            href={`/queue/print?date=${scheduledDate}&mode=day`}
+            target="_blank"
+            rel="noreferrer"
+          >
+            PDF Jour
+          </a>
           <button className="primary-button" type="button" onClick={() => openAdd()}>Add</button>
         </div>
       </header>
