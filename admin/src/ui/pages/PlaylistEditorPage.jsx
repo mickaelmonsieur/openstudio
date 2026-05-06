@@ -31,6 +31,7 @@ export function PlaylistEditorPage() {
   const [trackSearch, setTrackSearch] = useState('');
   const [trackResults, setTrackResults] = useState([]);
   const [trackLoading, setTrackLoading] = useState(false);
+  const [trimming, setTrimming] = useState(false);
 
   useEffect(() => { loadQueue(); }, [scheduledDate, scheduledHour]);
 
@@ -181,6 +182,22 @@ export function PlaylistEditorPage() {
     }
   }
 
+  async function applyAutocut() {
+    setTrimming(true);
+    setError(null);
+    try {
+      const payload = await fetchJson('/api/queue/hour/autocut', {
+        method: 'POST',
+        body: JSON.stringify({ scheduled_date: scheduledDate, scheduled_hour: scheduledHour })
+      });
+      if (payload.rows) setRows(payload.rows);
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setTrimming(false);
+    }
+  }
+
   async function confirmDelete() {
     setSaving(true);
     setError(null);
@@ -295,14 +312,25 @@ export function PlaylistEditorPage() {
             </tbody>
             {rows.length > 0 ? (() => {
               const endTime = computeEndTime(rows, scheduledHour);
+              const statusColor = endTime.complete ? '#16a34a' : '#dc2626';
               return (
                 <tfoot>
                   <tr>
-                    <td style={{ color: endTime.complete ? '#16a34a' : '#dc2626', fontWeight: 600, fontVariantNumeric: 'tabular-nums' }}>
+                    <td style={{ color: statusColor, fontWeight: 600, fontVariantNumeric: 'tabular-nums' }}>
                       {endTime.time}
                     </td>
-                    <td colSpan={6} style={{ color: endTime.complete ? '#16a34a' : '#dc2626', fontSize: '0.8em' }}>
+                    <td colSpan={5} style={{ color: statusColor, fontSize: '0.8em' }}>
                       {endTime.complete ? '✓ Hour complete' : '✗ Hour incomplete'}
+                    </td>
+                    <td style={{ textAlign: 'right' }}>
+                      <button
+                        className="ghost-button"
+                        disabled={trimming}
+                        type="button"
+                        onClick={applyAutocut}
+                      >
+                        {trimming ? '…' : 'Trim'}
+                      </button>
                     </td>
                   </tr>
                 </tfoot>

@@ -303,6 +303,24 @@ export async function deleteTrack(db, id) {
   return rowCount > 0;
 }
 
+const BULK_ALLOWED_COLUMNS = {
+  active:         'active',
+  subcategory_id: 'subcategory_id',
+  track_type_id:  'track_type_id',
+  genre_id:       'genre_id'
+};
+
+export async function bulkUpdateTracks(db, ids, field, value) {
+  const column = BULK_ALLOWED_COLUMNS[field];
+  if (!column || !ids.length) return 0;
+
+  const { rowCount } = await db.query(
+    `UPDATE tracks SET ${column} = $1, updated_at = NOW() WHERE id = ANY($2::int[])`,
+    [value, ids]
+  );
+  return rowCount;
+}
+
 export async function listCategories(db) {
   const { rows } = await db.query(`SELECT id, name FROM categories ORDER BY name`);
   return rows;

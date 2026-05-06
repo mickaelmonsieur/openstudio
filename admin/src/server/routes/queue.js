@@ -1,5 +1,6 @@
 import { withDatabase } from '../db/client.js';
 import {
+  autocutLastInHour,
   createQueueEntryInHour,
   deleteQueueEntryFromHour,
   getQueueTimezone,
@@ -120,6 +121,17 @@ export function registerQueueRoutes(app, getDatabaseConfig) {
       return createQueueEntryInHour(db, result.value, timezone);
     });
     res.status(201).json({ rows });
+  }));
+
+  app.post('/api/queue/hour/autocut', asyncRoute(async (req, res) => {
+    const result = validateHour(req.body);
+    if (!result.ok) { res.status(400).json({ error: result.error }); return; }
+
+    const payload = await withDatabase(getDatabaseConfig(), async (db) => {
+      const timezone = await getQueueTimezone(db);
+      return autocutLastInHour(db, result.value.scheduled_date, result.value.scheduled_hour, timezone);
+    });
+    res.json({ rows: payload.rows, trimmed: payload.trimmed });
   }));
 
   app.put('/api/queue/hour/order', asyncRoute(async (req, res) => {

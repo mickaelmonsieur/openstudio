@@ -13,6 +13,7 @@ import {
   listEventsForHour,
   listSlotsForGenerator
 } from '../repositories/playlists.js';
+import { autocutLastInHour } from '../repositories/queue.js';
 
 const MAX_MESSAGES = 500;
 const HOUR_LIMIT_SECONDS = 3599.999;
@@ -232,6 +233,12 @@ class QueueGenerator {
       const dur = await this.insertEventAction(ev, hourInfo, eventAtSeconds);
       offsetSeconds = Math.max(offsetSeconds, eventAtSeconds + dur);
       eventIdx++;
+    }
+
+    // Autocut: trim the last track so the hour ends exactly at xx:59:59
+    const cutResult = await autocutLastInHour(this.db, hourInfo.date, hourInfo.hour, this.timezone);
+    if (cutResult.trimmed) {
+      addMessage(this.job, `✂ ${label}: dernière piste tronquée (autocut xx:59:59).`, 'cut');
     }
   }
 

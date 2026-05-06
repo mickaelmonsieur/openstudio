@@ -212,7 +212,9 @@ export function TemplatesPage() {
           insert_after_id:   row.id
         })
       });
-      await loadSlots(selectedTemplateId);
+      // Refresh silently — skip setLoadingSlots to keep the table mounted and preserve scroll position
+      const payload = await fetchJson(`/api/templates/${selectedTemplateId}/slots`);
+      setSlots(payload.rows || []);
     } catch (err) {
       setError(err.message);
     } finally {

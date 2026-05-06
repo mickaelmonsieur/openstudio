@@ -178,6 +178,38 @@ async function recalculateQueueHour(db, date, hour, ids, timezone) {
   }
 }
 
+export async function autocutLastInHour(db, date, hour, timezone) {
+  const rows = await listQueueHour(db, { date, hour, timezone });
+  if (rows.length === 0) return { trimmed: false, rows };
+
+  const HOUR_END = 3599;
+  const last = rows[rows.length - 1];
+
+  const [h, m, s] = last.scheduled_time.split(':').map(Number);
+  const lastStartOffset = (h * 3600 + m * 60 + s) - hour * 3600;
+
+  const cueIn = Number(last.cue_in ?? 0);
+  const cueOut = Number(last.cue_out ?? 0);
+  const stretchRate = Number(last.stretch_rate ?? 1);
+  const playDuration = Math.max(0, (cueOut - cueIn) / stretchRate);
+  const currentEnd = lastStartOffset + playDuration;
+
+  if (currentEnd <= HOUR_END) return { trimmed: false, rows };
+
+  const targetDuration = HOUR_END - lastStartOffset;
+  if (targetDuration <= 0) return { trimmed: false, rows };
+
+  const newCueOut = cueIn + targetDuration * stretchRate;
+
+  await db.query(
+    'UPDATE queue SET cue_out = $2, updated_at = NOW() WHERE id = $1',
+    [last.id, newCueOut]
+  );
+
+  const updatedRows = await listQueueHour(db, { date, hour, timezone });
+  return { trimmed: true, rows: updatedRows };
+}
+
 function insertAfter(ids, insertedId, insertAfterId) {
   if (!insertAfterId) return [...ids, insertedId];
 

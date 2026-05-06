@@ -5,6 +5,7 @@ import { randomUUID } from 'node:crypto';
 import multer from 'multer';
 import { withDatabase } from '../db/client.js';
 import {
+  bulkUpdateTracks,
   countTracks,
   createTrack,
   deleteTrack,
@@ -315,6 +316,49 @@ export function registerTrackRoutes(app, getDatabaseConfig) {
       }
       res.status(400).json({ error: error.message });
     }
+  }));
+
+  app.patch('/api/tracks/bulk', asyncRoute(async (req, res) => {
+    const ids = req.body?.ids;
+    if (!Array.isArray(ids) || ids.length === 0) {
+      res.status(400).json({ error: 'ids must be a non-empty array.' });
+      return;
+    }
+
+    const parsedIds = ids.map(Number).filter((n) => Number.isInteger(n) && n > 0);
+    if (parsedIds.length === 0) {
+      res.status(400).json({ error: 'No valid ids provided.' });
+      return;
+    }
+
+    const action = req.body?.action;
+    let field, value;
+
+    switch (action) {
+      case 'activate':   field = 'active'; value = true;  break;
+      case 'deactivate': field = 'active'; value = false; break;
+      case 'set_subcategory': {
+        const id = parseOptionalPositiveInteger(req.body?.value);
+        if (!id) { res.status(400).json({ error: 'Invalid subcategory id.' }); return; }
+        field = 'subcategory_id'; value = id; break;
+      }
+      case 'set_type': {
+        const id = parseOptionalPositiveInteger(req.body?.value);
+        if (!id) { res.status(400).json({ error: 'Invalid track type id.' }); return; }
+        field = 'track_type_id'; value = id; break;
+      }
+      case 'set_genre': {
+        const id = parseOptionalPositiveInteger(req.body?.value);
+        if (!id) { res.status(400).json({ error: 'Invalid genre id.' }); return; }
+        field = 'genre_id'; value = id; break;
+      }
+      default:
+        res.status(400).json({ error: 'Invalid action.' });
+        return;
+    }
+
+    await withDatabase(getDatabaseConfig(), (db) => bulkUpdateTracks(db, parsedIds, field, value));
+    res.status(204).end();
   }));
 
   app.post('/api/tracks', asyncRoute(async (req, res) => {

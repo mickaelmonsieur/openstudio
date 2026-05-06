@@ -139,26 +139,6 @@ export function ScanFolderModal({ genres, trackTypes = [], stationId, subcategor
               </label>
 
               <label>
-                <span>Genre</span>
-                <select value={genreId} onChange={(e) => setGenreId(e.target.value)}>
-                  <option value="">Select a genre...</option>
-                  {genres.map((genre) => (
-                    <option key={genre.id} value={genre.id}>{genre.name}</option>
-                  ))}
-                </select>
-              </label>
-
-              <label>
-                <span>Type</span>
-                <select value={trackTypeId} onChange={(e) => setTrackTypeId(e.target.value)}>
-                  <option value="">— None —</option>
-                  {trackTypes.map((t) => (
-                    <option key={t.id} value={t.id}>{t.name}</option>
-                  ))}
-                </select>
-              </label>
-
-              <label>
                 <span>Category</span>
                 <select required value={subcategoryId} onChange={(e) => setSubcategoryId(e.target.value)}>
                   <option value="">Select a category...</option>
@@ -173,6 +153,26 @@ export function ScanFolderModal({ genres, trackTypes = [], stationId, subcategor
                       </optgroup>
                     )
                   )}
+                </select>
+              </label>
+
+              <label>
+                <span>Type</span>
+                <select value={trackTypeId} onChange={(e) => setTrackTypeId(e.target.value)}>
+                  <option value="">— None —</option>
+                  {trackTypes.map((t) => (
+                    <option key={t.id} value={t.id}>{t.name}</option>
+                  ))}
+                </select>
+              </label>
+
+              <label>
+                <span>Genre</span>
+                <select value={genreId} onChange={(e) => setGenreId(e.target.value)}>
+                  <option value="">Select a genre...</option>
+                  {genres.map((genre) => (
+                    <option key={genre.id} value={genre.id}>{genre.name}</option>
+                  ))}
                 </select>
               </label>
 

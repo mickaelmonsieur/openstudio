@@ -9,6 +9,7 @@ const LIMIT = 100;
 export function TracksPage() {
   const { stationId } = useStation();
   const fileInputRef = useRef(null);
+  const headerCheckboxRef = useRef(null);
   const [rows, setRows] = useState([]);
   const [total, setTotal] = useState(0);
   const [page, setPage] = useState(1);
@@ -39,13 +40,32 @@ export function TracksPage() {
   const [deleteTarget, setDeleteTarget] = useState(null);
   const [deleting, setDeleting] = useState(false);
 
+  const [selectedIds, setSelectedIds] = useState(new Set());
+  const [bulkCategoryId, setBulkCategoryId] = useState('');
+  const [bulkTypeId, setBulkTypeId] = useState('');
+  const [bulkGenreId, setBulkGenreId] = useState('');
+  const [bulkSaving, setBulkSaving] = useState(false);
+
   const totalPages = Math.max(1, Math.ceil(total / LIMIT));
+
+  // Group subcategories by category for the bulk category select
+  const subcategoriesByCategory = groupByCategory(subcategories);
+
+  // Sync header checkbox indeterminate state
+  useEffect(() => {
+    if (!headerCheckboxRef.current) return;
+    const allSelected = rows.length > 0 && rows.every((r) => selectedIds.has(r.id));
+    const someSelected = rows.some((r) => selectedIds.has(r.id));
+    headerCheckboxRef.current.checked = allSelected;
+    headerCheckboxRef.current.indeterminate = someSelected && !allSelected;
+  }, [selectedIds, rows]);
 
   useEffect(() => {
     loadOptions();
   }, []);
 
   useEffect(() => {
+    setSelectedIds(new Set());
     loadTracks();
   }, [page, searchQuery, filterCategory, filterGenre, filterType]);
 
@@ -185,6 +205,45 @@ export function TracksPage() {
     }
   }
 
+  function toggleRow(id, checked) {
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (checked) next.add(id);
+      else next.delete(id);
+      return next;
+    });
+  }
+
+  function selectAll() {
+    setSelectedIds(new Set(rows.map((r) => r.id)));
+  }
+
+  function deselectAll() {
+    setSelectedIds(new Set());
+  }
+
+  async function applyBulk(action, value) {
+    if (selectedIds.size === 0 || bulkSaving) return;
+    setBulkSaving(true);
+    setError(null);
+    try {
+      await fetchJson('/api/tracks/bulk', {
+        method: 'PATCH',
+        body: JSON.stringify({
+          ids: [...selectedIds],
+          action,
+          value: value ? Number(value) : undefined
+        })
+      });
+      setSelectedIds(new Set());
+      await loadTracks();
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setBulkSaving(false);
+    }
+  }
+
   return (
     <section className="crud-page">
       <header className="crud-header">
@@ -281,10 +340,97 @@ export function TracksPage() {
         <div className="table-loading">Loading...</div>
       ) : (
         <>
+          {selectedIds.size > 0 ? (
+            <div className="bulk-bar">
+              <span className="bulk-bar-count">{selectedIds.size} selected</span>
+              <button
+                className="ghost-button"
+                disabled={bulkSaving}
+                type="button"
+                onClick={() => applyBulk('activate')}
+              >
+                Activate
+              </button>
+              <button
+                className="ghost-button"
+                disabled={bulkSaving}
+                type="button"
+                onClick={() => applyBulk('deactivate')}
+              >
+                Deactivate
+              </button>
+
+              <span className="bulk-bar-sep" />
+
+              <select value={bulkCategoryId} onChange={(e) => setBulkCategoryId(e.target.value)}>
+                <option value="">Category…</option>
+                {subcategoriesByCategory.map((group) =>
+                  group.items.length === 1 && group.items[0].name === group.category ? (
+                    <option key={group.items[0].id} value={group.items[0].id}>{group.category}</option>
+                  ) : (
+                    <optgroup key={group.category} label={group.category}>
+                      {group.items.map((sc) => (
+                        <option key={sc.id} value={sc.id}>{sc.name}</option>
+                      ))}
+                    </optgroup>
+                  )
+                )}
+              </select>
+              <button
+                className="ghost-button"
+                disabled={bulkSaving || !bulkCategoryId}
+                type="button"
+                onClick={() => applyBulk('set_subcategory', bulkCategoryId)}
+              >
+                Apply
+              </button>
+
+              <span className="bulk-bar-sep" />
+
+              <select value={bulkTypeId} onChange={(e) => setBulkTypeId(e.target.value)}>
+                <option value="">Type…</option>
+                {trackTypes.map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}
+              </select>
+              <button
+                className="ghost-button"
+                disabled={bulkSaving || !bulkTypeId}
+                type="button"
+                onClick={() => applyBulk('set_type', bulkTypeId)}
+              >
+                Apply
+              </button>
+
+              <span className="bulk-bar-sep" />
+
+              <select value={bulkGenreId} onChange={(e) => setBulkGenreId(e.target.value)}>
+                <option value="">Genre…</option>
+                {genres.map((g) => <option key={g.id} value={g.id}>{g.name}</option>)}
+              </select>
+              <button
+                className="ghost-button"
+                disabled={bulkSaving || !bulkGenreId}
+                type="button"
+                onClick={() => applyBulk('set_genre', bulkGenreId)}
+              >
+                Apply
+              </button>
+            </div>
+          ) : null}
+
           <div className="data-table-wrap">
             <table className="data-table">
               <thead>
                 <tr>
+                  <th style={{ width: '36px' }}>
+                    <input
+                      ref={headerCheckboxRef}
+                      type="checkbox"
+                      onChange={(e) => {
+                        if (e.target.checked) selectAll();
+                        else deselectAll();
+                      }}
+                    />
+                  </th>
                   <th style={{ width: '170px' }}>Artist</th>
                   <th>Title</th>
                   <th style={{ width: '150px' }}>Genre</th>
@@ -301,7 +447,15 @@ export function TracksPage() {
                   </tr>
                 ) : (
                   rows.map((row) => (
-                    <tr key={row.id}>
+                    <tr key={row.id} className={selectedIds.has(row.id) ? 'selected-row' : ''}>
+                      <td>
+                        <input
+                          checked={selectedIds.has(row.id)}
+                          type="checkbox"
+                          onChange={(e) => toggleRow(row.id, e.target.checked)}
+                          onClick={(e) => e.stopPropagation()}
+                        />
+                      </td>
                       <td>{row.artist || '—'}</td>
                       <td>{row.title || '—'}</td>
                       <td>{row.genre || '—'}</td>
@@ -411,6 +565,15 @@ export function TracksPage() {
       ) : null}
     </section>
   );
+}
+
+function groupByCategory(subcategories) {
+  const map = new Map();
+  for (const sc of subcategories) {
+    if (!map.has(sc.category_name)) map.set(sc.category_name, []);
+    map.get(sc.category_name).push(sc);
+  }
+  return Array.from(map.entries()).map(([category, items]) => ({ category, items }));
 }
 
 function formatDuration(seconds) {
