@@ -5,18 +5,59 @@ use iced::widget::{button, column, container, row, text, Space};
 use iced::{Alignment, Background, Border, Color, Element, Font, Length, Padding};
 use iced_fonts::{Bootstrap, BOOTSTRAP_FONT};
 
+#[cfg(unix)]
+fn fmt_end_time(at: std::time::SystemTime) -> String {
+    let Ok(since_epoch) = at.duration_since(std::time::UNIX_EPOCH) else {
+        return String::from("--:--");
+    };
+    let secs = since_epoch.as_secs() as libc::time_t;
+    let mut local = std::mem::MaybeUninit::<libc::tm>::uninit();
+    let local = unsafe {
+        if libc::localtime_r(&secs, local.as_mut_ptr()).is_null() {
+            return String::from("--:--");
+        }
+        local.assume_init()
+    };
+    format!("{:02}:{:02}:{:02}", local.tm_hour, local.tm_min, local.tm_sec)
+}
+
+#[cfg(not(unix))]
+fn fmt_end_time(at: std::time::SystemTime) -> String {
+    let Ok(since_epoch) = at.duration_since(std::time::UNIX_EPOCH) else {
+        return String::from("--:--");
+    };
+    fmt_hms(std::time::Duration::from_secs(
+        since_epoch.as_secs() % (24 * 60 * 60),
+    ))
+}
+
 impl App {
     pub fn deck_header(&self, compact: bool) -> Element<'_, Message> {
         let playing = self.ui_playing();
         let elapsed = self.elapsed();
-        let elapsed_str = if elapsed.is_zero() {
+        let cue_in = self
+            .current_queue_entry
+            .as_ref()
+            .map(|e| e.cue_in)
+            .unwrap_or_default();
+        let elapsed_display = elapsed.saturating_sub(cue_in);
+        let elapsed_str = if elapsed_display.is_zero() {
             String::from("--:--")
         } else {
-            fmt_hms(elapsed)
+            fmt_hms(elapsed_display)
         };
         let remaining = self
-            .transport_duration()
-            .map(|total| fmt_hms(total.saturating_sub(elapsed)))
+            .current_queue_entry
+            .as_ref()
+            .map(|e| fmt_hms(e.cue_out.saturating_sub(elapsed)))
+            .or_else(|| {
+                self.transport_duration()
+                    .map(|total| fmt_hms(total.saturating_sub(elapsed)))
+            })
+            .unwrap_or_else(|| String::from("--:--"));
+        let end_time_str = self
+            .track_end_at
+            .map(fmt_end_time)
             .unwrap_or_else(|| String::from("--:--"));
 
         let (intro_str, intro_color) = self
@@ -177,6 +218,7 @@ impl App {
             self.time_box("OUTRO", outro_str, outro_color),
             self.time_box("ELAPSED", elapsed_str, rgb(80, 220, 120)),
             self.time_box("REMAINING", remaining, rgb(52, 206, 251)),
+            self.time_box("END", end_time_str, rgb(255, 160, 80)),
             self.time_box("HOUR", self.current_hour.clone(), rgb(244, 239, 38)),
         ]
         .spacing(22)
@@ -281,14 +323,22 @@ impl App {
     }
 
     pub fn progress_strip(&self) -> Element<'_, Message> {
-        let elapsed = self.elapsed().as_millis();
-        let filled = self
-            .transport_duration()
-            .map(|total| {
-                let total = total.as_millis().max(1);
-                ((elapsed * 1000) / total).min(1000) as u16
-            })
-            .unwrap_or(0);
+        let elapsed = self.elapsed();
+        let (cue_in, effective_total) = self
+            .current_queue_entry
+            .as_ref()
+            .map(|e| (e.cue_in, e.cue_out.saturating_sub(e.cue_in)))
+            .unwrap_or_else(|| {
+                (
+                    std::time::Duration::ZERO,
+                    self.transport_duration().unwrap_or_default(),
+                )
+            });
+        let effective_elapsed = elapsed.saturating_sub(cue_in).as_millis();
+        let filled = {
+            let total = effective_total.as_millis().max(1);
+            ((effective_elapsed * 1000) / total).min(1000) as u16
+        };
         let filled = filled.max(1);
         let empty = 1000_u16.saturating_sub(filled).max(1);
 

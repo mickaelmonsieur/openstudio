@@ -230,6 +230,7 @@ struct App {
     active_queue_play_logs: HashMap<audio::PlayerId, ActiveQueuePlayLog>,
     preloaded_queue_entry: Option<PreloadedQueueEntry>,
     current_queue_entry: Option<db::QueueEntry>,
+    track_end_at: Option<std::time::SystemTime>,
     current_queue_player_id: audio::PlayerId,
     selected_queue_index: Option<usize>,
     autodj_enabled: bool,
@@ -346,6 +347,7 @@ impl Default for App {
             active_queue_play_logs: HashMap::new(),
             preloaded_queue_entry: None,
             current_queue_entry: None,
+            track_end_at: None,
             current_queue_player_id: audio::PlayerId::QueueA,
             selected_queue_index: None,
             autodj_enabled: app_config.auto_mix_on_start,
@@ -1804,6 +1806,7 @@ impl App {
 
     fn load_next_from_queue(&mut self, player_id: audio::PlayerId) {
         if self.play_preloaded_queue_entry(player_id) {
+            self.fade_out_previous_queue_players(player_id);
             return;
         }
 
@@ -1813,6 +1816,7 @@ impl App {
         let entry = self.queue_entries.remove(0);
         self.adjust_selected_queue_index_after_remove(0);
         self.play_queue_entry(player_id, entry);
+        self.fade_out_previous_queue_players(player_id);
     }
 
     fn apply_startup_playback_config(&mut self) {
@@ -1954,6 +1958,7 @@ impl App {
         self.queue_player_entries.insert(player_id, entry.clone());
         self.current_queue_player_id = player_id;
         self.current_queue_entry = Some(entry);
+        self.update_track_end_at();
     }
 
     fn play_queue_entry_now(&mut self, index: usize) {
@@ -2058,6 +2063,7 @@ impl App {
             self.set_auto_mix_status("Disabled");
         }
         self.current_queue_entry = None;
+        self.update_track_end_at();
         self.current_queue_player_id = audio::PlayerId::QueueA;
     }
 
@@ -2095,6 +2101,7 @@ impl App {
         }
 
         self.refresh_current_queue_entry();
+        self.update_track_end_at();
     }
 
     fn sync_auto_mix(&mut self) {
@@ -2135,6 +2142,28 @@ impl App {
         }
 
         self.load_next_from_queue(next_player_id);
+    }
+
+    fn update_track_end_at(&mut self) {
+        let elapsed = self.elapsed();
+        let new_end = self.current_queue_entry.as_ref().map(|e| {
+            std::time::SystemTime::now() + e.cue_out.saturating_sub(elapsed)
+        });
+        let should_update = match (self.track_end_at, new_end) {
+            (None, None) => false,
+            (Some(_), None) | (None, Some(_)) => true,
+            (Some(stored), Some(new)) => {
+                let diff = if new > stored {
+                    new.duration_since(stored).unwrap_or_default()
+                } else {
+                    stored.duration_since(new).unwrap_or_default()
+                };
+                diff > std::time::Duration::from_millis(1500)
+            }
+        };
+        if should_update {
+            self.track_end_at = new_end;
+        }
     }
 
     fn refresh_current_queue_entry(&mut self) {
