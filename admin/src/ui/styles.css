@@ -415,6 +415,7 @@ h1 {
   padding: 10px 12px;
   color: #e4eef4;
   border-bottom: 1px solid #2d414d;
+  vertical-align: top;
 }
 
 .data-table tbody tr:hover td {
@@ -456,10 +457,12 @@ h1 {
 }
 
 .row-actions {
-  display: flex;
-  justify-content: flex-end;
-  gap: 6px;
+  text-align: right;
   white-space: nowrap;
+}
+
+.row-actions > * + * {
+  margin-left: 6px;
 }
 
 .row-actions a {
