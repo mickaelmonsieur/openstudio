@@ -72,6 +72,14 @@ export function PlaylistEditorPage() {
     setModal({ mode: 'add', insertAfterId: insertAfterRow?.id || null });
   }
 
+  function openReplace(row) {
+    setFormData(emptyForm());
+    setTrackSearch('');
+    setTrackResults([]);
+    setFormError(null);
+    setModal({ mode: 'replace', row });
+  }
+
   function openEdit(row) {
     setFormData({
       track_id: row.track_id ? String(row.track_id) : '',
@@ -124,7 +132,7 @@ export function PlaylistEditorPage() {
     setSaving(true);
     setFormError(null);
     try {
-      const isEdit = modal?.mode === 'edit';
+      const isEdit = modal?.mode === 'edit' || modal?.mode === 'replace';
       const url = isEdit ? `/api/queue/${modal.row.id}` : '/api/queue';
       const payload = await fetchJson(url, {
         method: isEdit ? 'PUT' : 'POST',
@@ -339,6 +347,9 @@ export function PlaylistEditorPage() {
                     <button className="ghost-button table-icon-button" type="button" title="Add below" onClick={() => openAdd(row)}>
                       <i className="bi bi-plus-lg" aria-hidden="true" />
                     </button>
+                    <button className="ghost-button table-icon-button" type="button" title="Replace" onClick={() => openReplace(row)}>
+                      <i className="bi bi-arrow-repeat" aria-hidden="true" />
+                    </button>
                     <button className="ghost-button table-icon-button" disabled={ordering || index === 0} type="button" title="Move up" onClick={() => moveRow(row, -1)}>
                       <i className="bi bi-arrow-up" aria-hidden="true" />
                     </button>
@@ -386,7 +397,7 @@ export function PlaylistEditorPage() {
           <section className="modal-panel" role="dialog" aria-modal="true">
             <header className="modal-header">
               <div>
-                <p className="panel-kicker">{modal.mode === 'add' ? 'Add' : 'Edit'}</p>
+                <p className="panel-kicker">{{ add: 'Add', edit: 'Edit', replace: 'Replace' }[modal.mode]}</p>
                 <h2>Playlist Entry</h2>
               </div>
               <button className="icon-button" type="button" onClick={() => setModal(null)}>×</button>
