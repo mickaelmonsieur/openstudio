@@ -688,6 +688,54 @@ h1 {
   background: #314957;
 }
 
+.pdf-dropdown {
+  position: relative;
+}
+
+.pdf-dropdown-trigger {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.pdf-chevron {
+  font-size: 10px;
+  opacity: 0.7;
+}
+
+.pdf-dropdown-menu {
+  position: absolute;
+  right: 0;
+  top: calc(100% + 4px);
+  z-index: 100;
+  min-width: 160px;
+  background: #1e2e38;
+  border: 1px solid #405a69;
+  border-radius: 6px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
+  overflow: hidden;
+}
+
+.pdf-dropdown-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 9px 14px;
+  color: #e6eef4;
+  font-size: 13px;
+  text-decoration: none;
+  cursor: pointer;
+}
+
+.pdf-dropdown-item:hover {
+  background: #314957;
+}
+
+.pdf-dropdown-item i {
+  font-size: 14px;
+  opacity: 0.8;
+}
+
 .danger-button {
   border-color: #74424f;
   color: #ffc5cc;

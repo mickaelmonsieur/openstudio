@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { ConfirmDialog } from '../crud/ConfirmDialog.jsx';
 
 const HOURS = Array.from({ length: 24 }, (_, hour) => hour);
@@ -32,6 +32,17 @@ export function PlaylistEditorPage() {
   const [trackResults, setTrackResults] = useState([]);
   const [trackLoading, setTrackLoading] = useState(false);
   const [trimming, setTrimming] = useState(false);
+  const [pdfOpen, setPdfOpen] = useState(false);
+  const pdfRef = useRef(null);
+
+  useEffect(() => {
+    if (!pdfOpen) return;
+    function handleOutside(e) {
+      if (pdfRef.current && !pdfRef.current.contains(e.target)) setPdfOpen(false);
+    }
+    document.addEventListener('mousedown', handleOutside);
+    return () => document.removeEventListener('mousedown', handleOutside);
+  }, [pdfOpen]);
 
   useEffect(() => { loadQueue(); }, [scheduledDate, scheduledHour]);
 
@@ -237,22 +248,36 @@ export function PlaylistEditorPage() {
               ))}
             </select>
           </label>
-          <a
-            className="ghost-button"
-            href={`/queue/print?date=${scheduledDate}&hour=${scheduledHour}&mode=hour`}
-            target="_blank"
-            rel="noreferrer"
-          >
-            PDF Heure
-          </a>
-          <a
-            className="ghost-button"
-            href={`/queue/print?date=${scheduledDate}&mode=day`}
-            target="_blank"
-            rel="noreferrer"
-          >
-            PDF Jour
-          </a>
+          <div className="pdf-dropdown" ref={pdfRef}>
+            <button className="ghost-button pdf-dropdown-trigger" type="button" onClick={() => setPdfOpen((v) => !v)}>
+              <i className="bi bi-filetype-pdf" aria-hidden="true" />
+              <i className="bi bi-chevron-down pdf-chevron" aria-hidden="true" />
+            </button>
+            {pdfOpen && (
+              <div className="pdf-dropdown-menu">
+                <a
+                  className="pdf-dropdown-item"
+                  href={`/queue/print?date=${scheduledDate}&hour=${scheduledHour}&mode=hour`}
+                  target="_blank"
+                  rel="noreferrer"
+                  onClick={() => setPdfOpen(false)}
+                >
+                  <i className="bi bi-clock" aria-hidden="true" />
+                  Cette heure
+                </a>
+                <a
+                  className="pdf-dropdown-item"
+                  href={`/queue/print?date=${scheduledDate}&mode=day`}
+                  target="_blank"
+                  rel="noreferrer"
+                  onClick={() => setPdfOpen(false)}
+                >
+                  <i className="bi bi-calendar3" aria-hidden="true" />
+                  Journée complète
+                </a>
+              </div>
+            )}
+          </div>
           <button className="primary-button" type="button" onClick={() => openAdd()}>Add</button>
         </div>
       </header>

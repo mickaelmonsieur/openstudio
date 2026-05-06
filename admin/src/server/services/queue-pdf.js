@@ -18,9 +18,9 @@ export async function htmlToPdf(html) {
   }
 }
 
-export function generatePlaylistHtml(hourBlocks, timezone) {
+export function generatePlaylistHtml(hourBlocks, timezone, stationName = '') {
   const pages = hourBlocks.map((block, idx) =>
-    renderHourPage(block.rows, block.date, block.hour, timezone, idx === hourBlocks.length - 1)
+    renderHourPage(block.rows, block.date, block.hour, timezone, stationName, idx === hourBlocks.length - 1)
   ).join('\n');
 
   return `<!DOCTYPE html>
@@ -34,8 +34,10 @@ export function generatePlaylistHtml(hourBlocks, timezone) {
   .page { break-after: page; }
   .last-page { break-after: auto; }
   .page-header { margin-bottom: 3mm; border-bottom: 1.5pt solid #2d3748; padding-bottom: 2mm; }
+  .page-header-row { display: flex; align-items: baseline; justify-content: space-between; }
   .page-header h2 { margin: 0; font-size: 12pt; }
   .page-header p { margin: 1mm 0 0; font-size: 7.5pt; color: #555; }
+  .page-brand { font-size: 8pt; color: #888; font-style: italic; white-space: nowrap; }
   table { width: 100%; border-collapse: collapse; font-size: 8pt; table-layout: fixed; }
   colgroup col.c-time   { width: 58pt; }
   colgroup col.c-type   { width: 68pt; }
@@ -62,7 +64,7 @@ ${pages}
 </html>`;
 }
 
-function renderHourPage(rows, date, hour, timezone, isLast) {
+function renderHourPage(rows, date, hour, timezone, stationName, isLast) {
   const endTime = computeEndTime(rows, hour);
   const rowsHtml = rows.length === 0
     ? '<tr><td colspan="6" style="color:#999;font-style:italic;padding:6px 5px">Aucune piste</td></tr>'
@@ -89,9 +91,13 @@ function renderHourPage(rows, date, hour, timezone, isLast) {
     ? `<p class="page-footer ${statusClass}">${endTime.time} · ${statusText}</p>`
     : '';
 
+  const stationPart = stationName ? ` — ${esc(stationName)}` : '';
   return `<div class="page${isLast ? ' last-page' : ''}">
   <div class="page-header">
-    <h2>Playlist — ${esc(date)} &nbsp; ${pad(hour)}:00 – ${pad(hour)}:59</h2>
+    <div class="page-header-row">
+      <h2>Playlist${stationPart} — ${esc(date)} &nbsp; ${pad(hour)}:00 – ${pad(hour)}:59</h2>
+      <span class="page-brand">OpenStudio</span>
+    </div>
     <p>${rows.length} piste${rows.length !== 1 ? 's' : ''} &nbsp;·&nbsp; ${esc(timezone)}</p>
   </div>
   <table>

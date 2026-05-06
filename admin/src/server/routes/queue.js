@@ -9,6 +9,7 @@ import {
   updateQueueEntryInHour
 } from '../repositories/queue.js';
 import { generatePlaylistHtml, htmlToPdf } from '../services/queue-pdf.js';
+import { getStation } from '../repositories/stations.js';
 
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 
@@ -81,6 +82,12 @@ function parseNonNegativeNumber(value) {
   return Number.isFinite(parsed) && parsed >= 0 ? parsed : null;
 }
 
+function parseCookie(cookieHeader, name) {
+  if (!cookieHeader) return null;
+  const match = cookieHeader.split(';').map((p) => p.trim()).find((p) => p.startsWith(`${name}=`));
+  return match ? match.slice(name.length + 1) : null;
+}
+
 function parsePositiveNumber(value) {
   const parsed = Number(value);
   return Number.isFinite(parsed) && parsed > 0 ? parsed : null;
@@ -113,6 +120,9 @@ export function registerQueueRoutes(app, getDatabaseConfig) {
 
     const pdf = await withDatabase(getDatabaseConfig(), async (db) => {
       const timezone = await getQueueTimezone(db);
+      const stationId = parseCookie(req.headers.cookie, 'station_id');
+      const station = stationId ? await getStation(db, stationId) : null;
+      const stationName = station?.name ?? '';
       const hourBlocks = [];
       for (const hour of hourList) {
         const rows = await listQueueHour(db, { date: dateStr, hour, timezone });
@@ -125,7 +135,7 @@ export function registerQueueRoutes(app, getDatabaseConfig) {
         err.statusCode = 404;
         throw err;
       }
-      const html = generatePlaylistHtml(hourBlocks, timezone);
+      const html = generatePlaylistHtml(hourBlocks, timezone, stationName);
       return htmlToPdf(html);
     });
 

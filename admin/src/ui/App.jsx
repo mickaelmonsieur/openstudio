@@ -136,6 +136,10 @@ export function App() {
   }, []);
 
   useEffect(() => {
+    if (stationId) document.cookie = `station_id=${stationId}; path=/`;
+  }, [stationId]);
+
+  useEffect(() => {
     if (!databaseStatus.connected) return;
     fetch('/api/stations')
       .then((r) => r.json())
