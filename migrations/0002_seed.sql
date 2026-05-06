@@ -545,10 +545,10 @@ INSERT INTO "template_slots" ("id", "template_id", "position", "category_id", "s
 INSERT INTO "template_slots" ("id", "template_id", "position", "category_id", "subcategory_id", "comment", "track_protection", "artist_protection") VALUES (29, 3, 26, 2, 17, 'CD SECOURS', 9000, 3600);
 INSERT INTO "template_slots" ("id", "template_id", "position", "category_id", "subcategory_id", "comment", "track_protection", "artist_protection") VALUES (30, 3, 27, 2, 18, 'CD SECOURS', 9000, 3600);
 INSERT INTO "template_slots" ("id", "template_id", "position", "category_id", "subcategory_id", "comment", "track_protection", "artist_protection") VALUES (31, 3, 28, 2, 19, 'CD SECOURS', 9000, 3600);
-INSERT INTO "template_slots" ("id", "template_id", "position", "category_id", "subcategory_id", "comment", "track_protection", "artist_protection") VALUES (32, 2, 1, 7, NULL, 'Top Horaire', 600, 600);
-INSERT INTO "template_slots" ("id", "template_id", "position", "category_id", "subcategory_id", "comment", "track_protection", "artist_protection") VALUES (33, 1, 1, 4, NULL, 'Pub In', 600, 600);
-INSERT INTO "template_slots" ("id", "template_id", "position", "category_id", "subcategory_id", "comment", "track_protection", "artist_protection") VALUES (34, 1, 2, 8, NULL, 'ECRAN PUB', 600, 600);
-INSERT INTO "template_slots" ("id", "template_id", "position", "category_id", "subcategory_id", "comment", "track_protection", "artist_protection") VALUES (35, 1, 3, 5, NULL, 'Pub Out', 600, 600);
+INSERT INTO "template_slots" ("id", "template_id", "position", "category_id", "subcategory_id", "comment", "track_protection", "artist_protection") VALUES (32, 2, 1, 7, NULL, 'Top Horaire', 0, 0);
+INSERT INTO "template_slots" ("id", "template_id", "position", "category_id", "subcategory_id", "comment", "track_protection", "artist_protection") VALUES (33, 1, 1, 4, NULL, 'Pub In', 0, 0);
+INSERT INTO "template_slots" ("id", "template_id", "position", "category_id", "subcategory_id", "comment", "track_protection", "artist_protection") VALUES (34, 1, 2, 8, NULL, 'ECRAN PUB', 0, 0);
+INSERT INTO "template_slots" ("id", "template_id", "position", "category_id", "subcategory_id", "comment", "track_protection", "artist_protection") VALUES (35, 1, 3, 5, NULL, 'Pub Out', 0, 0);
 INSERT INTO "template_slots" ("id", "template_id", "position", "category_id", "subcategory_id", "comment", "track_protection", "artist_protection") VALUES (36, 4, 1, 2, 21, '', 3600, 3600);
 INSERT INTO "template_slots" ("id", "template_id", "position", "category_id", "subcategory_id", "comment", "track_protection", "artist_protection") VALUES (37, 4, 30, 2, 21, '', 3600, 3600);
 INSERT INTO "template_slots" ("id", "template_id", "position", "category_id", "subcategory_id", "comment", "track_protection", "artist_protection") VALUES (38, 4, 29, 2, 21, '', 3600, 3600);
@@ -583,30 +583,30 @@ SELECT setval(pg_get_serial_sequence('"template_slots"', 'id'), MAX(id)) FROM "t
 
 -- event_type=2: recurring every day (days_mask=127) at a specific hour — one row per hour for TOP HORAIRE
 INSERT INTO clock_events (id, name, event_type, days_mask, hours_mask, hour, minute, second, priority, duration, is_fixed) VALUES
-    ( 1, 'TOP HORAIRE', 2, 127, 0,  0, 59, 53, 0, 10, TRUE),
-    ( 2, 'TOP HORAIRE', 2, 127, 0,  1, 59, 53, 0, 10, TRUE),
-    ( 3, 'TOP HORAIRE', 2, 127, 0,  2, 59, 53, 0, 10, TRUE),
-    ( 4, 'TOP HORAIRE', 2, 127, 0,  3, 59, 53, 0, 10, TRUE),
-    ( 5, 'TOP HORAIRE', 2, 127, 0,  4, 59, 53, 0, 10, TRUE),
-    ( 6, 'TOP HORAIRE', 2, 127, 0,  5, 59, 53, 0, 10, TRUE),
-    ( 7, 'TOP HORAIRE', 2, 127, 0,  6, 59, 53, 0, 10, TRUE),
-    ( 8, 'TOP HORAIRE', 2, 127, 0,  7, 59, 53, 0, 10, TRUE),
-    ( 9, 'TOP HORAIRE', 2, 127, 0,  8, 59, 53, 0, 10, TRUE),
-    (10, 'TOP HORAIRE', 2, 127, 0,  9, 59, 53, 0, 10, TRUE),
-    (11, 'TOP HORAIRE', 2, 127, 0, 10, 59, 53, 0, 10, TRUE),
-    (12, 'TOP HORAIRE', 2, 127, 0, 11, 59, 53, 0, 10, TRUE),
-    (13, 'TOP HORAIRE', 2, 127, 0, 12, 59, 53, 0, 10, TRUE),
-    (14, 'TOP HORAIRE', 2, 127, 0, 13, 59, 53, 0, 10, TRUE),
-    (15, 'TOP HORAIRE', 2, 127, 0, 14, 59, 53, 0, 10, TRUE),
-    (16, 'TOP HORAIRE', 2, 127, 0, 15, 59, 53, 0, 10, TRUE),
-    (17, 'TOP HORAIRE', 2, 127, 0, 16, 59, 53, 0, 10, TRUE),
-    (18, 'TOP HORAIRE', 2, 127, 0, 17, 59, 53, 0, 10, TRUE),
-    (19, 'TOP HORAIRE', 2, 127, 0, 18, 59, 53, 0, 10, TRUE),
-    (20, 'TOP HORAIRE', 2, 127, 0, 19, 59, 53, 0, 10, TRUE),
-    (21, 'TOP HORAIRE', 2, 127, 0, 20, 59, 53, 0, 10, TRUE),
-    (22, 'TOP HORAIRE', 2, 127, 0, 21, 59, 53, 0, 10, TRUE),
-    (23, 'TOP HORAIRE', 2, 127, 0, 22, 59, 53, 0, 10, TRUE),
-    (24, 'TOP HORAIRE', 2, 127, 0, 23, 59, 53, 0, 10, TRUE);
+    ( 1, 'TOP HORAIRE', 2, 127, 0,  0, 0, 0, 0, 10, TRUE),
+    ( 2, 'TOP HORAIRE', 2, 127, 0,  1, 0, 0, 0, 10, TRUE),
+    ( 3, 'TOP HORAIRE', 2, 127, 0,  2, 0, 0, 0, 10, TRUE),
+    ( 4, 'TOP HORAIRE', 2, 127, 0,  3, 0, 0, 0, 10, TRUE),
+    ( 5, 'TOP HORAIRE', 2, 127, 0,  4, 0, 0, 0, 10, TRUE),
+    ( 6, 'TOP HORAIRE', 2, 127, 0,  5, 0, 0, 0, 10, TRUE),
+    ( 7, 'TOP HORAIRE', 2, 127, 0,  6, 0, 0, 0, 10, TRUE),
+    ( 8, 'TOP HORAIRE', 2, 127, 0,  7, 0, 0, 0, 10, TRUE),
+    ( 9, 'TOP HORAIRE', 2, 127, 0,  8, 0, 0, 0, 10, TRUE),
+    (10, 'TOP HORAIRE', 2, 127, 0,  9, 0, 0, 0, 10, TRUE),
+    (11, 'TOP HORAIRE', 2, 127, 0, 10, 0, 0, 0, 10, TRUE),
+    (12, 'TOP HORAIRE', 2, 127, 0, 11, 0, 0, 0, 10, TRUE),
+    (13, 'TOP HORAIRE', 2, 127, 0, 12, 0, 0, 0, 10, TRUE),
+    (14, 'TOP HORAIRE', 2, 127, 0, 13, 0, 0, 0, 10, TRUE),
+    (15, 'TOP HORAIRE', 2, 127, 0, 14, 0, 0, 0, 10, TRUE),
+    (16, 'TOP HORAIRE', 2, 127, 0, 15, 0, 0, 0, 10, TRUE),
+    (17, 'TOP HORAIRE', 2, 127, 0, 16, 0, 0, 0, 10, TRUE),
+    (18, 'TOP HORAIRE', 2, 127, 0, 17, 0, 0, 0, 10, TRUE),
+    (19, 'TOP HORAIRE', 2, 127, 0, 18, 0, 0, 0, 10, TRUE),
+    (20, 'TOP HORAIRE', 2, 127, 0, 19, 0, 0, 0, 10, TRUE),
+    (21, 'TOP HORAIRE', 2, 127, 0, 20, 0, 0, 0, 10, TRUE),
+    (22, 'TOP HORAIRE', 2, 127, 0, 21, 0, 0, 0, 10, TRUE),
+    (23, 'TOP HORAIRE', 2, 127, 0, 22, 0, 0, 0, 10, TRUE),
+    (24, 'TOP HORAIRE', 2, 127, 0, 23, 0, 0, 0, 10, TRUE);
 -- event_type=3: recurring every day at every hour (hours_mask=16777215) — PUB slots
 INSERT INTO clock_events (id, name, event_type, days_mask, hours_mask, hour, minute, second, priority, duration, is_fixed) VALUES
     (25, 'PUB', 3, 127, 16777215, 0,  5,  0, 0, 240, FALSE),

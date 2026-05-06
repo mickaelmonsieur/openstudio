@@ -317,8 +317,8 @@ export function PlaylistsPage() {
             ) : null}
 
             <div className="job-messages">
-              {job.messages.map((entry, index) => (
-                <div key={`${entry.at}-${index}`}>{entry.message}</div>
+              {[...job.messages].reverse().map((entry, index) => (
+                <div key={`${entry.at}-${index}`} className={`msg-${entry.type || 'info'}`}>{entry.message}</div>
               ))}
             </div>
           </section>

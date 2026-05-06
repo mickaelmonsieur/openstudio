@@ -142,7 +142,9 @@ export async function findTrackForSlot(db, slot, scheduledAtLocal, timezone) {
     WITH candidates AS (
       SELECT
         t.id,
+        t.title,
         t.artist_id,
+        a.name AS artist_name,
         t.cue_in,
         COALESCE(t.cue_out, t.duration) AS cue_out,
         CASE
@@ -248,9 +250,11 @@ export async function insertFixedQueueEntry(db, track, priority, scheduledAtLoca
 export async function getTrackById(db, id) {
   const { rows } = await db.query(
     `
-    SELECT id, cue_in, COALESCE(cue_out, duration) AS cue_out
-    FROM tracks
-    WHERE id = $1 AND active = TRUE
+    SELECT t.id, t.title, t.cue_in, COALESCE(t.cue_out, t.duration) AS cue_out,
+      a.name AS artist_name
+    FROM tracks t
+    LEFT JOIN artists a ON a.id = t.artist_id
+    WHERE t.id = $1 AND t.active = TRUE
     `,
     [id]
   );
@@ -267,6 +271,7 @@ export async function listEventsForHour(db, date, dayKey, hour) {
     `
     SELECT
       ce.id          AS event_id,
+      ce.name,
       ce.event_type,
       ce.is_fixed,
       ce.minute,

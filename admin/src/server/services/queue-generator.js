@@ -14,7 +14,7 @@ import {
   listSlotsForGenerator
 } from '../repositories/playlists.js';
 
-const MAX_MESSAGES = 80;
+const MAX_MESSAGES = 500;
 const HOUR_LIMIT_SECONDS = 3599.999;
 const DAY_KEYS = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'];
 const jobs = new Map();
@@ -128,6 +128,7 @@ class QueueGenerator {
       return ta !== tb ? ta - tb : b.priority - a.priority;
     });
     let eventIdx = 0;
+    let offsetSeconds = 0;
 
     if (!schedule) {
       this.job.skippedHours += 1;
@@ -138,7 +139,6 @@ class QueueGenerator {
         this.job.skippedHours += 1;
         addMessage(this.job, `Skipped hour ${label}: template ${schedule.template_name} has no slots.`);
       } else {
-        let offsetSeconds = 0;
         let createdForHour = 0;
 
         for (const slot of slots) {
@@ -149,7 +149,8 @@ class QueueGenerator {
             const ev = pendingEvents[eventIdx];
             const evTime = ev.minute * 60 + ev.second;
             if (ev.is_fixed || evTime > offsetSeconds) break;
-            await this.insertEventAction(ev, hourInfo, offsetSeconds);
+            const dur = await this.insertEventAction(ev, hourInfo, offsetSeconds);
+            offsetSeconds += dur;
             eventIdx++;
           }
 
@@ -167,6 +168,8 @@ class QueueGenerator {
 
           if (!track) {
             this.job.skipped += 1;
+            const prot = `prot. track ${slot.track_protection}s / artiste ${slot.artist_protection}s`;
+            addMessage(this.job, `✗ Skip [${slot.label}] – aucune piste disponible (${prot})`, 'skip');
             continue;
           }
 
@@ -179,15 +182,19 @@ class QueueGenerator {
               await insertQueueEntryWithCutoff(this.db, track, maxDuration, scheduledAtLocal, this.timezone, slot.position);
               createdForHour++;
               this.job.created++;
+              const who = track.artist_name ? `${track.artist_name} – ${track.title}` : track.title;
+              addMessage(this.job, `~ ${scheduledAtLocal}  ${who}  (coupé à ${formatDuration(maxDuration)} / ${formatDuration(playDuration)})`, 'cut');
             }
             offsetSeconds = cutoffSeconds;
 
-            // Insert all events at or before the cutoff time
+            // Insert all events at or before the cutoff time, advancing offsetSeconds as we go
             while (eventIdx < pendingEvents.length) {
               const ev = pendingEvents[eventIdx];
               const evTime = ev.minute * 60 + ev.second;
               if (evTime > cutoffSeconds) break;
-              await this.insertEventAction(ev, hourInfo, ev.is_fixed ? evTime : cutoffSeconds);
+              const eventAtSeconds = ev.is_fixed ? evTime : offsetSeconds;
+              const dur = await this.insertEventAction(ev, hourInfo, eventAtSeconds);
+              offsetSeconds = Math.max(offsetSeconds, eventAtSeconds + dur);
               eventIdx++;
             }
           } else {
@@ -195,6 +202,8 @@ class QueueGenerator {
             offsetSeconds += playDuration;
             createdForHour++;
             this.job.created++;
+            const who = track.artist_name ? `${track.artist_name} – ${track.title}` : track.title;
+            addMessage(this.job, `→ ${scheduledAtLocal}  ${who}  (${formatDuration(playDuration)})`, 'track');
           }
         }
 
@@ -209,27 +218,48 @@ class QueueGenerator {
     while (eventIdx < pendingEvents.length) {
       const ev = pendingEvents[eventIdx];
       const evTime = ev.minute * 60 + ev.second;
-      await this.insertEventAction(ev, hourInfo, ev.is_fixed ? evTime : 0);
+      const eventAtSeconds = ev.is_fixed ? evTime : offsetSeconds;
+      const dur = await this.insertEventAction(ev, hourInfo, eventAtSeconds);
+      offsetSeconds = Math.max(offsetSeconds, eventAtSeconds + dur);
       eventIdx++;
     }
   }
 
   async insertEventAction(ev, hourInfo, atSeconds) {
-    const scheduledAtLocal = localTimestamp(hourInfo.date, hourInfo.hour, atSeconds);
+    let totalDuration = 0;
 
     if (ev.action_type === 2) {
       const track = await getTrackById(this.db, ev.track_id);
-      if (!track) return;
+      if (!track) return 0;
+      const scheduledAtLocal = localTimestamp(hourInfo.date, hourInfo.hour, atSeconds);
       await insertFixedQueueEntry(this.db, track, ev.priority, scheduledAtLocal, this.timezone);
       this.job.created++;
+      const dur = Number(track.cue_out || 0) - Number(track.cue_in || 0);
+      const who = track.artist_name ? `${track.artist_name} – ${track.title}` : track.title;
+      const timing = ev.is_fixed ? 'fixe' : 'flottant';
+      addMessage(this.job, `★ ${scheduledAtLocal}  [${ev.name || 'Event'} – ${timing}]  ${who}  (${formatDuration(dur)})`, 'event');
+      totalDuration = dur;
     } else if (ev.action_type === 1) {
       const slots = await listSlotsForGenerator(this.db, ev.template_id);
-      if (slots.length === 0) return;
-      const track = await findTrackForSlot(this.db, slots[0], scheduledAtLocal, this.timezone);
-      if (!track) { this.job.skipped++; return; }
-      await insertFixedQueueEntry(this.db, track, ev.priority, scheduledAtLocal, this.timezone);
-      this.job.created++;
+      for (const slot of slots) {
+        const scheduledAtLocal = localTimestamp(hourInfo.date, hourInfo.hour, atSeconds + totalDuration);
+        const track = await findTrackForSlot(this.db, slot, scheduledAtLocal, this.timezone);
+        if (!track) {
+          this.job.skipped++;
+          addMessage(this.job, `✗ Skip event [${ev.name || 'Event'}] slot [${slot.label}] – aucune piste disponible`, 'skip');
+          continue;
+        }
+        await insertFixedQueueEntry(this.db, track, ev.priority, scheduledAtLocal, this.timezone);
+        this.job.created++;
+        const dur = Number(track.play_duration || 0);
+        const who = track.artist_name ? `${track.artist_name} – ${track.title}` : track.title;
+        const timing = ev.is_fixed ? 'fixe' : 'flottant';
+        addMessage(this.job, `★ ${scheduledAtLocal}  [${ev.name || 'Event'} – ${timing}]  ${who}  (${formatDuration(dur)})`, 'event');
+        totalDuration += dur;
+      }
     }
+
+    return totalDuration;
   }
 }
 
@@ -316,15 +346,17 @@ function pad(value) {
   return String(value).padStart(2, '0');
 }
 
-function addMessage(job, message) {
-  job.messages.push({
-    at: new Date().toISOString(),
-    message
-  });
-
+function addMessage(job, message, type = 'info') {
+  job.messages.push({ at: new Date().toISOString(), message, type });
   if (job.messages.length > MAX_MESSAGES) {
     job.messages.splice(0, job.messages.length - MAX_MESSAGES);
   }
+}
+
+function formatDuration(seconds) {
+  const s = Math.floor(seconds);
+  const m = Math.floor(s / 60);
+  return `${m}:${pad(s % 60)}`;
 }
 
 function serializeJob(job) {
