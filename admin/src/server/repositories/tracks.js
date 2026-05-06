@@ -48,8 +48,8 @@ const FROM_JOIN = `
   LEFT JOIN track_languages tl ON tl.alpha2 = t.language
 `;
 
-export async function countTracks(db, search = '', categoryId = null) {
-  const { where, values } = buildSearchWhere(search, categoryId);
+export async function countTracks(db, search = '', filters = {}) {
+  const { where, values } = buildSearchWhere(search, filters);
   const { rows } = await db.query(
     `
     SELECT COUNT(*)::integer AS total
@@ -61,8 +61,8 @@ export async function countTracks(db, search = '', categoryId = null) {
   return rows[0].total;
 }
 
-export async function listTracks(db, { limit, offset, search = '', categoryId = null }) {
-  const { where, values } = buildSearchWhere(search, categoryId);
+export async function listTracks(db, { limit, offset, search = '', filters = {} }) {
+  const { where, values } = buildSearchWhere(search, filters);
   const limitParam = values.length + 1;
   const offsetParam = values.length + 2;
 
@@ -80,7 +80,7 @@ export async function listTracks(db, { limit, offset, search = '', categoryId = 
   return rows;
 }
 
-function buildSearchWhere(search, categoryId = null) {
+function buildSearchWhere(search, { categoryId = null, subcategoryId = null, genreId = null, trackTypeId = null } = {}) {
   const terms = String(search || '').trim().split(/\s+/).filter(Boolean).slice(0, 8);
   const clauses = [];
   const values = [];
@@ -105,6 +105,18 @@ function buildSearchWhere(search, categoryId = null) {
   if (categoryId) {
     values.push(categoryId);
     clauses.push(`sc.category_id = $${values.length}`);
+  }
+  if (subcategoryId) {
+    values.push(subcategoryId);
+    clauses.push(`t.subcategory_id = $${values.length}`);
+  }
+  if (genreId) {
+    values.push(genreId);
+    clauses.push(`t.genre_id = $${values.length}`);
+  }
+  if (trackTypeId) {
+    values.push(trackTypeId);
+    clauses.push(`t.track_type_id = $${values.length}`);
   }
 
   return {
@@ -291,11 +303,17 @@ export async function deleteTrack(db, id) {
   return rowCount > 0;
 }
 
+export async function listCategories(db) {
+  const { rows } = await db.query(`SELECT id, name FROM categories ORDER BY name`);
+  return rows;
+}
+
 export async function listSubcategoriesWithCategory(db) {
   const { rows } = await db.query(`
     SELECT
       sc.id,
       sc.name,
+      sc.category_id,
       c.name AS category_name
     FROM subcategories sc
     JOIN categories c ON c.id = sc.category_id

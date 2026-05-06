@@ -17,7 +17,12 @@ export function TracksPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
 
+  const [filterCategory, setFilterCategory] = useState('');
+  const [filterGenre, setFilterGenre] = useState('');
+  const [filterType, setFilterType] = useState('');
+
   const [artists, setArtists] = useState([]);
+  const [categories, setCategories] = useState([]);
   const [genres, setGenres] = useState([]);
   const [subcategories, setSubcategories] = useState([]);
   const [trackTypes, setTrackTypes] = useState([]);
@@ -42,7 +47,7 @@ export function TracksPage() {
 
   useEffect(() => {
     loadTracks();
-  }, [page, searchQuery]);
+  }, [page, searchQuery, filterCategory, filterGenre, filterType]);
 
   useEffect(() => {
     const timer = setTimeout(() => {
@@ -60,6 +65,7 @@ export function TracksPage() {
         fetchJson('/api/tracks/options')
       ]);
       setArtists(artistsPayload.rows || []);
+      setCategories(optionsPayload.categories || []);
       setGenres(optionsPayload.genres || []);
       setSubcategories(optionsPayload.subcategories || []);
       setTrackTypes(optionsPayload.trackTypes || []);
@@ -79,6 +85,13 @@ export function TracksPage() {
         limit: String(LIMIT)
       });
       if (searchQuery) params.set('q', searchQuery);
+      if (filterCategory) {
+        const [kind, id] = filterCategory.split(':');
+        if (kind === 'cat') params.set('category_id', id);
+        else if (kind === 'sub') params.set('subcategory_id', id);
+      }
+      if (filterGenre) params.set('genre_id', filterGenre);
+      if (filterType)  params.set('track_type_id', filterType);
 
       const payload = await fetchJson(`/api/tracks?${params.toString()}`);
       setRows(payload.rows || []);
@@ -232,6 +245,37 @@ export function TracksPage() {
           </button>
         </div>
       ) : null}
+
+      <div className="track-filters">
+        <label>
+          Category
+          <select value={filterCategory} onChange={(e) => { setFilterCategory(e.target.value); setPage(1); }}>
+            <option value="">All</option>
+            {categories.map((cat) => (
+              <optgroup key={cat.id} label={cat.name}>
+                <option value={`cat:${cat.id}`}>{cat.name}</option>
+                {subcategories.filter((sc) => sc.category_id === cat.id).map((sc) => (
+                  <option key={sc.id} value={`sub:${sc.id}`}>&nbsp;&nbsp;{sc.name}</option>
+                ))}
+              </optgroup>
+            ))}
+          </select>
+        </label>
+        <label>
+          Type
+          <select value={filterType} onChange={(e) => { setFilterType(e.target.value); setPage(1); }}>
+            <option value="">All</option>
+            {trackTypes.map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}
+          </select>
+        </label>
+        <label>
+          Genre
+          <select value={filterGenre} onChange={(e) => { setFilterGenre(e.target.value); setPage(1); }}>
+            <option value="">All</option>
+            {genres.map((g) => <option key={g.id} value={g.id}>{g.name}</option>)}
+          </select>
+        </label>
+      </div>
 
       {loading ? (
         <div className="table-loading">Loading...</div>

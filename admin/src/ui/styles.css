@@ -292,6 +292,42 @@ h1 {
   border-color: #6857d8;
 }
 
+.track-filters {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 10px;
+  margin-bottom: 6px;
+}
+
+.track-filters label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: #91a9b7;
+  font-size: 12px;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
+.track-filters select {
+  flex: 1;
+  min-height: 36px;
+  padding: 8px 10px;
+  border: 1px solid #405a69;
+  border-radius: 5px;
+  color: #eef7fb;
+  background: #18262e;
+  font: inherit;
+  font-size: 13px;
+  font-weight: 500;
+  text-transform: none;
+}
+
+.track-filters select:focus {
+  outline: 2px solid rgba(104, 87, 216, 0.45);
+  border-color: #6857d8;
+}
+
 .filter-status {
   display: flex;
   align-items: center;

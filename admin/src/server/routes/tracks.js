@@ -10,6 +10,7 @@ import {
   deleteTrack,
   getTrack,
   hasScheduledQueue,
+  listCategories,
   listGenres,
   listSubcategoriesWithCategory,
   listTrackTypes,
@@ -206,12 +207,17 @@ export function registerTrackRoutes(app, getDatabaseConfig) {
   app.get('/api/tracks', asyncRoute(async (req, res) => {
     const { page, limit, offset } = parsePagination(req.query);
     const search = parseSearch(req.query);
-    const categoryId = req.query.category_id ? Number(req.query.category_id) : null;
+    const filters = {
+      categoryId:    req.query.category_id    ? Number(req.query.category_id)    : null,
+      subcategoryId: req.query.subcategory_id ? Number(req.query.subcategory_id) : null,
+      genreId:       req.query.genre_id       ? Number(req.query.genre_id)       : null,
+      trackTypeId:   req.query.track_type_id  ? Number(req.query.track_type_id)  : null
+    };
 
     const [total, rows] = await withDatabase(getDatabaseConfig(), (db) =>
       Promise.all([
-        countTracks(db, search, categoryId),
-        listTracks(db, { limit, offset, search, categoryId })
+        countTracks(db, search, filters),
+        listTracks(db, { limit, offset, search, filters })
       ])
     );
 
@@ -220,8 +226,9 @@ export function registerTrackRoutes(app, getDatabaseConfig) {
 
   // Must be declared before /api/tracks/:id to avoid "options" being parsed as an id
   app.get('/api/tracks/options', asyncRoute(async (_req, res) => {
-    const [genres, subcategories, trackTypes, moods, languages] = await withDatabase(getDatabaseConfig(), (db) =>
+    const [categories, genres, subcategories, trackTypes, moods, languages] = await withDatabase(getDatabaseConfig(), (db) =>
       Promise.all([
+        listCategories(db),
         listGenres(db),
         listSubcategoriesWithCategory(db),
         listTrackTypes(db),
@@ -229,7 +236,7 @@ export function registerTrackRoutes(app, getDatabaseConfig) {
         listTrackLanguages(db)
       ])
     );
-    res.json({ genres, subcategories, trackTypes, moods, languages });
+    res.json({ categories, genres, subcategories, trackTypes, moods, languages });
   }));
 
   app.get('/api/tracks/folders', asyncRoute(async (req, res) => {
