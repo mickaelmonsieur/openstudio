@@ -238,6 +238,7 @@ export function PlaylistEditorPage() {
             <thead>
               <tr>
                 <th style={{ width: '105px' }}>Scheduled</th>
+                <th style={{ width: '110px' }}>Type</th>
                 <th style={{ width: '190px' }}>Artist</th>
                 <th>Title</th>
                 <th style={{ width: '90px' }}>Duration</th>
@@ -247,7 +248,7 @@ export function PlaylistEditorPage() {
             </thead>
             <tbody>
               {rows.length === 0 ? (
-                <tr><td className="empty-cell" colSpan={6}>No playlist entries for this hour.</td></tr>
+                <tr><td className="empty-cell" colSpan={7}>No playlist entries for this hour.</td></tr>
               ) : rows.map((row, index) => (
                 <tr
                   key={row.id}
@@ -255,6 +256,7 @@ export function PlaylistEditorPage() {
                     'draggable-row',
                     draggingId === row.id ? 'dragging-row' : ''
                   ].filter(Boolean).join(' ')}
+                  style={row.track_type_color ? { backgroundColor: row.track_type_color } : undefined}
                   draggable={!ordering}
                   onDragEnd={() => setDraggingId(null)}
                   onDragOver={(event) => event.preventDefault()}
@@ -270,6 +272,7 @@ export function PlaylistEditorPage() {
                   }}
                 >
                   <td>{row.scheduled_time}</td>
+                  <td>{row.track_type_name || '—'}</td>
                   <td>{row.artist || '—'}</td>
                   <td>{row.title || '—'}</td>
                   <td>{formatSeconds(row.duration)}</td>
@@ -298,7 +301,7 @@ export function PlaylistEditorPage() {
                     <td style={{ color: endTime.complete ? '#16a34a' : '#dc2626', fontWeight: 600, fontVariantNumeric: 'tabular-nums' }}>
                       {endTime.time}
                     </td>
-                    <td colSpan={5} style={{ color: endTime.complete ? '#16a34a' : '#dc2626', fontSize: '0.8em' }}>
+                    <td colSpan={6} style={{ color: endTime.complete ? '#16a34a' : '#dc2626', fontSize: '0.8em' }}>
                       {endTime.complete ? '✓ Hour complete' : '✗ Hour incomplete'}
                     </td>
                   </tr>

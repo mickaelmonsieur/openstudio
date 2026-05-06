@@ -10,40 +10,6 @@ INSERT INTO stations (id, name, library_path) VALUES
     (1, 'DEMO', '/Users/Shared/OpenStudio/Library/demo');
 SELECT setval('stations_id_seq', 1);
 
-INSERT INTO artists (id, name, last_broadcast_at) VALUES
-    (1, 'Mylène Farmer', NULL),
-    (2, 'ABC', NULL),
-    (3, 'Taylor Swift', NULL),
-    (4, 'Texas', NULL),
-    (5, 'Madonna', NULL),
-    (6, 'Melanie C', NULL),
-    (7, 'Roxette', NULL),
-    (8, 'The Cure', NULL),
-    (9, 'Radio Contact', NULL);
-SELECT setval('artists_id_seq', 9);
-
-INSERT INTO tracks (
-    id, artist_id, genre_id, title, album, year, duration, sample_rate,
-    cue_in, cue_out, intro, outro, hook_in, hook_out, loop_in, loop_out,
-    path, subcategory_id, active
-) VALUES
-    (1,  1,  99, 'XXL',                         'Anamorphosee',        1995, 260.38858, 44100, 0, NULL,      0,  0, 0, 0, 0, 0, '/Users/Shared/OpenStudio/Library/demo/DECK0/Mylène Farmer - XXL.flac',                                      19, TRUE),
-    (2,  2, 333, 'The Look Of Love, Pt.1',      'The Lexicon Of Love', 1982, 209.53334, 44100, 0, NULL,      0,  0, 0, 0, 0, 0, '/Users/Shared/OpenStudio/Library/demo/DECK0/ABC - The Look Of Love, Pt.1.flac',                              19, TRUE),
-    (3,  3,  99, 'Cruel Summer',                'Lover',               2019, 178.42667, 44100, 0, NULL,      0,  0, 0, 0, 0, 0, '/Users/Shared/OpenStudio/Library/demo/DECK0/Taylor Swift - Cruel Summer.flac',                               19, TRUE),
-    (4,  4,  99, 'Getaway',                     'Red Book',            2005, 233.64000, 44100, 0, NULL,      0,  0, 0, 0, 0, 0, '/Users/Shared/OpenStudio/Library/demo/DECK0/Texas - Getaway.flac',                                           19, TRUE),
-    (5,  5,  99, 'Frozen',                      'Ray Of Light',        1998, 367.33334, 44100, 18, NULL,     0,  0, 0, 0, 0, 0, '/Users/Shared/OpenStudio/Library/demo/DECK0/Madonna - Frozen.flac',                                          19, TRUE),
-    (6,  6,  99, 'Never Be The Same Again',     'Northern Star',       2000, 294.20000, 44100, 0, NULL,     25, 28, 0, 0, 0, 0, '/Users/Shared/OpenStudio/Library/demo/DECK0/Melanie C - Never Be The Same Again.flac',                       19, TRUE),
-    (7,  7,  99, 'The Look',                    'Look Sharp!',         1988, 237.32000, 44100, 0, NULL,      0,  0, 0, 0, 0, 0, '/Users/Shared/OpenStudio/Library/demo/DECK0/Roxette - The Look.flac',                                        19, TRUE),
-    (8,  8, 332, 'Lullaby',                     'Disintegration',      1989, 248.97333, 44100, 0, NULL,      0,  0, 0, 0, 0, 0, '/Users/Shared/OpenStudio/Library/demo/DECK0/The Cure - Lullaby.flac',                                        19, TRUE),
-    (9,  9, NULL, 'Avec elle profitons du w-e', '',                    2000,  20.05005, 44100, 0, 15.249319, 0,  0, 0, 0, 0, 0, '/Users/Shared/OpenStudio/Library/demo/JINGLES/RADIO CONTACT - Avec elle profitons du w-e.flac',         2, TRUE),
-    (10, 9, NULL, 'C''est le w-e quel bonheur', '',                    2000,  14.38147, 44100, 0, 10.631020, 0,  0, 0, 0, 0, 0, '/Users/Shared/OpenStudio/Library/demo/JINGLES/RADIO CONTACT - C''est le w-e quel bonheur.flac',          2, TRUE),
-    (11, 9, NULL, 'Laissons nous vivre, c''est le w-e', '',            2000,  18.16923, 44100, 0, 13.315396, 0,  0, 0, 0, 0, 0, '/Users/Shared/OpenStudio/Library/demo/JINGLES/RADIO CONTACT - Laissons nous vivre, c''est le w-e.flac',  2, TRUE),
-    (12, 9, NULL, 'Le w-e, avec elle, je me sens bien', '',            2000,  16.73249, 44100, 0, NULL,      0,  0, 0, 0, 0, 0, '/Users/Shared/OpenStudio/Library/demo/JINGLES/RADIO CONTACT - Le w-e, avec elle, je me sens bien.flac', 2, TRUE),
-    (13, 9, NULL, 'Quel bonheur, c''est le w-e', '',                   2000,  12.73576, 44100, 0,  8.905600, 0,  0, 0, 0, 0, 0, '/Users/Shared/OpenStudio/Library/demo/JINGLES/RADIO CONTACT - Quel bonheur, c''est le w-e.flac',         2, TRUE),
-    (14, 9, NULL, 'Vive le w-e, vive la musique', '',                  2000,  16.54964, 44100, 0, 11.080453, 0,  0, 0, 0, 0, 0, '/Users/Shared/OpenStudio/Library/demo/JINGLES/RADIO CONTACT - Vive le w-e, vive la musique.flac',        2, TRUE);
-SELECT setval('tracks_id_seq', 14);
-
-
 -- Table: template_slots (62 rows)
 INSERT INTO "template_slots" ("id", "template_id", "position", "category_id", "subcategory_id", "comment", "track_protection", "artist_protection") VALUES (4, 3, 1, 2, 12, '1ER DISQUE', 9000, 3600);
 INSERT INTO "template_slots" ("id", "template_id", "position", "category_id", "subcategory_id", "comment", "track_protection", "artist_protection") VALUES (5, 3, 2, 2, 13, '2EME DISQUE (Annees 2000)', 9000, 3600);

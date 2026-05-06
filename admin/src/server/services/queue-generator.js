@@ -141,6 +141,16 @@ class QueueGenerator {
       } else {
         let createdForHour = 0;
 
+        // Fire fixed events scheduled at the very start of the hour (before any music)
+        while (eventIdx < pendingEvents.length) {
+          const ev = pendingEvents[eventIdx];
+          const evTime = ev.minute * 60 + ev.second;
+          if (!ev.is_fixed || evTime > offsetSeconds) break;
+          const dur = await this.insertEventAction(ev, hourInfo, evTime);
+          offsetSeconds = Math.max(offsetSeconds, evTime + dur);
+          eventIdx++;
+        }
+
         for (const slot of slots) {
           if (offsetSeconds >= HOUR_LIMIT_SECONDS) break;
 
@@ -159,7 +169,7 @@ class QueueGenerator {
           for (let i = eventIdx; i < pendingEvents.length; i++) {
             if (pendingEvents[i].is_fixed) {
               const t = pendingEvents[i].minute * 60 + pendingEvents[i].second;
-              if (t > offsetSeconds) { cutoffSeconds = t; break; }
+              if (t >= offsetSeconds) { cutoffSeconds = t; break; }
             }
           }
 
@@ -328,6 +338,10 @@ function localTimestamp(date, hour, offsetSeconds) {
   const h = Math.floor(totalSeconds / 3600);
   const m = Math.floor((totalSeconds % 3600) / 60);
   const s = totalSeconds % 60;
+  if (h >= 24) {
+    const nextDay = new Date(dateToUtcDate(date).getTime() + 24 * 60 * 60 * 1000);
+    return `${formatUtcDate(nextDay)} ${pad(h - 24)}:${pad(m)}:${formatSeconds(s)}`;
+  }
   return `${date} ${pad(h)}:${pad(m)}:${formatSeconds(s)}`;
 }
 

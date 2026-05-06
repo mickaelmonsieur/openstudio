@@ -73,27 +73,27 @@ INSERT INTO genres (id, name) VALUES
     (336,'80s Dance'),(337,'Autre');
 SELECT setval('genres_id_seq', 337);
 
-INSERT INTO track_types (id, name) VALUES
-    ( 1, 'Music'),
-    ( 2, 'Jingle'),
-    ( 3, 'Sweeper'),
-    ( 4, 'Liner'),
-    ( 5, 'Drop'),
-    ( 6, 'Top of Hour'),
-    ( 7, 'Intro Ad'),
-    ( 8, 'Outro Ad'),
-    ( 9, 'Commercial'),
-    (10, 'Promo'),
-    (11, 'Voice Tracking'),
-    (12, 'Bed'),
-    (13, 'SFX'),
-    (14, 'Filler'),
-    (15, 'News'),
-    (16, 'Weather'),
-    (17, 'Traffic'),
-    (18, 'Interview'),
-    (19, 'Radio Show'),
-    (20, 'Live Feed');
+INSERT INTO track_types (id, name, color) VALUES
+    ( 1, 'Music',         NULL),
+    ( 2, 'Jingle',        '#7c2d12'),
+    ( 3, 'Sweeper',       '#7c2d12'),
+    ( 4, 'Liner',         '#7c2d12'),
+    ( 5, 'Drop',          '#4338ca'),
+    ( 6, 'Top of Hour',   '#4a2fa0'),
+    ( 7, 'Intro Ad',      '#78350f'),
+    ( 8, 'Outro Ad',      '#78350f'),
+    ( 9, 'Commercial',    '#14532d'),
+    (10, 'Promo',         '#14532d'),
+    (11, 'Voice Tracking','#075985'),
+    (12, 'Bed',           '#134e4a'),
+    (13, 'SFX',           '#831843'),
+    (14, 'Filler',        '#334155'),
+    (15, 'News',          '#7f1d1d'),
+    (16, 'Weather',       '#0c4a6e'),
+    (17, 'Traffic',       '#92400e'),
+    (18, 'Interview',     '#4c1d95'),
+    (19, 'Radio Show',    '#1e3a8a'),
+    (20, 'Live Feed',     '#881337');
 SELECT setval('track_types_id_seq', 20);
 
 INSERT INTO track_moods (id, name) VALUES

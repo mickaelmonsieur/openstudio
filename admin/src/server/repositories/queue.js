@@ -24,10 +24,13 @@ export async function listQueueHour(db, { date, hour, timezone }) {
       to_char(q.scheduled_at AT TIME ZONE $2, 'HH24:MI:SS') AS scheduled_time,
       COALESCE(a.name, '') AS artist,
       COALESCE(t.title, '') AS title,
-      COALESCE(t.duration, 0)::double precision AS duration
+      COALESCE(t.duration, 0)::double precision AS duration,
+      tt.name  AS track_type_name,
+      tt.color AS track_type_color
     FROM queue q
     LEFT JOIN tracks t ON t.id = q.track_id
     LEFT JOIN artists a ON a.id = t.artist_id
+    LEFT JOIN track_types tt ON tt.id = t.track_type_id
     WHERE q.scheduled_at >= ($1::timestamp AT TIME ZONE $2)
       AND q.scheduled_at < (($1::timestamp + INTERVAL '1 hour') AT TIME ZONE $2)
     ORDER BY q.scheduled_at, q.priority, q.id

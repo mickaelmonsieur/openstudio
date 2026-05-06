@@ -2,3 +2,4 @@
 .env
 /admin/node_modules
 /admin/dist
+admin/TODO.md
