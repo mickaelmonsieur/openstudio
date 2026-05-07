@@ -2,11 +2,13 @@ const SLOT_SELECT = `
   ts.id,
   ts.template_id,
   ts.position,
+  ts.slot_type,
   ts.category_id,
   ts.subcategory_id,
   ts.comment,
   ts.track_protection,
   ts.artist_protection,
+  ts.ad_break_duration,
   c.name  AS category_name,
   sc.name AS subcategory_name
 `;
@@ -66,17 +68,19 @@ export async function createTemplateSlot(db, templateId, data) {
     );
 
     const { rows } = await db.query(
-      `INSERT INTO template_slots (template_id, position, category_id, subcategory_id, comment, track_protection, artist_protection)
-       VALUES ($1, $2, $3, $4, $5, $6, $7)
+      `INSERT INTO template_slots (template_id, position, slot_type, category_id, subcategory_id, comment, track_protection, artist_protection, ad_break_duration)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
        RETURNING id`,
       [
         templateId,
         position,
-        data.category_id,
+        data.slot_type,
+        data.category_id || null,
         data.subcategory_id || null,
         data.comment,
         data.track_protection,
-        data.artist_protection
+        data.artist_protection,
+        data.ad_break_duration || null
       ]
     );
 
@@ -115,9 +119,9 @@ async function getInsertPosition(db, templateId, insertAfterId) {
 export async function updateTemplateSlot(db, id, data) {
   await db.query(
     `UPDATE template_slots
-     SET category_id = $2, subcategory_id = $3, comment = $4, track_protection = $5, artist_protection = $6
+     SET slot_type = $2, category_id = $3, subcategory_id = $4, comment = $5, track_protection = $6, artist_protection = $7, ad_break_duration = $8
      WHERE id = $1`,
-    [id, data.category_id, data.subcategory_id || null, data.comment, data.track_protection, data.artist_protection]
+    [id, data.slot_type, data.category_id || null, data.subcategory_id || null, data.comment, data.track_protection, data.artist_protection, data.ad_break_duration || null]
   );
   return getTemplateSlot(db, id);
 }

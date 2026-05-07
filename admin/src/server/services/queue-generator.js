@@ -3,11 +3,14 @@ import { withDatabase } from '../db/client.js';
 import {
   countQueueInPeriod,
   currentHourBoundaryInTimezone,
+  findFillerForAdBreak,
+  findNextFiller,
   findTrackForSlot,
   getConfiguredTimezone,
   getScheduleForHour,
   getTrackById,
   insertFixedQueueEntry,
+  insertFixedQueueEntryWithCutoff,
   insertQueueEntry,
   insertQueueEntryWithCutoff,
   listEventsForHour,
@@ -175,46 +178,140 @@ class QueueGenerator {
           }
 
           const scheduledAtLocal = localTimestamp(hourInfo.date, hourInfo.hour, offsetSeconds);
-          const track = await findTrackForSlot(this.db, slot, scheduledAtLocal, this.timezone);
 
-          if (!track) {
-            this.job.skipped += 1;
-            const prot = `prot. track ${slot.track_protection}s / artiste ${slot.artist_protection}s`;
-            addMessage(this.job, `✗ Skip [${slot.label}] – aucune piste disponible (${prot})`, 'skip');
-            continue;
-          }
+          if (slot.slot_type === 'ad_break') {
+            const targetDuration = slot.ad_break_duration;
 
-          const playDuration = Number(track.play_duration || 0);
+            // Try a single filler long enough to cover the full ad break
+            const singleFiller = await findFillerForAdBreak(this.db, targetDuration);
 
-          if (Number.isFinite(cutoffSeconds) && offsetSeconds + playDuration > cutoffSeconds) {
-            // Track would extend past the fixed event — cut it short
-            const maxDuration = cutoffSeconds - offsetSeconds;
-            if (maxDuration > 0) {
-              await insertQueueEntryWithCutoff(this.db, track, maxDuration, scheduledAtLocal, this.timezone, slot.position);
+            if (singleFiller) {
+              const naturalDuration = Number(singleFiller.play_duration || 0);
+              if (Number.isFinite(cutoffSeconds) && offsetSeconds + targetDuration > cutoffSeconds) {
+                const maxDuration = cutoffSeconds - offsetSeconds;
+                if (maxDuration > 0) {
+                  await insertQueueEntryWithCutoff(this.db, singleFiller, maxDuration, scheduledAtLocal, this.timezone, slot.position);
+                  createdForHour++;
+                  this.job.created++;
+                  addMessage(this.job, `~ ${scheduledAtLocal}  [Ad break]  ${singleFiller.title}  (coupé à ${formatDuration(maxDuration)} / ${formatDuration(targetDuration)})`, 'cut');
+                }
+                offsetSeconds = cutoffSeconds;
+                while (eventIdx < pendingEvents.length) {
+                  const ev = pendingEvents[eventIdx];
+                  const evTime = ev.minute * 60 + ev.second;
+                  if (evTime > cutoffSeconds) break;
+                  const eventAtSeconds = ev.is_fixed ? evTime : offsetSeconds;
+                  const dur = await this.insertEventAction(ev, hourInfo, eventAtSeconds);
+                  offsetSeconds = Math.max(offsetSeconds, eventAtSeconds + dur);
+                  eventIdx++;
+                }
+              } else {
+                await insertQueueEntryWithCutoff(this.db, singleFiller, targetDuration, scheduledAtLocal, this.timezone, slot.position);
+                offsetSeconds += targetDuration;
+                createdForHour++;
+                this.job.created++;
+                const cutInfo = naturalDuration > targetDuration
+                  ? ` (cue_out ${formatDuration(naturalDuration)}→${formatDuration(targetDuration)})`
+                  : '';
+                addMessage(this.job, `→ ${scheduledAtLocal}  [Ad break ${targetDuration}s]  ${singleFiller.title}${cutInfo}`, 'track');
+              }
+            } else {
+              // No single filler long enough — chain fillers (greedy: longest-first, no repeat)
+              let remaining = targetDuration;
+              let chainCount = 0;
+              const usedIds = [];
+
+              while (remaining > 0.001 && offsetSeconds < HOUR_LIMIT_SECONDS) {
+                if (Number.isFinite(cutoffSeconds) && offsetSeconds >= cutoffSeconds) break;
+
+                const piece = await findNextFiller(this.db, remaining, usedIds);
+                if (!piece) break;
+                usedIds.push(piece.id);
+
+                const naturalDur = Number(piece.play_duration || 0);
+                if (naturalDur <= 0) break;
+
+                const chainAt = localTimestamp(hourInfo.date, hourInfo.hour, offsetSeconds);
+                let pieceDuration = Math.min(naturalDur, remaining);
+                let hitCutoff = false;
+
+                if (Number.isFinite(cutoffSeconds) && offsetSeconds + pieceDuration > cutoffSeconds) {
+                  pieceDuration = cutoffSeconds - offsetSeconds;
+                  hitCutoff = true;
+                }
+
+                if (pieceDuration <= 0) break;
+
+                await insertQueueEntryWithCutoff(this.db, piece, pieceDuration, chainAt, this.timezone, slot.position);
+                chainCount++;
+                this.job.created++;
+                createdForHour++;
+                offsetSeconds += pieceDuration;
+                remaining -= pieceDuration;
+
+                if (hitCutoff) {
+                  while (eventIdx < pendingEvents.length) {
+                    const ev = pendingEvents[eventIdx];
+                    const evTime = ev.minute * 60 + ev.second;
+                    if (evTime > cutoffSeconds) break;
+                    const eventAtSeconds = ev.is_fixed ? evTime : offsetSeconds;
+                    const dur = await this.insertEventAction(ev, hourInfo, eventAtSeconds);
+                    offsetSeconds = Math.max(offsetSeconds, eventAtSeconds + dur);
+                    eventIdx++;
+                  }
+                  break;
+                }
+              }
+
+              if (chainCount > 0) {
+                addMessage(this.job, `→ ${scheduledAtLocal}  [Ad break ${targetDuration}s]  ${chainCount} filler(s) enchaîné(s)`, 'track');
+              } else {
+                this.job.skipped++;
+                addMessage(this.job, `✗ Skip [Ad break ${targetDuration}s] – aucun filler disponible`, 'skip');
+              }
+            }
+          } else {
+            const track = await findTrackForSlot(this.db, slot, scheduledAtLocal, this.timezone);
+
+            if (!track) {
+              this.job.skipped += 1;
+              const prot = `prot. track ${slot.track_protection}s / artiste ${slot.artist_protection}s`;
+              addMessage(this.job, `✗ Skip [${slot.label}] – aucune piste disponible (${prot})`, 'skip');
+              continue;
+            }
+
+            const playDuration = Number(track.play_duration || 0);
+
+            if (Number.isFinite(cutoffSeconds) && offsetSeconds + playDuration > cutoffSeconds) {
+              // Track would extend past the fixed event — cut it short
+              const maxDuration = cutoffSeconds - offsetSeconds;
+              if (maxDuration > 0) {
+                await insertQueueEntryWithCutoff(this.db, track, maxDuration, scheduledAtLocal, this.timezone, slot.position);
+                createdForHour++;
+                this.job.created++;
+                const who = track.artist_name ? `${track.artist_name} – ${track.title}` : track.title;
+                addMessage(this.job, `~ ${scheduledAtLocal}  ${who}  (coupé à ${formatDuration(maxDuration)} / ${formatDuration(playDuration)})`, 'cut');
+              }
+              offsetSeconds = cutoffSeconds;
+
+              // Insert all events at or before the cutoff time, advancing offsetSeconds as we go
+              while (eventIdx < pendingEvents.length) {
+                const ev = pendingEvents[eventIdx];
+                const evTime = ev.minute * 60 + ev.second;
+                if (evTime > cutoffSeconds) break;
+                const eventAtSeconds = ev.is_fixed ? evTime : offsetSeconds;
+                const dur = await this.insertEventAction(ev, hourInfo, eventAtSeconds);
+                offsetSeconds = Math.max(offsetSeconds, eventAtSeconds + dur);
+                eventIdx++;
+              }
+            } else {
+              await insertQueueEntry(this.db, track, scheduledAtLocal, this.timezone, slot.position);
+              offsetSeconds += playDuration;
               createdForHour++;
               this.job.created++;
               const who = track.artist_name ? `${track.artist_name} – ${track.title}` : track.title;
-              addMessage(this.job, `~ ${scheduledAtLocal}  ${who}  (coupé à ${formatDuration(maxDuration)} / ${formatDuration(playDuration)})`, 'cut');
+              addMessage(this.job, `→ ${scheduledAtLocal}  ${who}  (${formatDuration(playDuration)})`, 'track');
             }
-            offsetSeconds = cutoffSeconds;
-
-            // Insert all events at or before the cutoff time, advancing offsetSeconds as we go
-            while (eventIdx < pendingEvents.length) {
-              const ev = pendingEvents[eventIdx];
-              const evTime = ev.minute * 60 + ev.second;
-              if (evTime > cutoffSeconds) break;
-              const eventAtSeconds = ev.is_fixed ? evTime : offsetSeconds;
-              const dur = await this.insertEventAction(ev, hourInfo, eventAtSeconds);
-              offsetSeconds = Math.max(offsetSeconds, eventAtSeconds + dur);
-              eventIdx++;
-            }
-          } else {
-            await insertQueueEntry(this.db, track, scheduledAtLocal, this.timezone, slot.position);
-            offsetSeconds += playDuration;
-            createdForHour++;
-            this.job.created++;
-            const who = track.artist_name ? `${track.artist_name} – ${track.title}` : track.title;
-            addMessage(this.job, `→ ${scheduledAtLocal}  ${who}  (${formatDuration(playDuration)})`, 'track');
           }
         }
 
@@ -258,21 +355,64 @@ class QueueGenerator {
       totalDuration = dur;
     } else if (ev.action_type === 1) {
       const slots = await listSlotsForGenerator(this.db, ev.template_id);
+      const timing = ev.is_fixed ? 'fixe' : 'flottant';
+
       for (const slot of slots) {
         const scheduledAtLocal = localTimestamp(hourInfo.date, hourInfo.hour, atSeconds + totalDuration);
-        const track = await findTrackForSlot(this.db, slot, scheduledAtLocal, this.timezone);
-        if (!track) {
-          this.job.skipped++;
-          addMessage(this.job, `✗ Skip event [${ev.name || 'Event'}] slot [${slot.label}] – aucune piste disponible`, 'skip');
-          continue;
+
+        if (slot.slot_type === 'ad_break') {
+          const targetDuration = slot.ad_break_duration;
+          const singleFiller = await findFillerForAdBreak(this.db, targetDuration);
+
+          if (singleFiller) {
+            await insertFixedQueueEntryWithCutoff(this.db, singleFiller, targetDuration, ev.priority, scheduledAtLocal, this.timezone);
+            this.job.created++;
+            const naturalDur = Number(singleFiller.play_duration || 0);
+            const cutInfo = naturalDur > targetDuration ? ` (cue_out ${formatDuration(naturalDur)}→${formatDuration(targetDuration)})` : '';
+            addMessage(this.job, `★ ${scheduledAtLocal}  [${ev.name || 'Event'} – ${timing}]  [Ad break ${targetDuration}s]  ${singleFiller.title}${cutInfo}`, 'event');
+            totalDuration += targetDuration;
+          } else {
+            // Chain shorter fillers (greedy: longest-first, no repeat)
+            let remaining = targetDuration;
+            let chainCount = 0;
+            const usedIds = [];
+
+            while (remaining > 0.001) {
+              const piece = await findNextFiller(this.db, remaining, usedIds);
+              if (!piece) break;
+              usedIds.push(piece.id);
+              const naturalDur = Number(piece.play_duration || 0);
+              if (naturalDur <= 0) break;
+              const pieceAt = localTimestamp(hourInfo.date, hourInfo.hour, atSeconds + totalDuration);
+              const pieceDuration = Math.min(naturalDur, remaining);
+              await insertFixedQueueEntryWithCutoff(this.db, piece, pieceDuration, ev.priority, pieceAt, this.timezone);
+              chainCount++;
+              this.job.created++;
+              totalDuration += pieceDuration;
+              remaining -= pieceDuration;
+            }
+
+            if (chainCount > 0) {
+              addMessage(this.job, `★ ${scheduledAtLocal}  [${ev.name || 'Event'} – ${timing}]  [Ad break ${targetDuration}s]  ${chainCount} filler(s) enchaîné(s)`, 'event');
+            } else {
+              this.job.skipped++;
+              addMessage(this.job, `✗ Skip event [${ev.name || 'Event'}] slot [${slot.label}] – aucun filler disponible`, 'skip');
+            }
+          }
+        } else {
+          const track = await findTrackForSlot(this.db, slot, scheduledAtLocal, this.timezone);
+          if (!track) {
+            this.job.skipped++;
+            addMessage(this.job, `✗ Skip event [${ev.name || 'Event'}] slot [${slot.label}] – aucune piste disponible`, 'skip');
+            continue;
+          }
+          await insertFixedQueueEntry(this.db, track, ev.priority, scheduledAtLocal, this.timezone);
+          this.job.created++;
+          const dur = Number(track.play_duration || 0);
+          const who = track.artist_name ? `${track.artist_name} – ${track.title}` : track.title;
+          addMessage(this.job, `★ ${scheduledAtLocal}  [${ev.name || 'Event'} – ${timing}]  ${who}  (${formatDuration(dur)})`, 'event');
+          totalDuration += dur;
         }
-        await insertFixedQueueEntry(this.db, track, ev.priority, scheduledAtLocal, this.timezone);
-        this.job.created++;
-        const dur = Number(track.play_duration || 0);
-        const who = track.artist_name ? `${track.artist_name} – ${track.title}` : track.title;
-        const timing = ev.is_fixed ? 'fixe' : 'flottant';
-        addMessage(this.job, `★ ${scheduledAtLocal}  [${ev.name || 'Event'} – ${timing}]  ${who}  (${formatDuration(dur)})`, 'event');
-        totalDuration += dur;
       }
     }
 

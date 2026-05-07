@@ -121,19 +121,68 @@ export async function listSlotsForGenerator(db, templateId) {
     SELECT
       ts.id,
       ts.position,
+      ts.slot_type,
       ts.category_id,
       ts.subcategory_id,
       ts.track_protection,
       ts.artist_protection,
-      COALESCE(NULLIF(ts.comment, ''), c.name) AS label
+      ts.ad_break_duration,
+      COALESCE(NULLIF(ts.comment, ''), c.name, 'Ad break') AS label
     FROM template_slots ts
-    JOIN categories c ON c.id = ts.category_id
+    LEFT JOIN categories c ON c.id = ts.category_id
     WHERE ts.template_id = $1
     ORDER BY ts.position, ts.id
     `,
     [templateId]
   );
   return rows;
+}
+
+const FILLER_SELECT = `
+  WITH candidates AS (
+    SELECT
+      t.id,
+      t.title,
+      t.cue_in,
+      COALESCE(t.cue_out, t.duration) AS cue_out,
+      CASE
+        WHEN t.cue_out IS NOT NULL AND t.cue_out > t.cue_in THEN t.cue_out - t.cue_in
+        ELSE GREATEST(t.duration - t.cue_in, 0)
+      END AS play_duration,
+      a.name AS artist_name
+    FROM tracks t
+    LEFT JOIN artists a ON a.id = t.artist_id
+    WHERE t.active = TRUE AND t.track_type_id = 14
+  )
+`;
+
+export async function findFillerForAdBreak(db, minDuration) {
+  const { rows } = await db.query(
+    `${FILLER_SELECT} SELECT * FROM candidates WHERE play_duration >= $1 ORDER BY random() LIMIT 1`,
+    [minDuration]
+  );
+  return rows[0] || null;
+}
+
+// Greedy filler selection: prefer longest filler that fits within remaining.
+// Falls back to shortest filler above remaining (will be truncated) if nothing fits.
+// Never reuses a filler already used in this ad break (excludeIds).
+export async function findNextFiller(db, remaining, excludeIds) {
+  const { rows } = await db.query(
+    `
+    ${FILLER_SELECT}
+    SELECT * FROM candidates
+    WHERE play_duration > 0
+      AND NOT (id = ANY($2::integer[]))
+    ORDER BY
+      CASE WHEN play_duration <= $1 THEN 0 ELSE 1 END,
+      CASE WHEN play_duration <= $1 THEN -play_duration ELSE play_duration END,
+      random()
+    LIMIT 1
+    `,
+    [remaining, excludeIds]
+  );
+  return rows[0] || null;
 }
 
 export async function findTrackForSlot(db, slot, scheduledAtLocal, timezone) {
@@ -244,6 +293,17 @@ export async function insertFixedQueueEntry(db, track, priority, scheduledAtLoca
     VALUES ($1, $2, $3, $4, TRUE, $5::timestamp AT TIME ZONE $6)
     `,
     [track.id, track.cue_in, track.cue_out, priority, scheduledAtLocal, timezone]
+  );
+}
+
+export async function insertFixedQueueEntryWithCutoff(db, track, maxDuration, priority, scheduledAtLocal, timezone) {
+  const actualCueOut = Math.min(track.cue_out, track.cue_in + maxDuration);
+  await db.query(
+    `
+    INSERT INTO queue (track_id, cue_in, cue_out, priority, fixed_time, scheduled_at)
+    VALUES ($1, $2, $3, $4, TRUE, $5::timestamp AT TIME ZONE $6)
+    `,
+    [track.id, track.cue_in, actualCueOut, priority, scheduledAtLocal, timezone]
   );
 }
 

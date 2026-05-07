@@ -28,14 +28,27 @@ function validate(data) {
 }
 
 function validateSlot(data) {
+  const slot_type = data?.slot_type === 'ad_break' ? 'ad_break' : 'category';
+
+  const comment = String(data?.comment || '').trim();
+  if (comment.length > 64) return { ok: false, error: 'Comment must be 64 characters or less.' };
+
+  const insert_after_id = data?.insert_after_id ? parseId(data.insert_after_id) : null;
+  if (data?.insert_after_id && !insert_after_id) return { ok: false, error: 'Invalid insert position.' };
+
+  if (slot_type === 'ad_break') {
+    const ad_break_duration = Number(data?.ad_break_duration);
+    if (!Number.isInteger(ad_break_duration) || ad_break_duration <= 0) {
+      return { ok: false, error: 'Ad break duration must be a positive integer (seconds).' };
+    }
+    return { ok: true, value: { slot_type, category_id: null, subcategory_id: null, comment, track_protection: 3600, artist_protection: 3600, ad_break_duration, insert_after_id } };
+  }
+
   const category_id = parseId(data?.category_id);
   if (!category_id) return { ok: false, error: 'Category is required.' };
 
   const subcategory_id = data?.subcategory_id ? parseId(data.subcategory_id) : null;
   if (data?.subcategory_id && !subcategory_id) return { ok: false, error: 'Invalid subcategory.' };
-
-  const comment = String(data?.comment || '').trim();
-  if (comment.length > 64) return { ok: false, error: 'Comment must be 64 characters or less.' };
 
   const track_protection = Number(data?.track_protection ?? 3600);
   if (!Number.isInteger(track_protection) || track_protection < 0) {
@@ -47,10 +60,7 @@ function validateSlot(data) {
     return { ok: false, error: 'Artist protection must be a non-negative integer.' };
   }
 
-  const insert_after_id = data?.insert_after_id ? parseId(data.insert_after_id) : null;
-  if (data?.insert_after_id && !insert_after_id) return { ok: false, error: 'Invalid insert position.' };
-
-  return { ok: true, value: { category_id, subcategory_id, comment, track_protection, artist_protection, insert_after_id } };
+  return { ok: true, value: { slot_type, category_id, subcategory_id, comment, track_protection, artist_protection, ad_break_duration: null, insert_after_id } };
 }
 
 function validateSlotOrder(data) {

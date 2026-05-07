@@ -7,13 +7,14 @@ const TEMPLATE_COLS = [
 ];
 
 const SLOT_COLS = [
-  { key: 'category_name',    label: 'Category',     width: '130px' },
-  { key: 'subcategory_name', label: 'Subcategory',  width: '130px' },
+  { key: 'slot_type_label',  label: 'Type',        width: '90px' },
+  { key: 'category_name',    label: 'Category',    width: '130px' },
+  { key: 'subcategory_name', label: 'Subcategory', width: '130px' },
   { key: 'comment',          label: 'Comment' }
 ];
 
 function emptySlotForm() {
-  return { category_id: '', subcategory_id: '', comment: '', track_protection: 3600, artist_protection: 3600 };
+  return { category_id: '', subcategory_id: '', comment: '', track_protection: 3600, artist_protection: 3600, is_ad_break: false, ad_break_duration: 240 };
 }
 
 export function TemplatesPage() {
@@ -28,6 +29,7 @@ export function TemplatesPage() {
   const [modal, setModal]                       = useState(null);
   const [templateName, setTemplateName]         = useState('');
   const [slotForm, setSlotForm]                 = useState(emptySlotForm);
+  const [slotTab, setSlotTab]                   = useState('category');
   const [formError, setFormError]               = useState(null);
   const [saving, setSaving]                     = useState(false);
   const [orderingSlots, setOrderingSlots]       = useState(false);
@@ -44,7 +46,12 @@ export function TemplatesPage() {
   );
 
   const displaySlots = useMemo(
-    () => slots,
+    () => slots.map((slot) => ({
+      ...slot,
+      slot_type_label:  slot.slot_type === 'ad_break' ? 'Ad break' : 'Category',
+      category_name:    slot.slot_type === 'ad_break' ? '' : slot.category_name,
+      subcategory_name: slot.slot_type === 'ad_break' ? '' : slot.subcategory_name
+    })),
     [slots]
   );
 
@@ -117,6 +124,7 @@ export function TemplatesPage() {
   function openCreateSlot(insertAfterRow = null) {
     if (!selectedTemplate) return;
     setSlotForm(emptySlotForm());
+    setSlotTab('category');
     setFormError(null);
     setModal({
       kind: 'slot',
@@ -127,13 +135,17 @@ export function TemplatesPage() {
   }
 
   function openEditSlot(row) {
+    const isAdBreak = row.slot_type === 'ad_break';
     setSlotForm({
       category_id:       String(row.category_id ?? ''),
       subcategory_id:    row.subcategory_id ? String(row.subcategory_id) : '',
       comment:           row.comment || '',
       track_protection:  row.track_protection ?? 3600,
-      artist_protection: row.artist_protection ?? 3600
+      artist_protection: row.artist_protection ?? 3600,
+      is_ad_break:       isAdBreak,
+      ad_break_duration: row.ad_break_duration ?? 240
     });
+    setSlotTab(isAdBreak ? 'ad_break' : 'category');
     setFormError(null);
     setModal({ kind: 'slot', mode: 'edit', row });
   }
@@ -158,9 +170,18 @@ export function TemplatesPage() {
         const url = editing
           ? `/api/template-slots/${modal.row.id}`
           : `/api/templates/${selectedTemplate.id}/slots`;
+        const slotPayload = {
+          slot_type:         slotForm.is_ad_break ? 'ad_break' : 'category',
+          category_id:       slotForm.is_ad_break ? null : slotForm.category_id,
+          subcategory_id:    slotForm.is_ad_break ? null : slotForm.subcategory_id,
+          comment:           slotForm.comment,
+          track_protection:  slotForm.is_ad_break ? 3600 : slotForm.track_protection,
+          artist_protection: slotForm.is_ad_break ? 3600 : slotForm.artist_protection,
+          ad_break_duration: slotForm.is_ad_break ? slotForm.ad_break_duration : null
+        };
         const body = editing
-          ? slotForm
-          : { ...slotForm, insert_after_id: modal.insertAfterId };
+          ? slotPayload
+          : { ...slotPayload, insert_after_id: modal.insertAfterId };
         await fetchJson(url, {
           method: editing ? 'PUT' : 'POST',
           body: JSON.stringify(body)
@@ -204,11 +225,13 @@ export function TemplatesPage() {
       await fetchJson(`/api/templates/${selectedTemplateId}/slots`, {
         method: 'POST',
         body: JSON.stringify({
-          category_id:       row.category_id,
+          slot_type:         row.slot_type || 'category',
+          category_id:       row.category_id || null,
           subcategory_id:    row.subcategory_id || null,
           comment:           row.comment || '',
           track_protection:  row.track_protection ?? 3600,
           artist_protection: row.artist_protection ?? 3600,
+          ad_break_duration: row.ad_break_duration || null,
           insert_after_id:   row.id
         })
       });
@@ -409,32 +432,97 @@ export function TemplatesPage() {
                   </div>
                   <button className="icon-button" type="button" onClick={() => setModal(null)}>×</button>
                 </header>
+                <div className="modal-tabs">
+                  <button
+                    className={`modal-tab${slotTab === 'category' ? ' modal-tab--active' : ''}`}
+                    type="button"
+                    onClick={() => setSlotTab('category')}
+                  >
+                    Category
+                  </button>
+                  <button
+                    className={`modal-tab${slotTab === 'ad_break' ? ' modal-tab--active' : ''}`}
+                    type="button"
+                    onClick={() => setSlotTab('ad_break')}
+                  >
+                    Ad break
+                  </button>
+                </div>
                 <form className="resource-form" onSubmit={saveModal}>
-                  <label>
-                    <span>Category</span>
-                    <select
-                      required
-                      value={slotForm.category_id}
-                      onChange={(e) => setSlotForm((prev) => ({ ...prev, category_id: e.target.value, subcategory_id: '' }))}
-                    >
-                      <option value="">— select —</option>
-                      {categories.map((c) => (
-                        <option key={c.id} value={c.id}>{c.name}</option>
-                      ))}
-                    </select>
-                  </label>
-                  <label>
-                    <span>Subcategory</span>
-                    <select
-                      value={slotForm.subcategory_id}
-                      onChange={(e) => setSlotForm((prev) => ({ ...prev, subcategory_id: e.target.value }))}
-                    >
-                      <option value="">— none —</option>
-                      {filteredSubcategories.map((s) => (
-                        <option key={s.id} value={s.id}>{s.name}</option>
-                      ))}
-                    </select>
-                  </label>
+                  {slotTab === 'category' ? (
+                    <>
+                      <label>
+                        <span>Category</span>
+                        <select
+                          required={!slotForm.is_ad_break}
+                          value={slotForm.category_id}
+                          onChange={(e) => setSlotForm((prev) => ({ ...prev, category_id: e.target.value, subcategory_id: '' }))}
+                        >
+                          <option value="">— select —</option>
+                          {categories.map((c) => (
+                            <option key={c.id} value={c.id}>{c.name}</option>
+                          ))}
+                        </select>
+                      </label>
+                      <label>
+                        <span>Subcategory</span>
+                        <select
+                          value={slotForm.subcategory_id}
+                          onChange={(e) => setSlotForm((prev) => ({ ...prev, subcategory_id: e.target.value }))}
+                        >
+                          <option value="">— none —</option>
+                          {filteredSubcategories.map((s) => (
+                            <option key={s.id} value={s.id}>{s.name}</option>
+                          ))}
+                        </select>
+                      </label>
+                      <div className="form-row">
+                        <label>
+                          <span>Track Prot. (s)</span>
+                          <input
+                            min="0"
+                            required
+                            type="number"
+                            value={slotForm.track_protection}
+                            onChange={(e) => setSlotForm((prev) => ({ ...prev, track_protection: Number(e.target.value) }))}
+                          />
+                        </label>
+                        <label>
+                          <span>Artist Prot. (s)</span>
+                          <input
+                            min="0"
+                            required
+                            type="number"
+                            value={slotForm.artist_protection}
+                            onChange={(e) => setSlotForm((prev) => ({ ...prev, artist_protection: Number(e.target.value) }))}
+                          />
+                        </label>
+                      </div>
+                    </>
+                  ) : (
+                    <>
+                      <label className="checkbox-label">
+                        <input
+                          type="checkbox"
+                          checked={slotForm.is_ad_break}
+                          onChange={(e) => setSlotForm((prev) => ({ ...prev, is_ad_break: e.target.checked }))}
+                        />
+                        <span>Ad break</span>
+                      </label>
+                      {slotForm.is_ad_break ? (
+                        <label>
+                          <span>Duration (s)</span>
+                          <input
+                            min="1"
+                            required
+                            type="number"
+                            value={slotForm.ad_break_duration}
+                            onChange={(e) => setSlotForm((prev) => ({ ...prev, ad_break_duration: Number(e.target.value) }))}
+                          />
+                        </label>
+                      ) : null}
+                    </>
+                  )}
                   <label>
                     <span>Comment</span>
                     <input
@@ -444,28 +532,6 @@ export function TemplatesPage() {
                       onChange={(e) => setSlotForm((prev) => ({ ...prev, comment: e.target.value }))}
                     />
                   </label>
-                  <div className="form-row">
-                    <label>
-                      <span>Track Prot. (s)</span>
-                      <input
-                        min="0"
-                        required
-                        type="number"
-                        value={slotForm.track_protection}
-                        onChange={(e) => setSlotForm((prev) => ({ ...prev, track_protection: Number(e.target.value) }))}
-                      />
-                    </label>
-                    <label>
-                      <span>Artist Prot. (s)</span>
-                      <input
-                        min="0"
-                        required
-                        type="number"
-                        value={slotForm.artist_protection}
-                        onChange={(e) => setSlotForm((prev) => ({ ...prev, artist_protection: Number(e.target.value) }))}
-                      />
-                    </label>
-                  </div>
                   {formError ? <div className="form-error">{formError}</div> : null}
                   <div className="form-actions">
                     <button className="ghost-button" type="button" onClick={() => setModal(null)}>Cancel</button>
