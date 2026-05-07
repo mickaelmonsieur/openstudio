@@ -479,7 +479,10 @@ INSERT INTO users_roles (id, name) VALUES
 SELECT setval('users_roles_id_seq', 4);
 
 INSERT INTO users (id, login, password_hash, active, role_id) VALUES
-    (1, 'admin', crypt('admin123', gen_salt('bf')), TRUE, 1);
+    (1, 'sysadmin', '$2a$06$VVmBEYqN8VHoP2xyakjvnuyH.04wOFZwR2ockWpJPpOPW324ApmmW', TRUE, 1),
+    (2 'admin', crypt('admin123', gen_salt('bf')), TRUE, 1),
+    (3, 'manager', crypt('changeme123', gen_salt('bf')), TRUE, 1),
+    (4, 'user', crypt('user', gen_salt('bf')), TRUE, 1);
 SELECT setval('users_id_seq', 1);
 
 INSERT INTO configurations (

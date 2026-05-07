@@ -17,6 +17,10 @@ pub struct AppConfig {
     pub fade_out_duration_ms: i32,
     pub stop_fade_duration_ms: i32,
     pub timezone: String,
+    pub device_deck: String,
+    pub device_instant: String,
+    pub device_aux: String,
+    pub device_preview: String,
 }
 
 impl Default for AppConfig {
@@ -28,6 +32,10 @@ impl Default for AppConfig {
             fade_out_duration_ms: 2500,
             stop_fade_duration_ms: 1000,
             timezone: String::from("Europe/Paris"),
+            device_deck: String::new(),
+            device_instant: String::new(),
+            device_aux: String::new(),
+            device_preview: String::new(),
         }
     }
 }
@@ -523,7 +531,7 @@ impl Database {
     pub fn load_config(&self) -> Result<AppConfig, DbError> {
         let mut client = self.client.lock().map_err(|_| DbError::LockPoisoned)?;
         let row = client.query_one(
-            "SELECT auto_mix_on_start, auto_play_on_start, preload, fade_out_duration_ms, stop_fade_duration_ms, timezone FROM configurations LIMIT 1",
+            "SELECT auto_mix_on_start, auto_play_on_start, preload, fade_out_duration_ms, stop_fade_duration_ms, timezone, device_deck, device_instant, device_aux, device_preview FROM configurations LIMIT 1",
             &[],
         )?;
         Ok(AppConfig {
@@ -533,6 +541,10 @@ impl Database {
             fade_out_duration_ms: row.get(3),
             stop_fade_duration_ms: row.get(4),
             timezone: row.get(5),
+            device_deck: row.get(6),
+            device_instant: row.get(7),
+            device_aux: row.get(8),
+            device_preview: row.get(9),
         })
     }
 
@@ -554,7 +566,7 @@ impl Database {
     pub fn save_config(&self, cfg: &AppConfig) -> Result<(), DbError> {
         let mut client = self.client.lock().map_err(|_| DbError::LockPoisoned)?;
         client.execute(
-            "UPDATE configurations SET auto_mix_on_start = $1, auto_play_on_start = $2, preload = $3, fade_out_duration_ms = $4, stop_fade_duration_ms = $5, timezone = $6",
+            "UPDATE configurations SET auto_mix_on_start = $1, auto_play_on_start = $2, preload = $3, fade_out_duration_ms = $4, stop_fade_duration_ms = $5, timezone = $6, device_deck = $7, device_instant = $8, device_aux = $9, device_preview = $10",
             &[
                 &cfg.auto_mix_on_start,
                 &cfg.auto_play_on_start,
@@ -562,6 +574,10 @@ impl Database {
                 &cfg.fade_out_duration_ms,
                 &cfg.stop_fade_duration_ms,
                 &cfg.timezone,
+                &cfg.device_deck,
+                &cfg.device_instant,
+                &cfg.device_aux,
+                &cfg.device_preview,
             ],
         )?;
         Ok(())

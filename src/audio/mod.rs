@@ -119,10 +119,33 @@ impl Default for AudioManager {
     }
 }
 
+pub fn list_output_devices() -> Vec<String> {
+    let host = cpal::default_host();
+    host.output_devices()
+        .map(|devices| devices.filter_map(|d| d.name().ok()).collect())
+        .unwrap_or_default()
+}
+
+fn get_output_device(
+    host: &cpal::Host,
+    name: Option<&str>,
+) -> Result<cpal::Device, Box<dyn std::error::Error + Send + Sync>> {
+    if let Some(name) = name.filter(|n| !n.is_empty()) {
+        if let Ok(mut devices) = host.output_devices() {
+            if let Some(device) = devices.find(|d| d.name().ok().as_deref() == Some(name)) {
+                return Ok(device);
+            }
+        }
+    }
+    host.default_output_device()
+        .ok_or_else(|| "No audio output device available".into())
+}
+
 pub struct AudioPlayer {
     id: PlayerId,
     loaded_path: Option<PathBuf>,
     cue_in: Duration,
+    device_name: Option<String>,
     duration: Option<Duration>,
     levels: Arc<AudioLevels>,
     stop_tx: Option<Sender<()>>,
@@ -141,6 +164,7 @@ impl AudioPlayer {
             id,
             loaded_path: None,
             cue_in: Duration::ZERO,
+            device_name: None,
             duration: None,
             levels: Arc::new(AudioLevels::default()),
             stop_tx: None,
@@ -152,6 +176,10 @@ impl AudioPlayer {
             position_ms: None,
             paused: false,
         }
+    }
+
+    pub fn set_device(&mut self, name: Option<String>) {
+        self.device_name = name;
     }
 
     pub fn handle(&mut self, command: PlayerCommand) {
@@ -173,7 +201,7 @@ impl AudioPlayer {
         self.stop_thread();
         self.cue_in = cue_in;
         self.duration = read_duration(&path);
-        self.preload_rx = Some(preload(path.clone(), cue_in));
+        self.preload_rx = Some(preload(path.clone(), cue_in, self.device_name.clone()));
         self.loaded_path = Some(path);
     }
 
@@ -190,7 +218,7 @@ impl AudioPlayer {
         self.preload_rx = None;
 
         let (stop_tx, seek_tx, pause_tx, fade_tx, position_ms, done_rx) =
-            play(path, preloaded, self.cue_in, Arc::clone(&self.levels));
+            play(path, preloaded, self.cue_in, Arc::clone(&self.levels), self.device_name.clone());
         self.stop_tx = Some(stop_tx);
         self.seek_tx = Some(seek_tx);
         self.pause_tx = Some(pause_tx);
@@ -230,7 +258,7 @@ impl AudioPlayer {
         self.preload_rx = self
             .loaded_path
             .as_ref()
-            .map(|path| preload(path.clone(), self.cue_in));
+            .map(|path| preload(path.clone(), self.cue_in, self.device_name.clone()));
     }
 
     pub fn soft_stop(&mut self, duration: Duration) {
@@ -282,7 +310,7 @@ impl AudioPlayer {
             self.preload_rx = self
                 .loaded_path
                 .as_ref()
-                .map(|path| preload(path.clone(), self.cue_in));
+                .map(|path| preload(path.clone(), self.cue_in, self.device_name.clone()));
         }
     }
 
@@ -452,10 +480,14 @@ pub fn read_duration(path: &std::path::Path) -> Option<std::time::Duration> {
 
 /// Démarre le pré-chargement en arrière-plan dès la sélection du fichier.
 /// Retourne un Receiver : `try_recv()` donne le résultat quand il est prêt.
-pub fn preload(path: PathBuf, cue_in: Duration) -> mpsc::Receiver<Option<Preloaded>> {
+pub fn preload(
+    path: PathBuf,
+    cue_in: Duration,
+    device_name: Option<String>,
+) -> mpsc::Receiver<Option<Preloaded>> {
     let (tx, rx) = mpsc::sync_channel(1);
     std::thread::spawn(move || {
-        let _ = tx.send(do_preload(path, cue_in).ok());
+        let _ = tx.send(do_preload(path, cue_in, device_name).ok());
     });
     rx
 }
@@ -463,6 +495,7 @@ pub fn preload(path: PathBuf, cue_in: Duration) -> mpsc::Receiver<Option<Preload
 fn do_preload(
     path: PathBuf,
     cue_in: Duration,
+    device_name: Option<String>,
 ) -> Result<Preloaded, Box<dyn std::error::Error + Send + Sync>> {
     let file = std::fs::File::open(&path)?;
     let mss = MediaSourceStream::new(Box::new(file), Default::default());
@@ -483,9 +516,7 @@ fn do_preload(
 
     // Déterminer la config cpal pour mixer correctement dès le pré-chargement
     let host = cpal::default_host();
-    let device = host
-        .default_output_device()
-        .ok_or("No audio output device available")?;
+    let device = get_output_device(&host, device_name.as_deref())?;
     let out_channels = config_for(&device, source_sample_rate)?.channels() as usize;
 
     if !cue_in.is_zero() {
@@ -542,6 +573,7 @@ fn play(
     preloaded: Option<Preloaded>,
     cue_in: Duration,
     levels: Arc<AudioLevels>,
+    device_name: Option<String>,
 ) -> (
     Sender<()>,
     Sender<SeekRequest>,
@@ -568,6 +600,7 @@ fn play(
             fade_rx,
             position_ms_thread,
             levels,
+            device_name,
         ) {
             eprintln!("Audio error: {e}");
         }
@@ -586,6 +619,7 @@ fn run(
     fade_rx: mpsc::Receiver<FadeRequest>,
     position_ms: Arc<AtomicU64>,
     levels: Arc<AudioLevels>,
+    device_name: Option<String>,
 ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     // Récupérer l'état symphonia — depuis le pré-chargement ou en ouvrant le fichier
     let (mut format, mut decoder, track_id, source_sample_rate, preloaded_samples) = match preloaded
@@ -637,9 +671,7 @@ fn run(
     };
 
     let host = cpal::default_host();
-    let device = host
-        .default_output_device()
-        .ok_or("No audio output device available")?;
+    let device = get_output_device(&host, device_name.as_deref())?;
     let config = config_for(&device, source_sample_rate)?;
     let out_channels = config.channels() as usize;
     let output_sample_rate = config.sample_rate().0;

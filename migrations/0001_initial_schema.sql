@@ -321,5 +321,9 @@ CREATE TABLE configurations (
     preload              INTEGER NOT NULL DEFAULT 10,
     fade_out_duration_ms INTEGER NOT NULL DEFAULT 2500,
     stop_fade_duration_ms INTEGER NOT NULL DEFAULT 1000,
-    timezone             TEXT    NOT NULL DEFAULT 'Europe/Paris'
+    timezone             TEXT    NOT NULL DEFAULT 'Europe/Paris',
+    device_deck          TEXT    NOT NULL DEFAULT '',
+    device_instant       TEXT    NOT NULL DEFAULT '',
+    device_aux           TEXT    NOT NULL DEFAULT '',
+    device_preview       TEXT    NOT NULL DEFAULT ''
 );

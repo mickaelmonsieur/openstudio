@@ -232,6 +232,7 @@ struct App {
     current_queue_entry: Option<db::QueueEntry>,
     track_end_at: Option<std::time::SystemTime>,
     current_queue_player_id: audio::PlayerId,
+    audio_devices: Vec<String>,
     selected_queue_index: Option<usize>,
     autodj_enabled: bool,
     deck_soft_stopping: bool,
@@ -349,6 +350,7 @@ impl Default for App {
             current_queue_entry: None,
             track_end_at: None,
             current_queue_player_id: audio::PlayerId::QueueA,
+            audio_devices: audio::list_output_devices(),
             selected_queue_index: None,
             autodj_enabled: app_config.auto_mix_on_start,
             deck_soft_stopping: false,
@@ -381,6 +383,7 @@ impl Default for App {
             is_locked: false,
         };
         app.ensure_configured_timezone_option();
+        app.apply_audio_device_config(&app.app_config.clone());
         app.load_instant_pages_from_db();
         let auto_mix_status = app.auto_mix_status.clone();
         app.log_auto_mix_status(&auto_mix_status);
@@ -492,6 +495,10 @@ enum Dialog {
         fade_out_duration_ms: String,
         stop_fade_duration_ms: String,
         timezone: String,
+        device_deck: String,
+        device_instant: String,
+        device_aux: String,
+        device_preview: String,
     },
     EditDbConfig {
         host: String,
@@ -530,6 +537,14 @@ enum DbField {
 enum ConfigField {
     AutoMixOnStart,
     AutoPlayOnStart,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum DeviceTarget {
+    Deck,
+    Instant,
+    Aux,
+    Preview,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -608,6 +623,7 @@ enum Message {
     ConfigFadeOutDurationChanged(String),
     ConfigStopFadeDurationChanged(String),
     ConfigTimezoneChanged(String),
+    ConfigDeviceChanged(DeviceTarget, String),
     ConfigSave,
     ConfigSaved(Result<(), String>),
     CloseRequested(window::Id),
@@ -1233,6 +1249,10 @@ impl App {
                     fade_out_duration_ms: self.app_config.fade_out_duration_ms.to_string(),
                     stop_fade_duration_ms: self.app_config.stop_fade_duration_ms.to_string(),
                     timezone: self.app_config.timezone.clone(),
+                    device_deck: self.app_config.device_deck.clone(),
+                    device_instant: self.app_config.device_instant.clone(),
+                    device_aux: self.app_config.device_aux.clone(),
+                    device_preview: self.app_config.device_preview.clone(),
                 });
                 Task::none()
             }
@@ -1288,6 +1308,25 @@ impl App {
                 Task::none()
             }
 
+            Message::ConfigDeviceChanged(target, name) => {
+                if let Some(Dialog::EditConfig {
+                    device_deck,
+                    device_instant,
+                    device_aux,
+                    device_preview,
+                    ..
+                }) = &mut self.dialog
+                {
+                    match target {
+                        DeviceTarget::Deck => *device_deck = name,
+                        DeviceTarget::Instant => *device_instant = name,
+                        DeviceTarget::Aux => *device_aux = name,
+                        DeviceTarget::Preview => *device_preview = name,
+                    }
+                }
+                Task::none()
+            }
+
             Message::ConfigSave => {
                 if let Some(Dialog::EditConfig {
                     auto_mix_on_start,
@@ -1296,6 +1335,10 @@ impl App {
                     fade_out_duration_ms,
                     stop_fade_duration_ms,
                     timezone,
+                    device_deck,
+                    device_instant,
+                    device_aux,
+                    device_preview,
                 }) = &self.dialog
                 {
                     let cfg = db::AppConfig {
@@ -1313,7 +1356,12 @@ impl App {
                             .unwrap_or(1000)
                             .max(0),
                         timezone: timezone.clone(),
+                        device_deck: device_deck.clone(),
+                        device_instant: device_instant.clone(),
+                        device_aux: device_aux.clone(),
+                        device_preview: device_preview.clone(),
                     };
+                    self.apply_audio_device_config(&cfg);
                     self.app_config = cfg.clone();
                     self.ensure_configured_timezone_option();
                     self.reload_queue_entries_from_db();
@@ -2142,6 +2190,18 @@ impl App {
         }
 
         self.load_next_from_queue(next_player_id);
+    }
+
+    fn apply_audio_device_config(&mut self, cfg: &db::AppConfig) {
+        let to_opt = |s: &str| if s.is_empty() { None } else { Some(s.to_string()) };
+        for player_id in [audio::PlayerId::QueueA, audio::PlayerId::QueueB] {
+            self.audio.player_mut(player_id).set_device(to_opt(&cfg.device_deck));
+        }
+        self.audio.player_mut(audio::PlayerId::Instant).set_device(to_opt(&cfg.device_instant));
+        for player_id in [audio::PlayerId::Aux1, audio::PlayerId::Aux2, audio::PlayerId::Aux3] {
+            self.audio.player_mut(player_id).set_device(to_opt(&cfg.device_aux));
+        }
+        self.audio.player_mut(audio::PlayerId::Preview).set_device(to_opt(&cfg.device_preview));
     }
 
     fn update_track_end_at(&mut self) {
@@ -3031,6 +3091,10 @@ impl App {
                 fade_out_duration_ms,
                 stop_fade_duration_ms,
                 timezone,
+                device_deck,
+                device_instant,
+                device_aux,
+                device_preview,
             }) => {
                 let general_fieldset_label = container(
                     text("General")
@@ -3143,6 +3207,86 @@ impl App {
                             ..Default::default()
                         });
 
+                let device_options: Vec<String> = std::iter::once(String::from("(Default)"))
+                    .chain(self.audio_devices.iter().cloned())
+                    .collect();
+                let mk_device_row = |label: &'static str,
+                                     stored: &str,
+                                     target: DeviceTarget,
+                                     opts: Vec<String>|
+                 -> Element<'_, Message> {
+                    let selected: String = if stored.is_empty() {
+                        String::from("(Default)")
+                    } else {
+                        stored.to_string()
+                    };
+                    row![
+                        text(label)
+                            .size(11)
+                            .style(text_color(rgb(160, 180, 195))),
+                        Space::with_width(Length::Fill),
+                        pick_list(opts, Some(selected), move |name: String| {
+                            let v = if name == "(Default)" {
+                                String::new()
+                            } else {
+                                name
+                            };
+                            Message::ConfigDeviceChanged(target, v)
+                        })
+                        .text_size(12)
+                        .padding(6)
+                        .width(Length::Fixed(220.0))
+                        .style(search_pick_list_style),
+                    ]
+                    .spacing(8)
+                    .align_y(Alignment::Center)
+                    .into()
+                };
+                let audio_fieldset_label = container(
+                    text("Audio Devices")
+                        .size(11)
+                        .style(text_color(rgb(160, 180, 195))),
+                )
+                .padding([3, 8]);
+                let audio_fieldset_body = column![
+                    mk_device_row(
+                        "Deck",
+                        device_deck,
+                        DeviceTarget::Deck,
+                        device_options.clone()
+                    ),
+                    mk_device_row(
+                        "Instant Player",
+                        device_instant,
+                        DeviceTarget::Instant,
+                        device_options.clone()
+                    ),
+                    mk_device_row(
+                        "Aux Player",
+                        device_aux,
+                        DeviceTarget::Aux,
+                        device_options.clone()
+                    ),
+                    mk_device_row(
+                        "Preview",
+                        device_preview,
+                        DeviceTarget::Preview,
+                        device_options
+                    ),
+                ]
+                .spacing(10)
+                .padding([10, 12]);
+                let audio_fieldset =
+                    container(column![audio_fieldset_label, audio_fieldset_body].spacing(0))
+                        .style(|_| container::Style {
+                            border: Border {
+                                color: rgb(62, 83, 97),
+                                width: 1.0,
+                                radius: 3.0.into(),
+                            },
+                            ..Default::default()
+                        });
+
                 container(
                     column![
                         text("Settings")
@@ -3150,6 +3294,7 @@ impl App {
                             .style(text_color(rgb(226, 238, 245))),
                         general_fieldset,
                         automix_fieldset,
+                        audio_fieldset,
                         row![
                             Space::with_width(Length::Fill),
                             self.dialog_button("Cancel", Message::DialogCancel, rgb(62, 83, 97)),
@@ -3160,7 +3305,7 @@ impl App {
                     ]
                     .spacing(16),
                 )
-                .width(Length::Fixed(380.0))
+                .width(Length::Fixed(480.0))
                 .padding(16)
                 .style(panel_style(rgb(31, 46, 55), accent_purple()))
             }
