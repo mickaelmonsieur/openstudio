@@ -75,13 +75,13 @@ SELECT setval('genres_id_seq', 337);
 
 INSERT INTO track_types (id, name, color) VALUES
     ( 1, 'Music',         NULL),
-    ( 2, 'Jingle',        '#7c2d12'),
-    ( 3, 'Sweeper',       '#7c2d12'),
-    ( 4, 'Liner',         '#7c2d12'),
+    ( 2, 'Jingle',        '#b91c1c'),
+    ( 3, 'Sweeper',       '#991b1b'),
+    ( 4, 'Liner',         '#7f1d1d'),
     ( 5, 'Drop',          '#4338ca'),
     ( 6, 'Top of Hour',   '#4a2fa0'),
-    ( 7, 'Intro Ad',      '#78350f'),
-    ( 8, 'Outro Ad',      '#78350f'),
+    ( 7, 'Intro Ad',      '#c2410c'),
+    ( 8, 'Outro Ad',      '#c2410c'),
     ( 9, 'Commercial',    '#14532d'),
     (10, 'Promo',         '#14532d'),
     (11, 'Voice Tracking','#075985'),
