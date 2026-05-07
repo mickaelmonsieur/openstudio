@@ -21,6 +21,7 @@ pub struct AppConfig {
     pub device_instant: String,
     pub device_aux: String,
     pub device_preview: String,
+    pub start_locked: bool,
 }
 
 impl Default for AppConfig {
@@ -36,6 +37,7 @@ impl Default for AppConfig {
             device_instant: String::new(),
             device_aux: String::new(),
             device_preview: String::new(),
+            start_locked: false,
         }
     }
 }
@@ -533,7 +535,7 @@ impl Database {
     pub fn load_config(&self) -> Result<AppConfig, DbError> {
         let mut client = self.client.lock().map_err(|_| DbError::LockPoisoned)?;
         let row = client.query_one(
-            "SELECT auto_mix_on_start, auto_play_on_start, preload, fade_out_duration_ms, stop_fade_duration_ms, timezone, device_deck, device_instant, device_aux, device_preview FROM configurations LIMIT 1",
+            "SELECT auto_mix_on_start, auto_play_on_start, preload, fade_out_duration_ms, stop_fade_duration_ms, timezone, device_deck, device_instant, device_aux, device_preview, start_locked FROM configurations LIMIT 1",
             &[],
         )?;
         Ok(AppConfig {
@@ -547,6 +549,7 @@ impl Database {
             device_instant: row.get(7),
             device_aux: row.get(8),
             device_preview: row.get(9),
+            start_locked: row.get(10),
         })
     }
 
@@ -568,7 +571,7 @@ impl Database {
     pub fn save_config(&self, cfg: &AppConfig) -> Result<(), DbError> {
         let mut client = self.client.lock().map_err(|_| DbError::LockPoisoned)?;
         client.execute(
-            "UPDATE configurations SET auto_mix_on_start = $1, auto_play_on_start = $2, preload = $3, fade_out_duration_ms = $4, stop_fade_duration_ms = $5, timezone = $6, device_deck = $7, device_instant = $8, device_aux = $9, device_preview = $10",
+            "UPDATE configurations SET auto_mix_on_start = $1, auto_play_on_start = $2, preload = $3, fade_out_duration_ms = $4, stop_fade_duration_ms = $5, timezone = $6, device_deck = $7, device_instant = $8, device_aux = $9, device_preview = $10, start_locked = $11",
             &[
                 &cfg.auto_mix_on_start,
                 &cfg.auto_play_on_start,
@@ -580,6 +583,7 @@ impl Database {
                 &cfg.device_instant,
                 &cfg.device_aux,
                 &cfg.device_preview,
+                &cfg.start_locked,
             ],
         )?;
         Ok(())

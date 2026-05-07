@@ -380,10 +380,10 @@ impl Default for App {
             active_instant_slot: None,
             aux_slots: vec![None; 3],
             aux_loops: vec![false; 3],
+            is_locked: app_config.start_locked,
             app_config,
             timezone_options,
             dialog: None,
-            is_locked: false,
             current_user_login: String::from("user"),
             current_user_role: 0,
             login_pending: None,
@@ -502,6 +502,7 @@ enum Dialog {
     EditConfig {
         auto_mix_on_start: bool,
         auto_play_on_start: bool,
+        start_locked: bool,
         preload: String,
         fade_out_duration_ms: String,
         stop_fade_duration_ms: String,
@@ -548,6 +549,7 @@ enum DbField {
 enum ConfigField {
     AutoMixOnStart,
     AutoPlayOnStart,
+    StartLocked,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -1266,6 +1268,7 @@ impl App {
                 self.dialog = Some(Dialog::EditConfig {
                     auto_mix_on_start: self.app_config.auto_mix_on_start,
                     auto_play_on_start: self.app_config.auto_play_on_start,
+                    start_locked: self.app_config.start_locked,
                     preload: self.app_config.preload.to_string(),
                     fade_out_duration_ms: self.app_config.fade_out_duration_ms.to_string(),
                     stop_fade_duration_ms: self.app_config.stop_fade_duration_ms.to_string(),
@@ -1282,12 +1285,14 @@ impl App {
                 if let Some(Dialog::EditConfig {
                     auto_mix_on_start,
                     auto_play_on_start,
+                    start_locked,
                     ..
                 }) = &mut self.dialog
                 {
                     match field {
                         ConfigField::AutoMixOnStart => *auto_mix_on_start = !*auto_mix_on_start,
                         ConfigField::AutoPlayOnStart => *auto_play_on_start = !*auto_play_on_start,
+                        ConfigField::StartLocked => *start_locked = !*start_locked,
                     }
                 }
                 Task::none()
@@ -1352,6 +1357,7 @@ impl App {
                 if let Some(Dialog::EditConfig {
                     auto_mix_on_start,
                     auto_play_on_start,
+                    start_locked,
                     preload,
                     fade_out_duration_ms,
                     stop_fade_duration_ms,
@@ -1365,6 +1371,7 @@ impl App {
                     let cfg = db::AppConfig {
                         auto_mix_on_start: *auto_mix_on_start,
                         auto_play_on_start: *auto_play_on_start,
+                        start_locked: *start_locked,
                         preload: preload.trim().parse::<i32>().unwrap_or(10).max(0),
                         fade_out_duration_ms: fade_out_duration_ms
                             .trim()
@@ -3128,6 +3135,7 @@ impl App {
             Some(Dialog::EditConfig {
                 auto_mix_on_start,
                 auto_play_on_start,
+                start_locked,
                 preload,
                 fade_out_duration_ms,
                 stop_fade_duration_ms,
@@ -3178,6 +3186,10 @@ impl App {
                         .text_size(13),
                     checkbox("Enable AUTO PLAY on startup", *auto_play_on_start)
                         .on_toggle(|_| Message::ConfigToggle(ConfigField::AutoPlayOnStart))
+                        .size(14)
+                        .text_size(13),
+                    checkbox("Start Locked", *start_locked)
+                        .on_toggle(|_| Message::ConfigToggle(ConfigField::StartLocked))
                         .size(14)
                         .text_size(13),
                     row![

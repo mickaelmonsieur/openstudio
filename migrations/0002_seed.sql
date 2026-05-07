@@ -488,10 +488,11 @@ SELECT setval('users_id_seq', 5);
 INSERT INTO configurations (
     auto_mix_on_start,
     auto_play_on_start,
+    start_locked,
     preload,
     fade_out_duration_ms,
     stop_fade_duration_ms,
     timezone
 )
-VALUES (false, false, 10, 2500, 1000, 'Europe/Paris');
+VALUES (false, false, false, 10, 2500, 1000, 'Europe/Paris');
 
