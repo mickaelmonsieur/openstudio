@@ -9,11 +9,12 @@ const COLS = [
   { key: 'advertiser_name', label: 'Advertiser', width: '160px' },
   { key: 'campaign_name',   label: 'Campaign',   width: '160px' },
   { key: 'track_display',   label: 'Track' },
-  { key: 'position',        label: 'Pos.',       width: '60px' }
+  { key: 'position',        label: 'Pos.',       width: '60px' },
+  { key: 'screen_position_label', label: 'Screen', width: '90px' }
 ];
 
 function emptyForm() {
-  return { campaign_id: '', track_id: '', track_label: '', position: '' };
+  return { campaign_id: '', track_id: '', track_label: '', position: '', screen_position: '1' };
 }
 
 const LIMIT = 50;
@@ -24,6 +25,7 @@ export function CampaignTracksPage() {
   const [page, setPage]           = useState(1);
   const [searchInput, setSearchInput] = useState('');
   const [searchQuery, setSearchQuery] = useState('');
+  const [filterCampaign, setFilterCampaign] = useState('');
   const [campaigns, setCampaigns] = useState([]);
   const [loading, setLoading]     = useState(true);
   const [error, setError]         = useState(null);
@@ -50,13 +52,14 @@ export function CampaignTracksPage() {
     return () => clearTimeout(timer);
   }, [searchInput]);
 
-  useEffect(() => { load(); }, [page, searchQuery]);
+  useEffect(() => { load(); }, [page, searchQuery, filterCampaign]);
 
   async function load() {
     setLoading(true); setError(null);
     try {
       const params = new URLSearchParams({ page: String(page), limit: String(LIMIT) });
       if (searchQuery) params.set('q', searchQuery);
+      if (filterCampaign) params.set('campaign_id', filterCampaign);
       const payload = await fetchJson(`/api/campaign-tracks?${params}`);
       setRows(payload.rows || []);
       setTotal(payload.total || 0);
@@ -81,7 +84,8 @@ export function CampaignTracksPage() {
       campaign_id:  row.campaign_id ? String(row.campaign_id) : '',
       track_id:     row.track_id    ? String(row.track_id)    : '',
       track_label:  row.track_display || '',
-      position:     row.position    ?? ''
+      position:     row.position    ?? '',
+      screen_position: String(row.screen_position ?? 1)
     });
     setTrackSearch(row.track_display || '');
     setTrackResults([]);
@@ -120,7 +124,12 @@ export function CampaignTracksPage() {
       const isEdit = modal?.mode === 'edit';
       await fetchJson(isEdit ? `/api/campaign-tracks/${modal.row.id}` : '/api/campaign-tracks', {
         method: isEdit ? 'PUT' : 'POST',
-        body: JSON.stringify({ campaign_id: form.campaign_id, track_id: form.track_id, position: form.position })
+        body: JSON.stringify({
+          campaign_id: form.campaign_id,
+          track_id: form.track_id,
+          position: form.position,
+          screen_position: form.screen_position
+        })
       });
       setModal(null);
       await reload();
@@ -153,6 +162,19 @@ export function CampaignTracksPage() {
       </header>
 
       {error ? <div className="table-error">{error}</div> : null}
+
+      <div className="track-filters">
+        <label>
+          Campaign
+          <select value={filterCampaign} onChange={(e) => { setFilterCampaign(e.target.value); setPage(1); }}>
+            <option value="">All</option>
+            {campaigns.map((campaign) => (
+              <option key={campaign.id} value={campaign.id}>{campaign.name || `Campaign #${campaign.id}`}</option>
+            ))}
+          </select>
+        </label>
+      </div>
+
       {loading ? <div className="table-loading">Loading...</div> : (
         <DataTable columns={COLS} primaryKey="id" rows={rows}
           onEdit={openEdit}
@@ -216,6 +238,14 @@ export function CampaignTracksPage() {
               <label><span>Position {modal === 'add' ? '(auto si vide)' : ''}</span>
                 <input type="number" min="1" value={form.position}
                   onChange={(e) => upd('position', e.target.value)} />
+              </label>
+
+              <label><span>Screen Position</span>
+                <select value={form.screen_position} onChange={(e) => upd('screen_position', e.target.value)}>
+                  <option value="0">Début</option>
+                  <option value="1">Centre</option>
+                  <option value="2">Fin</option>
+                </select>
               </label>
 
               {formError ? <div className="form-error">{formError}</div> : null}

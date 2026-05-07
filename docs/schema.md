@@ -204,7 +204,7 @@ An advertising campaign links an advertiser to one or more spots for a given sta
 ---
 
 ### `campaign_tracks`
-Junction table between a campaign and its spots. `position` defines the rotation order — the player cycles through spots 1 → 2 → 3 → … → 1. A campaign with a single spot simply has one row at position 1.
+Junction table between a campaign and its spots. `position` defines the rotation order — the player cycles through spots 1 → 2 → 3 → … → 1. A campaign with a single spot simply has one row at position 1. `screen_position` tells the ad scheduler whether this spot should be placed near the beginning, middle, or end of the selected ad spots inside an ad break.
 
 `track_id` is unique across the whole table: a spot belongs to exactly one campaign. This makes the reverse lookup unambiguous — given a `track_id` from `play_log`, a single join on `campaign_tracks` yields the parent campaign, which can then have its `broadcast_count` incremented.
 
@@ -214,6 +214,7 @@ Junction table between a campaign and its spots. `position` defines the rotation
 | `campaign_id` | INTEGER | FK → `campaigns` |
 | `track_id` | INTEGER | FK → `tracks` (unique — one spot, one campaign) |
 | `position` | SMALLINT | Rotation order (unique per campaign) |
+| `screen_position` | SMALLINT | Preferred position in the ad screen: `0` beginning, `1` middle, `2` end |
 
 ---
 

@@ -17,7 +17,16 @@ const COLS = [
 const LIMIT = 50;
 
 function emptyForm() {
-  return { advertiser_id: '', name: '', station_id: '', total_broadcasts: 0, active: true, start_date: '', end_date: '' };
+  const year = new Date().getFullYear();
+  return {
+    advertiser_id: '',
+    name: '',
+    station_id: '',
+    total_broadcasts: 0,
+    active: true,
+    start_date: `${year}-01-01`,
+    end_date: `${year}-12-31`
+  };
 }
 
 export function CampaignsPage() {
@@ -26,6 +35,8 @@ export function CampaignsPage() {
   const [page, setPage]               = useState(1);
   const [searchInput, setSearchInput] = useState('');
   const [searchQuery, setSearchQuery] = useState('');
+  const [filterAdvertiser, setFilterAdvertiser] = useState('');
+  const [filterActive, setFilterActive] = useState('');
   const [advertisers, setAdvertisers] = useState([]);
   const [stations, setStations]       = useState([]);
   const [loading, setLoading]         = useState(true);
@@ -49,13 +60,15 @@ export function CampaignsPage() {
     return () => clearTimeout(timer);
   }, [searchInput]);
 
-  useEffect(() => { load(); }, [page, searchQuery]);
+  useEffect(() => { load(); }, [page, searchQuery, filterAdvertiser, filterActive]);
 
   async function load() {
     setLoading(true); setError(null);
     try {
       const params = new URLSearchParams({ page: String(page), limit: String(LIMIT) });
       if (searchQuery) params.set('q', searchQuery);
+      if (filterAdvertiser) params.set('advertiser_id', filterAdvertiser);
+      if (filterActive) params.set('active', filterActive);
       const payload = await fetchJson(`/api/campaigns?${params}`);
       setRows(payload.rows || []);
       setTotal(payload.total || 0);
@@ -121,6 +134,27 @@ export function CampaignsPage() {
       </header>
 
       {error ? <div className="table-error">{error}</div> : null}
+
+      <div className="track-filters">
+        <label>
+          Advertiser
+          <select value={filterAdvertiser} onChange={(e) => { setFilterAdvertiser(e.target.value); setPage(1); }}>
+            <option value="">All</option>
+            {advertisers.map((advertiser) => (
+              <option key={advertiser.id} value={advertiser.id}>{advertiser.name}</option>
+            ))}
+          </select>
+        </label>
+        <label>
+          Active
+          <select value={filterActive} onChange={(e) => { setFilterActive(e.target.value); setPage(1); }}>
+            <option value="">All</option>
+            <option value="1">Active</option>
+            <option value="0">Inactive</option>
+          </select>
+        </label>
+      </div>
+
       {loading ? <div className="table-loading">Loading...</div> : (
         <DataTable columns={COLS} primaryKey="id" rows={rows}
           onEdit={openEdit}
@@ -151,8 +185,8 @@ export function CampaignsPage() {
                   {advertisers.map((a) => <option key={a.id} value={a.id}>{a.name}</option>)}
                 </select>
               </label>
-              <label><span>Name</span>
-                <input autoFocus maxLength={255} value={form.name} onChange={(e) => upd('name', e.target.value)} />
+              <label><span>Name *</span>
+                <input autoFocus maxLength={255} required value={form.name} onChange={(e) => upd('name', e.target.value)} />
               </label>
               <label><span>Station</span>
                 <select value={form.station_id} onChange={(e) => upd('station_id', e.target.value)}>
@@ -161,11 +195,11 @@ export function CampaignsPage() {
                 </select>
               </label>
               <div className="form-row">
-                <label><span>Start Date</span>
-                  <input type="date" value={form.start_date} onChange={(e) => upd('start_date', e.target.value)} />
+                <label><span>Start Date *</span>
+                  <input required type="date" value={form.start_date} onChange={(e) => upd('start_date', e.target.value)} />
                 </label>
-                <label><span>End Date</span>
-                  <input type="date" value={form.end_date} onChange={(e) => upd('end_date', e.target.value)} />
+                <label><span>End Date *</span>
+                  <input required min={form.start_date || undefined} type="date" value={form.end_date} onChange={(e) => upd('end_date', e.target.value)} />
                 </label>
               </div>
               <label><span>Total Broadcasts</span>

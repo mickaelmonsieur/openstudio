@@ -8,6 +8,7 @@ import {
 } from '../repositories/advertising.js';
 
 const ADV_LIMIT = 50;
+const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 
 function parsePagination(query) {
   const page  = Math.max(1, parseInt(query.page  || 1, 10) || 1);
@@ -22,6 +23,18 @@ function parseSearch(query) {
 function parseId(value) {
   const id = Number(value);
   return Number.isInteger(id) && id > 0 ? id : null;
+}
+
+function parseOptionalId(value) {
+  if (value === undefined || value === null || value === '') return null;
+  return parseId(value);
+}
+
+function parseActiveFilter(value) {
+  if (value === undefined || value === null || value === '') return null;
+  if (value === 'true' || value === '1') return true;
+  if (value === 'false' || value === '0') return false;
+  return null;
 }
 
 function str(val, max) {
@@ -85,16 +98,23 @@ function validateContact(data) {
 function validateCampaign(data) {
   const advertiser_id = parseId(data?.advertiser_id);
   if (!advertiser_id) return { ok: false, error: 'Advertiser is required.' };
+  const name = str(data?.name, 255);
+  if (!name) return { ok: false, error: 'Name is required.' };
+  const start_date = optDate(data?.start_date);
+  const end_date = optDate(data?.end_date);
+  if (!start_date || !DATE_RE.test(start_date)) return { ok: false, error: 'Start date is required.' };
+  if (!end_date || !DATE_RE.test(end_date)) return { ok: false, error: 'End date is required.' };
+  if (end_date < start_date) return { ok: false, error: 'End date must be after start date.' };
   return {
     ok: true,
     value: {
       advertiser_id,
-      name:             str(data?.name, 255),
+      name,
       station_id:       data?.station_id ? parseId(data.station_id) : null,
       total_broadcasts: Math.max(0, parseInt(data?.total_broadcasts || 0, 10) || 0),
       active:           Boolean(data?.active ?? true),
-      start_date:       optDate(data?.start_date),
-      end_date:         optDate(data?.end_date)
+      start_date,
+      end_date
     }
   };
 }
@@ -105,10 +125,19 @@ function validateCampaignTrack(data) {
   const track_id = parseId(data?.track_id);
   if (!track_id) return { ok: false, error: 'Track is required.' };
   const pos = parseInt(data?.position || 0, 10);
+  const screen_position = parseScreenPosition(data?.screen_position);
+  if (screen_position === null) return { ok: false, error: 'Screen position is invalid.' };
   return {
     ok: true,
-    value: { campaign_id, track_id, position: pos > 0 ? pos : null }
+    value: { campaign_id, track_id, position: pos > 0 ? pos : null, screen_position }
   };
+}
+
+function parseScreenPosition(value) {
+  const screenPosition = Number(value ?? 1);
+  return Number.isInteger(screenPosition) && screenPosition >= 0 && screenPosition <= 2
+    ? screenPosition
+    : null;
 }
 
 export function registerAdvertisingRoutes(app, getDatabaseConfig) {
@@ -192,8 +221,13 @@ export function registerAdvertisingRoutes(app, getDatabaseConfig) {
   app.get('/api/campaigns', asyncRoute(async (req, res) => {
     const { page, limit, offset } = parsePagination(req.query);
     const search = parseSearch(req.query);
+    const advertiserId = parseOptionalId(req.query.advertiser_id);
+    const active = parseActiveFilter(req.query.active);
     const [total, rows] = await withDatabase(getDatabaseConfig(), (db) =>
-      Promise.all([countCampaigns(db, search), listCampaigns(db, { limit, offset, search })])
+      Promise.all([
+        countCampaigns(db, { search, advertiserId, active }),
+        listCampaigns(db, { limit, offset, search, advertiserId, active })
+      ])
     );
     res.json({ rows, total, page, limit });
   }));
@@ -232,8 +266,12 @@ export function registerAdvertisingRoutes(app, getDatabaseConfig) {
   app.get('/api/campaign-tracks', asyncRoute(async (req, res) => {
     const { page, limit, offset } = parsePagination(req.query);
     const search = parseSearch(req.query);
+    const campaignId = parseOptionalId(req.query.campaign_id);
     const [total, rows] = await withDatabase(getDatabaseConfig(), (db) =>
-      Promise.all([countCampaignTracks(db, search), listCampaignTracks(db, { limit, offset, search })])
+      Promise.all([
+        countCampaignTracks(db, { search, campaignId }),
+        listCampaignTracks(db, { limit, offset, search, campaignId })
+      ])
     );
     res.json({ rows, total, page, limit });
   }));

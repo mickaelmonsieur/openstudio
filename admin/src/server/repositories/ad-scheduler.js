@@ -227,6 +227,7 @@ async function selectSpotsForBreak(db, date, maxDuration, stationId, campaignUse
       cp.name AS campaign_name,
       ct.track_id,
       ct.position,
+      ct.screen_position,
       t.title,
       t.cue_in::double precision AS cue_in,
       COALESCE(t.cue_out, t.duration)::double precision AS cue_out,
@@ -294,7 +295,11 @@ async function selectSpotsForBreak(db, date, maxDuration, stationId, campaignUse
     if (remaining <= EPSILON) break;
   }
 
-  return selected;
+  return selected.sort((a, b) =>
+    Number(a.screen_position ?? 1) - Number(b.screen_position ?? 1)
+    || a.campaign_id - b.campaign_id
+    || a.position - b.position
+  );
 }
 
 async function insertAdQueueEntry(db, spot, firstScheduledAt, offsetSeconds, priority) {

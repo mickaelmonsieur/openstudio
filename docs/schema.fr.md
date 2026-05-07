@@ -204,7 +204,7 @@ Une campagne publicitaire lie un annonceur à un ou plusieurs spots pour une sta
 ---
 
 ### `campaign_tracks`
-Table de jointure entre une campagne et ses spots. `position` définit l'ordre de rotation — le lecteur enchaîne les spots 1 → 2 → 3 → … → 1. Une campagne avec un seul spot a simplement une ligne à la position 1.
+Table de jointure entre une campagne et ses spots. `position` définit l'ordre de rotation — le lecteur enchaîne les spots 1 → 2 → 3 → … → 1. Une campagne avec un seul spot a simplement une ligne à la position 1. `screen_position` indique au scheduler pub si ce spot doit être placé plutôt au début, au centre ou à la fin des spots retenus dans l'écran pub.
 
 `track_id` est unique sur l'ensemble de la table : un spot appartient à exactement une campagne. Cela rend la requête inverse non-ambiguë — à partir d'un `track_id` issu de `play_log`, une seule jointure sur `campaign_tracks` retrouve la campagne parente, dont on peut alors incrémenter `broadcast_count`.
 
@@ -214,6 +214,7 @@ Table de jointure entre une campagne et ses spots. `position` définit l'ordre d
 | `campaign_id` | INTEGER | FK → `campaigns` |
 | `track_id` | INTEGER | FK → `tracks` (unique — un spot, une campagne) |
 | `position` | SMALLINT | Ordre de rotation (unique par campagne) |
+| `screen_position` | SMALLINT | Position préférée dans l'écran pub : `0` début, `1` centre, `2` fin |
 
 ---
 

@@ -147,14 +147,14 @@ const CMP_FROM = `
   LEFT JOIN stations    s ON s.id = cp.station_id
 `;
 
-export async function countCampaigns(db, search = '') {
-  const { where, values } = cmpSearch(search);
+export async function countCampaigns(db, filters = {}) {
+  const { where, values } = cmpFilters(filters);
   const { rows } = await db.query(`SELECT COUNT(*)::integer AS total ${CMP_FROM} ${where}`, values);
   return rows[0].total;
 }
 
-export async function listCampaigns(db, { limit, offset, search = '' } = {}) {
-  const { where, values } = cmpSearch(search);
+export async function listCampaigns(db, { limit, offset, search = '', advertiserId = null, active = null } = {}) {
+  const { where, values } = cmpFilters({ search, advertiserId, active });
   if (limit == null) {
     const { rows } = await db.query(`SELECT ${CMP_SEL} ${CMP_FROM} ${where} ORDER BY a.name, cp.name`, values);
     return rows;
@@ -166,11 +166,24 @@ export async function listCampaigns(db, { limit, offset, search = '' } = {}) {
   return rows;
 }
 
-function cmpSearch(search) {
-  const q = String(search || '').trim();
-  if (!q) return { where: '', values: [] };
-  const p = `%${escapeLike(q)}%`;
-  return { where: `WHERE (cp.name ILIKE $1 ESCAPE '\\' OR a.name ILIKE $1 ESCAPE '\\')`, values: [p] };
+function cmpFilters(input = {}) {
+  const filters = typeof input === 'string' ? { search: input } : input;
+  const clauses = [];
+  const values = [];
+  const q = String(filters.search || '').trim();
+  if (q) {
+    values.push(`%${escapeLike(q)}%`);
+    clauses.push(`(cp.name ILIKE $${values.length} ESCAPE '\\' OR a.name ILIKE $${values.length} ESCAPE '\\')`);
+  }
+  if (filters.advertiserId) {
+    values.push(filters.advertiserId);
+    clauses.push(`cp.advertiser_id = $${values.length}`);
+  }
+  if (filters.active !== null && filters.active !== undefined) {
+    values.push(Boolean(filters.active));
+    clauses.push(`cp.active = $${values.length}`);
+  }
+  return { where: clauses.length ? `WHERE ${clauses.join(' AND ')}` : '', values };
 }
 
 export async function getCampaign(db, id) {
@@ -205,7 +218,12 @@ export async function deleteCampaign(db, id) {
 // ── Campaign Tracks ───────────────────────────────────────────────────────────
 
 const CT_SEL = `
-  ct.id, ct.campaign_id, ct.track_id, ct.position,
+  ct.id, ct.campaign_id, ct.track_id, ct.position, ct.screen_position,
+  CASE ct.screen_position
+    WHEN 0 THEN 'Début'
+    WHEN 2 THEN 'Fin'
+    ELSE 'Centre'
+  END AS screen_position_label,
   cp.name AS campaign_name,
   adv.name AS advertiser_name,
   ar.name || ' — ' || t.title AS track_display,
@@ -219,14 +237,14 @@ const CT_FROM = `
   LEFT JOIN artists     ar  ON ar.id  = t.artist_id
 `;
 
-export async function countCampaignTracks(db, search = '') {
-  const { where, values } = ctSearch(search);
+export async function countCampaignTracks(db, filters = {}) {
+  const { where, values } = ctFilters(filters);
   const { rows } = await db.query(`SELECT COUNT(*)::integer AS total ${CT_FROM} ${where}`, values);
   return rows[0].total;
 }
 
-export async function listCampaignTracks(db, { limit, offset, search = '' } = {}) {
-  const { where, values } = ctSearch(search);
+export async function listCampaignTracks(db, { limit, offset, search = '', campaignId = null } = {}) {
+  const { where, values } = ctFilters({ search, campaignId });
   if (limit == null) {
     const { rows } = await db.query(`SELECT ${CT_SEL} ${CT_FROM} ${where} ORDER BY cp.name, ct.position`, values);
     return rows;
@@ -238,14 +256,20 @@ export async function listCampaignTracks(db, { limit, offset, search = '' } = {}
   return rows;
 }
 
-function ctSearch(search) {
-  const q = String(search || '').trim();
-  if (!q) return { where: '', values: [] };
-  const p = `%${escapeLike(q)}%`;
-  return {
-    where: `WHERE (cp.name ILIKE $1 ESCAPE '\\' OR adv.name ILIKE $1 ESCAPE '\\' OR t.title ILIKE $1 ESCAPE '\\' OR ar.name ILIKE $1 ESCAPE '\\')`,
-    values: [p]
-  };
+function ctFilters(input = {}) {
+  const filters = typeof input === 'string' ? { search: input } : input;
+  const clauses = [];
+  const values = [];
+  const q = String(filters.search || '').trim();
+  if (q) {
+    values.push(`%${escapeLike(q)}%`);
+    clauses.push(`(cp.name ILIKE $${values.length} ESCAPE '\\' OR adv.name ILIKE $${values.length} ESCAPE '\\' OR t.title ILIKE $${values.length} ESCAPE '\\' OR ar.name ILIKE $${values.length} ESCAPE '\\')`);
+  }
+  if (filters.campaignId) {
+    values.push(filters.campaignId);
+    clauses.push(`ct.campaign_id = $${values.length}`);
+  }
+  return { where: clauses.length ? `WHERE ${clauses.join(' AND ')}` : '', values };
 }
 
 function escapeLike(value) {
@@ -268,16 +292,16 @@ async function nextPosition(db, campaignId) {
 export async function createCampaignTrack(db, data) {
   const position = data.position > 0 ? data.position : (await nextPosition(db, data.campaign_id));
   const { rows } = await db.query(
-    'INSERT INTO campaign_tracks (campaign_id, track_id, position) VALUES ($1,$2,$3) RETURNING id',
-    [data.campaign_id, data.track_id, position]
+    'INSERT INTO campaign_tracks (campaign_id, track_id, position, screen_position) VALUES ($1,$2,$3,$4) RETURNING id',
+    [data.campaign_id, data.track_id, position, data.screen_position]
   );
   return getCampaignTrack(db, rows[0].id);
 }
 
 export async function updateCampaignTrack(db, id, data) {
   await db.query(
-    'UPDATE campaign_tracks SET campaign_id=$2, track_id=$3, position=$4 WHERE id=$1',
-    [id, data.campaign_id, data.track_id, data.position]
+    'UPDATE campaign_tracks SET campaign_id=$2, track_id=$3, position=$4, screen_position=$5 WHERE id=$1',
+    [id, data.campaign_id, data.track_id, data.position, data.screen_position]
   );
   return getCampaignTrack(db, id);
 }
