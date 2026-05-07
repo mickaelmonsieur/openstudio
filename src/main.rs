@@ -263,6 +263,9 @@ struct App {
     timezone_options: Vec<String>,
     dialog: Option<Dialog>,
     is_locked: bool,
+    current_user_login: String,
+    current_user_role: i16,
+    login_pending: Option<PendingLogin>,
 }
 
 impl Default for App {
@@ -381,6 +384,9 @@ impl Default for App {
             timezone_options,
             dialog: None,
             is_locked: false,
+            current_user_login: String::from("user"),
+            current_user_role: 0,
+            login_pending: None,
         };
         app.ensure_configured_timezone_option();
         app.apply_audio_device_config(&app.app_config.clone());
@@ -481,6 +487,11 @@ impl Default for InstantPage {
             name: String::from("Default"),
         }
     }
+}
+
+#[derive(Debug, Clone)]
+enum PendingLogin {
+    ConfigOpen,
 }
 
 #[derive(Debug, Clone)]
@@ -633,7 +644,7 @@ enum Message {
     LoginFocusNext,
     LoginKeyEnter,
     LoginSubmit,
-    LoginResult(Result<bool, String>),
+    LoginResult(Result<Option<(String, i16)>, String>),
 }
 
 // ── Update ────────────────────────────────────────────────────────────────────
@@ -1242,6 +1253,16 @@ impl App {
             }
 
             Message::ConfigOpen => {
+                if !matches!(self.current_user_role, 1 | 2) {
+                    self.login_pending = Some(PendingLogin::ConfigOpen);
+                    self.dialog = Some(Dialog::Login {
+                        login: String::new(),
+                        password: String::new(),
+                        error: None,
+                        focus_index: 0,
+                    });
+                    return iced::widget::text_input::focus(login_input_id());
+                }
                 self.dialog = Some(Dialog::EditConfig {
                     auto_mix_on_start: self.app_config.auto_mix_on_start,
                     auto_play_on_start: self.app_config.auto_play_on_start,
@@ -1415,6 +1436,9 @@ impl App {
                     });
                     return iced::widget::text_input::focus(login_input_id());
                 } else {
+                    self.current_user_login = String::from("user");
+                    self.current_user_role = 0;
+                    self.login_pending = None;
                     self.is_locked = true;
                 }
                 Task::none()
@@ -1479,11 +1503,18 @@ impl App {
 
             Message::LoginResult(result) => {
                 match result {
-                    Ok(true) => {
-                        self.dialog = None;
+                    Ok(Some((login, role))) => {
+                        self.current_user_login = login;
+                        self.current_user_role = role;
                         self.is_locked = false;
+                        self.dialog = None;
+                        if let Some(pending) = self.login_pending.take() {
+                            return self.update(match pending {
+                                PendingLogin::ConfigOpen => Message::ConfigOpen,
+                            });
+                        }
                     }
-                    Ok(false) => {
+                    Ok(None) => {
                         if let Some(Dialog::Login { error, .. }) = &mut self.dialog {
                             *error = Some("Login ou mot de passe incorrect.".into());
                         }
@@ -2923,6 +2954,7 @@ impl App {
         let active_color = rgb(100, 140, 170);
         let inactive_color = rgb(70, 90, 105);
 
+        let authenticated = self.current_user_role >= 1;
         let cfg_btn = icon_btn(
             Bootstrap::GearFill,
             (!self.is_locked && self.db.is_some()).then_some(Message::ConfigOpen),
@@ -2950,6 +2982,13 @@ impl App {
                 inactive_color
             },
         );
+        let user_label = text(format!("User: {}", self.current_user_login))
+            .size(11)
+            .style(text_color(if authenticated {
+                rgb(100, 200, 120)
+            } else {
+                rgb(100, 125, 145)
+            }));
         let auto_mix_color = if self.autodj_enabled {
             rgb(221, 230, 237)
         } else {
@@ -2990,7 +3029,9 @@ impl App {
                 .height(Length::Fill)
                 .padding([0, 12])
                 .center_y(Length::Fill),
-                row![lock_btn, cfg_btn, db_btn].spacing(0).align_y(Alignment::Center),
+                row![user_label, lock_btn, cfg_btn, db_btn]
+                    .spacing(4)
+                    .align_y(Alignment::Center),
             ]
             .align_y(Alignment::Center)
             .width(Length::Fill)

@@ -176,6 +176,8 @@ impl Database {
     fn ensure_config_schema(client: &mut Client) -> Result<(), DbError> {
         client.batch_execute(
             "
+            CREATE EXTENSION IF NOT EXISTS pgcrypto;
+
             ALTER TABLE configurations
             ADD COLUMN IF NOT EXISTS preload INTEGER NOT NULL DEFAULT 10;
 
@@ -583,13 +585,22 @@ impl Database {
         Ok(())
     }
 
-    pub fn check_credentials(&self, login: &str, password: &str) -> Result<bool, DbError> {
+    pub fn check_credentials(
+        &self,
+        login: &str,
+        password: &str,
+    ) -> Result<Option<(String, i16)>, DbError> {
         let mut client = self.client.lock().map_err(|_| DbError::LockPoisoned)?;
         let rows = client.query(
-            "SELECT 1 FROM users WHERE login = $1 AND password_hash = crypt($2, password_hash) AND active = TRUE",
+            "SELECT login, role_id FROM users
+             WHERE login = $1
+               AND password_hash = crypt($2, password_hash)
+               AND active = TRUE",
             &[&login, &password],
         )?;
-        Ok(!rows.is_empty())
+        Ok(rows
+            .first()
+            .map(|row| (row.get::<_, String>("login"), row.get::<_, i16>("role_id"))))
     }
 
     pub fn insert_instant_slot(
