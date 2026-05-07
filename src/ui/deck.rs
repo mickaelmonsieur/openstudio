@@ -46,15 +46,24 @@ impl App {
         } else {
             fmt_hms(elapsed_display)
         };
-        let remaining = self
+        let remaining_duration = self
             .current_queue_entry
             .as_ref()
-            .map(|e| fmt_hms(e.cue_out.saturating_sub(elapsed)))
-            .or_else(|| {
-                self.transport_duration()
-                    .map(|total| fmt_hms(total.saturating_sub(elapsed)))
-            })
+            .map(|e| e.cue_out.saturating_sub(elapsed))
+            .or_else(|| self.transport_duration().map(|total| total.saturating_sub(elapsed)));
+        let remaining = remaining_duration
+            .map(fmt_hms)
             .unwrap_or_else(|| String::from("--:--"));
+        let remaining_color = match remaining_duration {
+            Some(d) if d < std::time::Duration::from_secs(10) => {
+                let blink_on = std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .map(|t| (t.as_millis() / 500) % 2 == 0)
+                    .unwrap_or(true);
+                if blink_on { rgb(255, 60, 40) } else { rgb(52, 206, 251) }
+            }
+            _ => rgb(52, 206, 251),
+        };
         let end_time_str = self
             .track_end_at
             .map(fmt_end_time)
@@ -217,7 +226,7 @@ impl App {
             self.time_box("INTRO", intro_str, intro_color),
             self.time_box("OUTRO", outro_str, outro_color),
             self.time_box("ELAPSED", elapsed_str, rgb(80, 220, 120)),
-            self.time_box("REMAINING", remaining, rgb(52, 206, 251)),
+            self.time_box("REMAINING", remaining, remaining_color),
             self.time_box("END", end_time_str, rgb(255, 160, 80)),
             self.time_box("HOUR", self.current_hour.clone(), rgb(244, 239, 38)),
         ]
