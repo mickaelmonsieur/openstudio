@@ -11,6 +11,7 @@ import { TemplatesPage } from './pages/TemplatesPage.jsx';
 import { EventsPage } from './pages/EventsPage.jsx';
 import { PlaylistsPage } from './pages/PlaylistsPage.jsx';
 import { PlaylistEditorPage } from './pages/PlaylistEditorPage.jsx';
+import { AdSchedulerPage } from './pages/AdSchedulerPage.jsx';
 import { TracksPage } from './pages/TracksPage.jsx';
 import { CuePage } from './pages/CuePage.jsx';
 import { LogPage } from './pages/LogPage.jsx';
@@ -48,6 +49,7 @@ const moduleGroups = [
       { label: 'Templates', path: '/templates' },
       { label: 'Playlists', path: '/playlists' },
       { label: 'Playlist Editor', path: '/playlist-editor' },
+      { label: 'Ad Scheduler', path: '/ad-scheduler' },
       { label: 'Schedules', path: '/schedules' },
       { label: 'Events', path: '/events' }
     ]
@@ -234,6 +236,14 @@ export function App() {
       return (
         <section className="content-panel wide-panel">
           <PlaylistEditorPage />
+        </section>
+      );
+    }
+
+    if (activeModule.path === '/ad-scheduler') {
+      return (
+        <section className="content-panel wide-panel">
+          <AdSchedulerPage />
         </section>
       );
     }

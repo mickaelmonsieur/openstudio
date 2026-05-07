@@ -17,6 +17,7 @@ import { registerFileScanRoutes } from './routes/file-scan.js';
 import { registerLibraryRoutes } from './routes/library.js';
 import { registerDatabaseToolsRoutes } from './routes/database-tools.js';
 import { registerPlaylistRoutes } from './routes/playlists.js';
+import { registerAdSchedulerRoutes } from './routes/ad-scheduler.js';
 import { registerQueueRoutes } from './routes/queue.js';
 import { registerAdvertisingRoutes } from './routes/advertising.js';
 import { registerPurgeRoutes } from './routes/purge.js';
@@ -173,6 +174,7 @@ export async function createOpenStudioAdminServer(config) {
   registerUserRoutes(webApp, () => readDatabaseConfig(dataDir));
   registerTrackRoutes(webApp, () => readDatabaseConfig(dataDir));
   registerPlaylistRoutes(webApp, () => readDatabaseConfig(dataDir));
+  registerAdSchedulerRoutes(webApp, () => readDatabaseConfig(dataDir));
   registerQueueRoutes(webApp, () => readDatabaseConfig(dataDir));
   registerAdvertisingRoutes(webApp, () => readDatabaseConfig(dataDir));
   registerPlayLogRoutes(webApp, () => readDatabaseConfig(dataDir));
