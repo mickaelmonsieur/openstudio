@@ -21,6 +21,7 @@ export function PlaylistEditorPage() {
   const [timezone, setTimezone] = useState('');
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
+  const [previewTrackId, setPreviewTrackId] = useState(null);
   const [modal, setModal] = useState(null);
   const [formData, setFormData] = useState(emptyForm);
   const [formError, setFormError] = useState(null);
@@ -34,6 +35,7 @@ export function PlaylistEditorPage() {
   const [trimming, setTrimming] = useState(false);
   const [pdfOpen, setPdfOpen] = useState(false);
   const pdfRef = useRef(null);
+  const previewAudioRef = useRef(null);
 
   useEffect(() => {
     if (!pdfOpen) return;
@@ -45,6 +47,8 @@ export function PlaylistEditorPage() {
   }, [pdfOpen]);
 
   useEffect(() => { loadQueue(); }, [scheduledDate, scheduledHour]);
+
+  useEffect(() => () => stopPreview(previewAudioRef.current, setPreviewTrackId), []);
 
   async function loadQueue() {
     setLoading(true);
@@ -236,6 +240,29 @@ export function PlaylistEditorPage() {
     }
   }
 
+  async function togglePreview(trackId) {
+    const audio = previewAudioRef.current;
+    const id = Number(trackId);
+    if (!audio || !id) return;
+
+    if (previewTrackId === id && !audio.paused) {
+      stopPreview(audio, setPreviewTrackId);
+      return;
+    }
+
+    setError(null);
+    setPreviewTrackId(id);
+    audio.src = `/api/tracks/${id}/audio`;
+    audio.currentTime = 0;
+
+    try {
+      await audio.play();
+    } catch (err) {
+      setPreviewTrackId(null);
+      setError(err.message);
+    }
+  }
+
   return (
     <section className="crud-page">
       <header className="crud-header">
@@ -296,6 +323,12 @@ export function PlaylistEditorPage() {
       </div>
       {error ? <div className="table-error">{error}</div> : null}
 
+      <audio
+        ref={previewAudioRef}
+        preload="none"
+        onEnded={() => setPreviewTrackId(null)}
+      />
+
       {loading ? (
         <div className="table-loading">Loading...</div>
       ) : (
@@ -344,6 +377,16 @@ export function PlaylistEditorPage() {
                   <td>{formatSeconds(row.duration)}</td>
                   <td>{formatPlayDuration(row)}</td>
                   <td className="row-actions">
+                    <button
+                      className="ghost-button table-icon-button"
+                      disabled={!row.track_id}
+                      type="button"
+                      title="Toggle"
+                      aria-label="Toggle playback"
+                      onClick={() => togglePreview(row.track_id)}
+                    >
+                      <i className={`bi ${previewTrackId === row.track_id ? 'bi-stop-fill' : 'bi-play-fill'}`} aria-hidden="true" />
+                    </button>
                     <button className="ghost-button table-icon-button" type="button" title="Add below" onClick={() => openAdd(row)}>
                       <i className="bi bi-plus-lg" aria-hidden="true" />
                     </button>
@@ -523,6 +566,13 @@ function formatSeconds(value) {
   }
 
   return `${minutes}:${pad(seconds)}`;
+}
+
+function stopPreview(audio, setPreviewTrackId) {
+  if (!audio) return;
+  audio.pause();
+  audio.currentTime = 0;
+  setPreviewTrackId(null);
 }
 
 async function fetchJson(url, options = {}) {

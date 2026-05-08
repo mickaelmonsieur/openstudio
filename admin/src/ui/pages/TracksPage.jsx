@@ -10,6 +10,7 @@ export function TracksPage() {
   const { stationId } = useStation();
   const fileInputRef = useRef(null);
   const headerCheckboxRef = useRef(null);
+  const previewAudioRef = useRef(null);
   const [rows, setRows] = useState([]);
   const [total, setTotal] = useState(0);
   const [page, setPage] = useState(1);
@@ -17,6 +18,7 @@ export function TracksPage() {
   const [searchQuery, setSearchQuery] = useState('');
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
+  const [previewTrackId, setPreviewTrackId] = useState(null);
 
   const [filterCategory, setFilterCategory] = useState('');
   const [filterGenre, setFilterGenre] = useState('');
@@ -63,6 +65,8 @@ export function TracksPage() {
   useEffect(() => {
     loadOptions();
   }, []);
+
+  useEffect(() => () => stopPreview(previewAudioRef.current, setPreviewTrackId), []);
 
   useEffect(() => {
     setSelectedIds(new Set());
@@ -205,6 +209,29 @@ export function TracksPage() {
     }
   }
 
+  async function togglePreview(trackId) {
+    const audio = previewAudioRef.current;
+    const id = Number(trackId);
+    if (!audio || !id) return;
+
+    if (previewTrackId === id && !audio.paused) {
+      stopPreview(audio, setPreviewTrackId);
+      return;
+    }
+
+    setError(null);
+    setPreviewTrackId(id);
+    audio.src = `/api/tracks/${id}/audio`;
+    audio.currentTime = 0;
+
+    try {
+      await audio.play();
+    } catch (err) {
+      setPreviewTrackId(null);
+      setError(err.message);
+    }
+  }
+
   function toggleRow(id, checked) {
     setSelectedIds((prev) => {
       const next = new Set(prev);
@@ -287,6 +314,12 @@ export function TracksPage() {
       </header>
 
       {error ? <div className="table-error">{error}</div> : null}
+
+      <audio
+        ref={previewAudioRef}
+        preload="none"
+        onEnded={() => setPreviewTrackId(null)}
+      />
 
       {searchQuery ? (
         <div className="filter-status">
@@ -463,6 +496,15 @@ export function TracksPage() {
                       <td>{row.year || '—'}</td>
                       <td>{formatDuration(row.duration)}</td>
                       <td className="row-actions">
+                        <button
+                          className="ghost-button table-icon-button"
+                          type="button"
+                          title="Toggle"
+                          aria-label="Toggle playback"
+                          onClick={() => togglePreview(row.id)}
+                        >
+                          <i className={`bi ${previewTrackId === row.id ? 'bi-stop-fill' : 'bi-play-fill'}`} aria-hidden="true" />
+                        </button>
                         <a className="ghost-button" href={`/tracks/cue/${row.id}`}>Cue</a>
                         <button
                           className="ghost-button"
@@ -582,6 +624,13 @@ function formatDuration(seconds) {
   const m = Math.floor(total / 60);
   const s = total % 60;
   return `${m}:${s.toString().padStart(2, '0')}`;
+}
+
+function stopPreview(audio, setPreviewTrackId) {
+  if (!audio) return;
+  audio.pause();
+  audio.currentTime = 0;
+  setPreviewTrackId(null);
 }
 
 async function fetchJson(url, options = {}) {

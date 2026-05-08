@@ -517,7 +517,7 @@ function streamAudioFile(req, res, track) {
   const flacOffset = readFlacOffset(track.path);
   const effectiveSize = stat.size - flacOffset;
   const range = req.headers.range;
-  const contentDispositionName = safeDownloadName(track);
+  const contentDisposition = inlineContentDisposition(track);
 
   if (range) {
     const match = range.match(/bytes=(\d*)-(\d*)/);
@@ -535,7 +535,7 @@ function streamAudioFile(req, res, track) {
       'Content-Range': `bytes ${start}-${chunkEnd}/${effectiveSize}`,
       'Content-Length': chunkEnd - start + 1,
       'Content-Type': 'audio/flac',
-      'Content-Disposition': `inline; filename="${contentDispositionName}"`
+      'Content-Disposition': contentDisposition
     });
     fs.createReadStream(track.path, { start: flacOffset + start, end: flacOffset + chunkEnd }).pipe(res);
     return;
@@ -545,7 +545,7 @@ function streamAudioFile(req, res, track) {
     'Accept-Ranges': 'bytes',
     'Content-Length': effectiveSize,
     'Content-Type': 'audio/flac',
-    'Content-Disposition': `inline; filename="${contentDispositionName}"`
+    'Content-Disposition': contentDisposition
   });
   fs.createReadStream(track.path, { start: flacOffset }).pipe(res);
 }
@@ -574,7 +574,29 @@ function readFlacOffset(filePath) {
   return 10 + synchsafeSize + footerSize;
 }
 
+function inlineContentDisposition(track) {
+  const fileName = safeDownloadName(track);
+  const fallback = asciiHeaderFileName(fileName);
+  return `inline; filename="${fallback}"; filename*=UTF-8''${encodeRFC5987(fileName)}`;
+}
+
 function safeDownloadName(track) {
   const raw = [track.artist, track.title].filter(Boolean).join(' - ') || `track-${track.id}`;
-  return `${raw.replace(/[\\"]/g, '').replace(/[/:*?<>|]/g, '-')}.flac`;
+  return `${raw.replace(/[\u0000-\u001F\u007F\\"]/g, '').replace(/[/:*?<>|]/g, '-')}.flac`;
+}
+
+function asciiHeaderFileName(fileName) {
+  const fallback = String(fileName || 'track.flac')
+    .normalize('NFKD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/[^A-Za-z0-9._ -]/g, '-')
+    .replace(/[\u0000-\u001F\u007F"\\]/g, '')
+    .replace(/\s+/g, ' ')
+    .trim();
+  return fallback || 'track.flac';
+}
+
+function encodeRFC5987(value) {
+  return encodeURIComponent(value)
+    .replace(/['()*]/g, (char) => `%${char.charCodeAt(0).toString(16).toUpperCase()}`);
 }
