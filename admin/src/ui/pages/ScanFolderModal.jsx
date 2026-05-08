@@ -1,5 +1,7 @@
 import { useEffect, useState } from 'react';
 
+const AUTO_CUE_DISABLED_TYPE_IDS = new Set([7, 8, 9, 10, 14]);
+
 export function ScanFolderModal({ genres, trackTypes = [], stationId, subcategories, onClose, onFinished }) {
   const [root, setRoot] = useState(null);
   const [childrenByPath, setChildrenByPath] = useState({});
@@ -9,6 +11,7 @@ export function ScanFolderModal({ genres, trackTypes = [], stationId, subcategor
   const [subcategoryId, setSubcategoryId] = useState('');
   const [trackTypeId, setTrackTypeId] = useState('');
   const [includeSubfolders, setIncludeSubfolders] = useState(true);
+  const [autoCueOnImport, setAutoCueOnImport] = useState(true);
   const [loadingPath, setLoadingPath] = useState('');
   const [error, setError] = useState(null);
   const [job, setJob] = useState(null);
@@ -43,6 +46,10 @@ export function ScanFolderModal({ genres, trackTypes = [], stationId, subcategor
       onFinished();
     }
   }, [job?.status, notified, onFinished]);
+
+  useEffect(() => {
+    setAutoCueOnImport(!AUTO_CUE_DISABLED_TYPE_IDS.has(Number(trackTypeId)));
+  }, [trackTypeId]);
 
   async function loadFolder(folderPath) {
     setLoadingPath(folderPath || 'root');
@@ -97,6 +104,7 @@ export function ScanFolderModal({ genres, trackTypes = [], stationId, subcategor
           subcategory_id: subcategoryId,
           track_type_id: trackTypeId || undefined,
           includeSubfolders,
+          autoCueOnImport,
           station_id: stationId || undefined
         })
       });
@@ -182,6 +190,15 @@ export function ScanFolderModal({ genres, trackTypes = [], stationId, subcategor
                   checked={includeSubfolders}
                   type="checkbox"
                   onChange={(e) => setIncludeSubfolders(e.target.checked)}
+                />
+              </label>
+
+              <label className="checkbox-field">
+                <span>Auto cue on import</span>
+                <input
+                  checked={autoCueOnImport}
+                  type="checkbox"
+                  onChange={(e) => setAutoCueOnImport(e.target.checked)}
                 />
               </label>
 

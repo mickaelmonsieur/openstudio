@@ -285,6 +285,7 @@ export function registerTrackRoutes(app, getDatabaseConfig) {
       subcategory_id,
       track_type_id,
       includeSubfolders: req.body?.includeSubfolders !== false,
+      autoCueOnImport: req.body?.autoCueOnImport !== false,
       libraryRoot
     });
 

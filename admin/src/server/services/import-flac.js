@@ -47,7 +47,9 @@ export async function buildFlacTrackDraft(db, filePath, displayName, options = {
   const album = firstText(common.album);
   const year = parseYear(common.year || common.date);
 
-  const { cue_in, cue_out } = await decodeCuePoints(fileBuffer);
+  const { cue_in, cue_out } = options.detectCuePoints === false
+    ? { cue_in: 0, cue_out: null }
+    : await decodeCuePoints(fileBuffer);
 
   return {
     artist_id: artist?.id || '',

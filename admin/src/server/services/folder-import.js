@@ -47,6 +47,7 @@ export function startFolderImport(databaseConfig, options) {
     folderPath,
     libraryRoot: root,
     includeSubfolders: Boolean(options.includeSubfolders),
+    autoCueOnImport: options.autoCueOnImport !== false,
     subcategory_id: options.subcategory_id,
     genre_id: options.genre_id,
     track_type_id: options.track_type_id || null,
@@ -105,7 +106,8 @@ async function runFolderImportJob(databaseConfig, job) {
 
       try {
         const draft = await buildFlacTrackDraft(db, filePath, path.basename(filePath), {
-          inferGenre: false
+          inferGenre: false,
+          detectCuePoints: job.autoCueOnImport
         });
 
         await createTrack(db, {
