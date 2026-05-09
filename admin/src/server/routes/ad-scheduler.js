@@ -39,6 +39,11 @@ function parseDays(value) {
   return Number.isInteger(days) && days >= 7 && days <= 28 ? days : 7;
 }
 
+function parseStartDate(value) {
+  const date = String(value || '').trim();
+  return DATE_RE.test(date) ? date : null;
+}
+
 function asyncRoute(handler) {
   return async (req, res) => {
     try {
@@ -52,10 +57,11 @@ function asyncRoute(handler) {
 export function registerAdSchedulerRoutes(app, getDatabaseConfig) {
   app.get('/api/ad-scheduler/coverage', asyncRoute(async (req, res) => {
     const days = parseDays(req.query.days);
+    const startDate = parseStartDate(req.query.start_date);
     const payload = await withDatabase(getDatabaseConfig(), async (db) => {
       const timezone = await getConfiguredTimezone(db);
-      const rows = await listAdBreakCoverage(db, timezone, days);
-      return { timezone, rows };
+      const rows = await listAdBreakCoverage(db, timezone, days, startDate);
+      return { timezone, start_date: startDate, rows };
     });
     res.json(payload);
   }));

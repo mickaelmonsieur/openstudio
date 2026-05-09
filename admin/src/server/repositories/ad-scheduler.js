@@ -1,10 +1,11 @@
 const FILLER_TRACK_TYPE_ID = 14;
 const EPSILON = 0.001;
 
-export async function listAdBreakCoverage(db, timezone, days = 7) {
+export async function listAdBreakCoverage(db, timezone, days = 7, startDate = null) {
   const rows = await listAdSchedulerRows(db, timezone, {
     fromLocal: null,
     toLocal: null,
+    startDate,
     days
   });
   return summarizeBreaks(groupAdBreaks(rows));
@@ -95,17 +96,29 @@ export async function generateAdSchedule(db, options) {
   }
 }
 
-async function listAdSchedulerRows(db, timezone, { fromLocal, toLocal, days = 7 }) {
-  const rangeSql = fromLocal && toLocal
-    ? `
+async function listAdSchedulerRows(db, timezone, { fromLocal, toLocal, startDate = null, days = 7 }) {
+  let rangeSql;
+  let values;
+
+  if (fromLocal && toLocal) {
+    rangeSql = `
       q.scheduled_at >= ($2::timestamp AT TIME ZONE $1)
       AND q.scheduled_at < (($3::timestamp + INTERVAL '1 hour') AT TIME ZONE $1)
-    `
-    : `
+    `;
+    values = [timezone, fromLocal, toLocal];
+  } else if (startDate) {
+    rangeSql = `
+      q.scheduled_at >= ($2::date::timestamp AT TIME ZONE $1)
+      AND q.scheduled_at < (($2::date + $3::integer)::timestamp AT TIME ZONE $1)
+    `;
+    values = [timezone, startDate, days];
+  } else {
+    rangeSql = `
       q.scheduled_at >= (CURRENT_DATE::timestamp AT TIME ZONE $1)
       AND q.scheduled_at < ((CURRENT_DATE + $2::integer)::timestamp AT TIME ZONE $1)
     `;
-  const values = fromLocal && toLocal ? [timezone, fromLocal, toLocal] : [timezone, days];
+    values = [timezone, days];
+  }
 
   const { rows } = await db.query(
     `

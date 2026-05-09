@@ -954,6 +954,18 @@ h1 {
   font-size: 12px;
 }
 
+.coverage-nav {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.coverage-nav span {
+  min-width: 210px;
+  text-align: center;
+}
+
 .coverage-weeks {
   display: grid;
   gap: 10px;

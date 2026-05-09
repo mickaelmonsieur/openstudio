@@ -15,10 +15,12 @@ export function AdSchedulerPage() {
   const [error, setError] = useState(null);
   const [summary, setSummary] = useState(null);
   const [generating, setGenerating] = useState(false);
+  const [coverageStartDate, setCoverageStartDate] = useState(today);
   const [coverage, setCoverage] = useState({ rows: [], timezone: '' });
   const [coverageError, setCoverageError] = useState(null);
 
-  const week = useMemo(() => buildCoverageWeek(COVERAGE_DAYS, coverage.rows), [coverage.rows]);
+  const week = useMemo(() => buildCoverageWeek(COVERAGE_DAYS, coverageStartDate, coverage.rows), [coverageStartDate, coverage.rows]);
+  const coverageEndDate = useMemo(() => addDays(coverageStartDate, COVERAGE_DAYS - 1), [coverageStartDate]);
   const totals = useMemo(() => coverage.rows.reduce((acc, row) => {
     acc.total += 1;
     acc[row.status] = (acc[row.status] || 0) + 1;
@@ -27,7 +29,7 @@ export function AdSchedulerPage() {
 
   useEffect(() => {
     loadCoverage();
-  }, []);
+  }, [coverageStartDate]);
 
   async function generate(event) {
     event.preventDefault();
@@ -58,7 +60,11 @@ export function AdSchedulerPage() {
   async function loadCoverage() {
     setCoverageError(null);
     try {
-      const payload = await fetchJson(`/api/ad-scheduler/coverage?days=${COVERAGE_DAYS}`);
+      const params = new URLSearchParams({
+        days: String(COVERAGE_DAYS),
+        start_date: coverageStartDate
+      });
+      const payload = await fetchJson(`/api/ad-scheduler/coverage?${params.toString()}`);
       setCoverage({
         rows: payload.rows || [],
         timezone: payload.timezone || ''
@@ -66,6 +72,10 @@ export function AdSchedulerPage() {
     } catch (err) {
       setCoverageError(err.message);
     }
+  }
+
+  function moveCoverage(days) {
+    setCoverageStartDate((current) => addDays(current, days));
   }
 
   return (
@@ -163,7 +173,15 @@ export function AdSchedulerPage() {
             <p className="panel-kicker">Coverage</p>
             <h2>Ad Breaks This Week</h2>
           </div>
-          <span>{coverage.timezone || 'Timezone loading...'}</span>
+          <div className="coverage-nav">
+            <button className="ghost-button table-icon-button" type="button" title="Previous week" aria-label="Previous week" onClick={() => moveCoverage(-COVERAGE_DAYS)}>
+              <i className="bi bi-arrow-left" aria-hidden="true" />
+            </button>
+            <span>{formatShortDate(coverageStartDate)} - {formatShortDate(coverageEndDate)} · {coverage.timezone || 'Timezone loading...'}</span>
+            <button className="ghost-button table-icon-button" type="button" title="Next week" aria-label="Next week" onClick={() => moveCoverage(COVERAGE_DAYS)}>
+              <i className="bi bi-arrow-right" aria-hidden="true" />
+            </button>
+          </div>
         </div>
 
         <div className="ad-coverage-legend">
@@ -218,7 +236,7 @@ function addDays(dateValue, days) {
   return dateInputValue(date);
 }
 
-function buildCoverageWeek(days, rows) {
+function buildCoverageWeek(days, startDate, rows) {
   const byHour = new Map();
   for (const row of rows) {
     const key = `${row.date}-${row.hour}`;
@@ -226,9 +244,8 @@ function buildCoverageWeek(days, rows) {
     byHour.get(key).push(row);
   }
 
-  const today = dateInputValue(new Date());
   return Array.from({ length: days }, (_, index) => {
-    const date = addDays(today, index);
+    const date = addDays(startDate, index);
     const hours = new Map();
     for (const hour of HOURS) {
       hours.set(hour, byHour.get(`${date}-${hour}`) || []);
