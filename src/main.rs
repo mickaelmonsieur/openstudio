@@ -438,6 +438,30 @@ struct PreloadedQueueEntry {
 #[derive(Debug, Clone)]
 struct ActiveQueuePlayLog {
     track_id: i32,
+    cue_in: std::time::Duration,
+    cue_out: std::time::Duration,
+    duration: std::time::Duration,
+}
+
+impl ActiveQueuePlayLog {
+    fn audible_played_duration(&self, position: std::time::Duration) -> std::time::Duration {
+        position.saturating_sub(self.cue_in)
+    }
+
+    fn expected_audible_duration(&self) -> std::time::Duration {
+        let cue_out = if self.cue_out > self.cue_in {
+            self.cue_out
+        } else {
+            self.duration
+        };
+        cue_out.saturating_sub(self.cue_in)
+    }
+
+    fn was_read_to_end(&self, played_duration: std::time::Duration) -> bool {
+        let expected = self.expected_audible_duration();
+        !expected.is_zero()
+            && played_duration.saturating_add(std::time::Duration::from_millis(1500)) >= expected
+    }
 }
 
 impl TrackPickerState {
@@ -1858,9 +1882,26 @@ impl App {
             .collect()
     }
 
-    fn begin_queue_play_log(&mut self, player_id: audio::PlayerId, track_id: i32) {
-        self.active_queue_play_logs
-            .insert(player_id, ActiveQueuePlayLog { track_id });
+    fn begin_queue_play_log(&mut self, player_id: audio::PlayerId, entry: &db::QueueEntry) {
+        let Some(track_id) = entry.track_id else {
+            return;
+        };
+
+        if let Some(db) = &self.db {
+            if let Err(error) = db.mark_track_played(track_id) {
+                self.status = format!("Last played update failed: {error}");
+            }
+        }
+
+        self.active_queue_play_logs.insert(
+            player_id,
+            ActiveQueuePlayLog {
+                track_id,
+                cue_in: entry.cue_in,
+                cue_out: entry.cue_out,
+                duration: entry.duration,
+            },
+        );
     }
 
     fn close_finished_queue_play_logs(
@@ -1885,7 +1926,14 @@ impl App {
         let Some(db) = &self.db else {
             return;
         };
-        if let Err(error) = db.insert_play_log(active_log.track_id, played_duration) {
+        let audible_played_duration = active_log.audible_played_duration(played_duration);
+        let count_commercial_campaign = active_log.was_read_to_end(audible_played_duration);
+
+        if let Err(error) = db.insert_play_log(
+            active_log.track_id,
+            audible_played_duration,
+            count_commercial_campaign,
+        ) {
             self.status = format!("Play log insert failed: {error}");
         }
     }
@@ -1934,7 +1982,7 @@ impl App {
                     },
                 );
                 self.audio.handle(player_id, audio::PlayerCommand::Play);
-                self.begin_queue_play_log(player_id, track_id);
+                self.begin_queue_play_log(player_id, &entry);
             }
         }
 
@@ -2016,9 +2064,7 @@ impl App {
         self.queue_entries.remove(0);
         self.adjust_selected_queue_index_after_remove(0);
         self.audio.handle(player_id, audio::PlayerCommand::Play);
-        if let Some(track_id) = preloaded.entry.track_id {
-            self.begin_queue_play_log(player_id, track_id);
-        }
+        self.begin_queue_play_log(player_id, &preloaded.entry);
         self.set_auto_mix_status(format!(
             "Track {} has started.",
             Self::queue_entry_label(&preloaded.entry)

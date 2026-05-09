@@ -507,16 +507,64 @@ impl Database {
         Ok(())
     }
 
-    pub fn insert_play_log(&self, track_id: i32, played_duration: Duration) -> Result<(), DbError> {
+    pub fn mark_track_played(&self, track_id: i32) -> Result<(), DbError> {
         let mut client = self.client.lock().map_err(|_| DbError::LockPoisoned)?;
-        let played_duration = played_duration.as_secs_f32();
         client.execute(
+            "
+            WITH played_track AS (
+                UPDATE tracks
+                SET last_played_at = NOW()
+                WHERE id = $1
+                RETURNING artist_id
+            )
+            UPDATE artists
+            SET last_broadcast_at = NOW()
+            WHERE id IN (
+                SELECT artist_id
+                FROM played_track
+                WHERE artist_id IS NOT NULL
+            )
+            ",
+            &[&track_id],
+        )?;
+        Ok(())
+    }
+
+    pub fn insert_play_log(
+        &self,
+        track_id: i32,
+        played_duration: Duration,
+        count_commercial_campaign: bool,
+    ) -> Result<(), DbError> {
+        let mut client = self.client.lock().map_err(|_| DbError::LockPoisoned)?;
+        let mut transaction = client.transaction()?;
+        let played_duration = played_duration.as_secs_f32();
+        transaction.execute(
             "
             INSERT INTO play_log (track_id, played_duration)
             VALUES ($1, $2)
             ",
             &[&track_id, &played_duration],
         )?;
+
+        if count_commercial_campaign {
+            transaction.execute(
+                "
+                UPDATE campaigns cp
+                SET
+                    broadcast_count = cp.broadcast_count + 1,
+                    last_aired_at = NOW()
+                FROM campaign_tracks ct
+                JOIN tracks t ON t.id = ct.track_id
+                WHERE cp.id = ct.campaign_id
+                  AND ct.track_id = $1
+                  AND t.track_type_id = 9
+                ",
+                &[&track_id],
+            )?;
+        }
+
+        transaction.commit()?;
         Ok(())
     }
 
