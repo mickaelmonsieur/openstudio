@@ -1,20 +1,12 @@
-import puppeteer from 'puppeteer';
+import { BrowserWindow } from 'electron';
 
 export async function htmlToPdf(html) {
-  const browser = await puppeteer.launch({
-    headless: true,
-    args: ['--no-sandbox', '--disable-setuid-sandbox']
-  });
+  const win = new BrowserWindow({ show: false });
+  await win.loadURL('data:text/html;charset=utf-8,' + encodeURIComponent(html));
   try {
-    const page = await browser.newPage();
-    await page.setContent(html, { waitUntil: 'domcontentloaded' });
-    return await page.pdf({
-      format: 'A4',
-      printBackground: true,
-      margin: { top: '12mm', bottom: '12mm', left: '12mm', right: '12mm' }
-    });
+    return await win.webContents.printToPDF({ printBackground: true, pageSize: 'A4' });
   } finally {
-    await browser.close();
+    win.destroy();
   }
 }
 
