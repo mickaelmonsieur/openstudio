@@ -23,13 +23,26 @@ use iced_fonts::{Bootstrap, BOOTSTRAP_FONT};
 use ui::{accent_purple, block_style, panel_style, rgb, search_pick_list_style, text_color};
 
 fn db_config_path() -> PathBuf {
-    std::env::current_exe()
-        .ok()
-        .and_then(|exe| {
-            let candidate = exe.parent()?.parent()?.join("Resources/database.json");
-            candidate.exists().then_some(candidate)
-        })
-        .unwrap_or_else(|| PathBuf::from("config/database.json"))
+    if let Ok(exe) = std::env::current_exe() {
+        let candidates = [
+            // macOS app bundle: Contents/Resources/database.json
+            exe.parent()
+                .and_then(|p| p.parent())
+                .map(|p| p.join("Resources/database.json")),
+            // Windows packaged: resources are next to the executable.
+            exe.parent().map(|p| p.join("database.json")),
+            exe.parent().map(|p| p.join("config/database.json")),
+        ];
+
+        for candidate in candidates.into_iter().flatten() {
+            if candidate.exists() {
+                return candidate;
+            }
+        }
+    }
+
+    // Dev: config/database.json relative to working directory
+    PathBuf::from("config/database.json")
 }
 
 fn migrations_dir() -> PathBuf {
@@ -662,7 +675,6 @@ enum Message {
     InstantSlotRightClick(usize),
     InstantSlotLoad(usize),
     InstantSlotClear(usize),
-    CloseInstantContext,
     InstantStop,
     InstantSave,
     InstantSaveNameChanged(String),
@@ -1051,10 +1063,6 @@ impl App {
                 }
                 Task::none()
             }
-            Message::CloseInstantContext => {
-                self.instant_context_slot = None;
-                Task::none()
-            }
             Message::InstantStop => {
                 self.stop_instant();
                 Task::none()
@@ -1253,8 +1261,8 @@ impl App {
                         (
                             "localhost".into(),
                             "5432".into(),
-                            String::new(),
-                            String::new(),
+                            "openstudio".into(),
+                            "postgres".into(),
                             String::new(),
                             DEFAULT_PSQL_PATH.into(),
                         )

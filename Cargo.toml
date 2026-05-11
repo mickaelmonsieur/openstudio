@@ -9,13 +9,13 @@ product-name  = "OpenStudio"
 identifier    = "be.mickael.openstudio"
 copyright     = "Mickael Monsieur © 2026"
 category      = "Music"
-description   = "Professional audio player"
+description   = "Professional broadcast radio software"
 formats       = ["app", "dmg"]
 icons         = ["icons/512x512.png"]
 resources     = [
-    "config/database.json",
-    { src = "migrations/0001_initial_schema.sql", target = "migrations" },
-    { src = "migrations/0002_seed.sql", target = "migrations" },
+    { src = "config/database.json", target = "database.json" },
+    { src = "migrations/0001_initial_schema.sql", target = "migrations/0001_initial_schema.sql" },
+    { src = "migrations/0002_seed.sql", target = "migrations/0002_seed.sql" },
 ]
 
 [package.metadata.packager.macos]

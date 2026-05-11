@@ -18,7 +18,10 @@ fn fmt_end_time(at: std::time::SystemTime) -> String {
         }
         local.assume_init()
     };
-    format!("{:02}:{:02}:{:02}", local.tm_hour, local.tm_min, local.tm_sec)
+    format!(
+        "{:02}:{:02}:{:02}",
+        local.tm_hour, local.tm_min, local.tm_sec
+    )
 }
 
 #[cfg(not(unix))]
@@ -50,7 +53,10 @@ impl App {
             .current_queue_entry
             .as_ref()
             .map(|e| e.cue_out.saturating_sub(elapsed))
-            .or_else(|| self.transport_duration().map(|total| total.saturating_sub(elapsed)));
+            .or_else(|| {
+                self.transport_duration()
+                    .map(|total| total.saturating_sub(elapsed))
+            });
         let remaining = remaining_duration
             .map(fmt_hms)
             .unwrap_or_else(|| String::from("--:--"));
@@ -60,7 +66,11 @@ impl App {
                     .duration_since(std::time::UNIX_EPOCH)
                     .map(|t| (t.as_millis() / 500) % 2 == 0)
                     .unwrap_or(true);
-                if blink_on { rgb(255, 60, 40) } else { rgb(52, 206, 251) }
+                if blink_on {
+                    rgb(255, 60, 40)
+                } else {
+                    rgb(52, 206, 251)
+                }
             }
             _ => rgb(52, 206, 251),
         };

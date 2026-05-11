@@ -217,8 +217,13 @@ impl AudioPlayer {
             .and_then(|rx| rx.try_recv().ok().flatten());
         self.preload_rx = None;
 
-        let (stop_tx, seek_tx, pause_tx, fade_tx, position_ms, done_rx) =
-            play(path, preloaded, self.cue_in, Arc::clone(&self.levels), self.device_name.clone());
+        let (stop_tx, seek_tx, pause_tx, fade_tx, position_ms, done_rx) = play(
+            path,
+            preloaded,
+            self.cue_in,
+            Arc::clone(&self.levels),
+            self.device_name.clone(),
+        );
         self.stop_tx = Some(stop_tx);
         self.seek_tx = Some(seek_tx);
         self.pause_tx = Some(pause_tx);

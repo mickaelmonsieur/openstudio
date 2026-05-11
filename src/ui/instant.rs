@@ -240,48 +240,42 @@ impl App {
         let with_context: Element<_> = if context_open {
             let menu = container(
                 column![
-                    button(
-                        text("Load")
-                            .size(12)
-                            .align_x(Horizontal::Center)
-                    )
-                    .width(Length::Fill)
-                    .padding([4, 8])
-                    .on_press(Message::InstantSlotLoad(slot_index))
-                    .style(|_, status| button::Style {
-                        background: Some(Background::Color(match status {
-                            button::Status::Hovered | button::Status::Pressed => rgb(52, 100, 140),
-                            _ => rgb(30, 55, 75),
-                        })),
-                        text_color: rgb(200, 225, 245),
-                        border: Border {
-                            color: rgb(50, 80, 105),
-                            width: 1.0,
-                            radius: 2.0.into(),
-                        },
-                        ..Default::default()
-                    }),
-                    button(
-                        text("Delete")
-                            .size(12)
-                            .align_x(Horizontal::Center)
-                    )
-                    .width(Length::Fill)
-                    .padding([4, 8])
-                    .on_press(Message::InstantSlotClear(slot_index))
-                    .style(|_, status| button::Style {
-                        background: Some(Background::Color(match status {
-                            button::Status::Hovered | button::Status::Pressed => rgb(140, 40, 40),
-                            _ => rgb(90, 20, 20),
-                        })),
-                        text_color: rgb(255, 200, 200),
-                        border: Border {
-                            color: rgb(120, 40, 40),
-                            width: 1.0,
-                            radius: 2.0.into(),
-                        },
-                        ..Default::default()
-                    }),
+                    button(text("Load").size(12).align_x(Horizontal::Center))
+                        .width(Length::Fill)
+                        .padding([4, 8])
+                        .on_press(Message::InstantSlotLoad(slot_index))
+                        .style(|_, status| button::Style {
+                            background: Some(Background::Color(match status {
+                                button::Status::Hovered | button::Status::Pressed =>
+                                    rgb(52, 100, 140),
+                                _ => rgb(30, 55, 75),
+                            })),
+                            text_color: rgb(200, 225, 245),
+                            border: Border {
+                                color: rgb(50, 80, 105),
+                                width: 1.0,
+                                radius: 2.0.into(),
+                            },
+                            ..Default::default()
+                        }),
+                    button(text("Delete").size(12).align_x(Horizontal::Center))
+                        .width(Length::Fill)
+                        .padding([4, 8])
+                        .on_press(Message::InstantSlotClear(slot_index))
+                        .style(|_, status| button::Style {
+                            background: Some(Background::Color(match status {
+                                button::Status::Hovered | button::Status::Pressed =>
+                                    rgb(140, 40, 40),
+                                _ => rgb(90, 20, 20),
+                            })),
+                            text_color: rgb(255, 200, 200),
+                            border: Border {
+                                color: rgb(120, 40, 40),
+                                width: 1.0,
+                                radius: 2.0.into(),
+                            },
+                            ..Default::default()
+                        }),
                 ]
                 .spacing(3),
             )
