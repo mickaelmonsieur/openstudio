@@ -12,7 +12,7 @@ category      = "Music"
 description   = "Professional audio player"
 formats       = ["app", "dmg"]
 icons         = ["icons/512x512.png"]
-resources     = ["config/database.json"]
+resources     = ["config/database.json", "migrations/0001_initial_schema.sql", "migrations/0002_seed.sql"]
 
 [package.metadata.packager.macos]
 signing-identity = "-"

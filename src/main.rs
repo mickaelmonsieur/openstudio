@@ -32,6 +32,20 @@ fn db_config_path() -> PathBuf {
         .unwrap_or_else(|| PathBuf::from("config/database.json"))
 }
 
+fn migrations_dir() -> PathBuf {
+    std::env::current_exe()
+        .ok()
+        .and_then(|exe| {
+            let resources = exe.parent()?.parent()?.join("Resources");
+            // packager strips the leading directory, so migrations land flat in Resources/
+            resources
+                .join("0001_initial_schema.sql")
+                .exists()
+                .then_some(resources)
+        })
+        .unwrap_or_else(|| PathBuf::from("migrations"))
+}
+
 const ANY_CATEGORY: &str = "Any Category";
 const ANY_SUBCATEGORY: &str = "Any Subcategory";
 const ANY_GENRE: &str = "Any Genre";
@@ -549,6 +563,9 @@ enum Dialog {
         database: String,
         user: String,
         password: String,
+        psql_path: String,
+        connection_status: Option<Result<String, String>>,
+        create_status: Option<Result<String, String>>,
     },
     Login {
         login: String,
@@ -574,6 +591,7 @@ enum DbField {
     Database,
     User,
     Password,
+    PsqlPath,
 }
 
 #[derive(Debug, Clone)]
@@ -665,6 +683,10 @@ enum Message {
     DbConfigFieldChanged(DbField, String),
     DbConfigSave,
     DbConfigConnected(Result<db::SharedDatabase, String>),
+    DbConfigTestConnection,
+    DbConfigTestResult(Result<String, String>),
+    DbConfigCreateDatabase,
+    DbConfigCreateResult(Result<String, String>),
     ConfigOpen,
     ConfigToggle(ConfigField),
     ConfigPreloadChanged(String),
@@ -1193,7 +1215,7 @@ impl App {
             }
 
             Message::DbConfigOpen => {
-                let (host, port, database, user, password) =
+                let (host, port, database, user, password, psql_path) =
                     if let Ok(raw) = std::fs::read_to_string(db_config_path()) {
                         if let Ok(val) = serde_json::from_str::<serde_json::Value>(&raw) {
                             (
@@ -1202,6 +1224,10 @@ impl App {
                                 val["database"].as_str().unwrap_or("").to_string(),
                                 val["user"].as_str().unwrap_or("").to_string(),
                                 val["password"].as_str().unwrap_or("").to_string(),
+                                val["psql_path"]
+                                    .as_str()
+                                    .unwrap_or("/Library/PostgreSQL/18/bin/psql")
+                                    .to_string(),
                             )
                         } else {
                             (
@@ -1210,6 +1236,7 @@ impl App {
                                 String::new(),
                                 String::new(),
                                 String::new(),
+                                "/Library/PostgreSQL/18/bin/psql".into(),
                             )
                         }
                     } else {
@@ -1219,6 +1246,7 @@ impl App {
                             String::new(),
                             String::new(),
                             String::new(),
+                            "/Library/PostgreSQL/18/bin/psql".into(),
                         )
                     };
                 self.dialog = Some(Dialog::EditDbConfig {
@@ -1227,6 +1255,9 @@ impl App {
                     database,
                     user,
                     password,
+                    psql_path,
+                    connection_status: None,
+                    create_status: None,
                 });
                 Task::none()
             }
@@ -1238,6 +1269,8 @@ impl App {
                     database,
                     user,
                     password,
+                    psql_path,
+                    ..
                 }) = &mut self.dialog
                 {
                     match field {
@@ -1246,6 +1279,7 @@ impl App {
                         DbField::Database => *database = value,
                         DbField::User => *user = value,
                         DbField::Password => *password = value,
+                        DbField::PsqlPath => *psql_path = value,
                     }
                 }
                 Task::none()
@@ -1258,6 +1292,8 @@ impl App {
                     database,
                     user,
                     password,
+                    psql_path,
+                    ..
                 }) = &self.dialog
                 {
                     let config = serde_json::json!({
@@ -1266,6 +1302,7 @@ impl App {
                         "database": database,
                         "user": user,
                         "password": password,
+                        "psql_path": psql_path,
                     });
                     let path = db_config_path();
                     match serde_json::to_string_pretty(&config)
@@ -1315,6 +1352,133 @@ impl App {
                         self.db = None;
                         self.status = format!("Disconnected ({e})");
                     }
+                }
+                Task::none()
+            }
+
+            Message::DbConfigTestConnection => {
+                if let Some(Dialog::EditDbConfig {
+                    host,
+                    port,
+                    user,
+                    password,
+                    psql_path,
+                    connection_status,
+                    ..
+                }) = &mut self.dialog
+                {
+                    *connection_status = Some(Ok("Testing...".into()));
+                    let host = host.clone();
+                    let port = port.clone();
+                    let user = user.clone();
+                    let password = password.clone();
+                    let psql_path = psql_path.clone();
+                    Task::perform(
+                        async move {
+                            tokio::task::spawn_blocking(move || {
+                                let out = std::process::Command::new(&psql_path)
+                                    .env("PGPASSWORD", &password)
+                                    .args([
+                                        "-U", &user,
+                                        "-h", &host,
+                                        "-p", &port,
+                                        "-c", "SELECT version();",
+                                        "postgres",
+                                    ])
+                                    .output();
+                                match out {
+                                    Ok(o) if o.status.success() => {
+                                        let v = String::from_utf8_lossy(&o.stdout);
+                                        let version = v.lines()
+                                            .nth(2)
+                                            .unwrap_or("")
+                                            .trim()
+                                            .to_string();
+                                        Ok(if version.is_empty() { "Connected".into() } else { version })
+                                    }
+                                    Ok(o) => Err(String::from_utf8_lossy(&o.stderr).trim().to_string()),
+                                    Err(e) => Err(e.to_string()),
+                                }
+                            })
+                            .await
+                            .unwrap_or_else(|e| Err(e.to_string()))
+                        },
+                        Message::DbConfigTestResult,
+                    )
+                } else {
+                    Task::none()
+                }
+            }
+
+            Message::DbConfigTestResult(result) => {
+                if let Some(Dialog::EditDbConfig { connection_status, .. }) = &mut self.dialog {
+                    *connection_status = Some(result);
+                }
+                Task::none()
+            }
+
+            Message::DbConfigCreateDatabase => {
+                if let Some(Dialog::EditDbConfig {
+                    host,
+                    port,
+                    database,
+                    user,
+                    password,
+                    psql_path,
+                    create_status,
+                    ..
+                }) = &mut self.dialog
+                {
+                    *create_status = Some(Ok("Creating...".into()));
+                    let host = host.clone();
+                    let port = port.clone();
+                    let database = database.clone();
+                    let user = user.clone();
+                    let password = password.clone();
+                    let psql_path = psql_path.clone();
+                    let mig_dir = migrations_dir();
+                    Task::perform(
+                        async move {
+                            tokio::task::spawn_blocking(move || {
+                                let run = |args: &[&str]| -> Result<(), String> {
+                                    let out = std::process::Command::new(&psql_path)
+                                        .env("PGPASSWORD", &password)
+                                        .args(args)
+                                        .output()
+                                        .map_err(|e| e.to_string())?;
+                                    if out.status.success() {
+                                        Ok(())
+                                    } else {
+                                        Err(String::from_utf8_lossy(&out.stderr).trim().to_string())
+                                    }
+                                };
+
+                                run(&["-U", &user, "-h", &host, "-p", &port,
+                                      "-c", &format!("CREATE DATABASE \"{database}\""),
+                                      "postgres"])?;
+
+                                let m1 = mig_dir.join("0001_initial_schema.sql");
+                                let m2 = mig_dir.join("0002_seed.sql");
+                                run(&["-U", &user, "-h", &host, "-p", &port,
+                                      "-f", m1.to_str().unwrap_or(""), &database])?;
+                                run(&["-U", &user, "-h", &host, "-p", &port,
+                                      "-f", m2.to_str().unwrap_or(""), &database])?;
+
+                                Ok(format!("Database \"{database}\" created and initialized."))
+                            })
+                            .await
+                            .unwrap_or_else(|e| Err(e.to_string()))
+                        },
+                        Message::DbConfigCreateResult,
+                    )
+                } else {
+                    Task::none()
+                }
+            }
+
+            Message::DbConfigCreateResult(result) => {
+                if let Some(Dialog::EditDbConfig { create_status, .. }) = &mut self.dialog {
+                    *create_status = Some(result);
                 }
                 Task::none()
             }
@@ -3169,6 +3333,9 @@ impl App {
                 database,
                 user,
                 password,
+                psql_path,
+                connection_status,
+                create_status,
             }) => {
                 let lbl = |s: &'static str| text(s).size(11).style(text_color(rgb(160, 180, 195)));
                 let field = |label: &'static str, val: &str, f: DbField| {
@@ -3182,25 +3349,84 @@ impl App {
                     ]
                     .spacing(4)
                 };
+                let section_label = |s: &'static str| {
+                    text(s).size(10).style(text_color(rgb(100, 130, 150)))
+                };
+                let conn_status_el: Element<_> = match connection_status {
+                    Some(Ok(msg)) => text(msg.as_str())
+                        .size(11)
+                        .style(text_color(rgb(100, 220, 130)))
+                        .into(),
+                    Some(Err(msg)) => text(msg.as_str())
+                        .size(11)
+                        .style(text_color(rgb(230, 100, 100)))
+                        .into(),
+                    None => Space::with_width(Length::Fill).into(),
+                };
+                let create_status_el: Element<_> = match create_status {
+                    Some(Ok(msg)) => text(msg.as_str())
+                        .size(11)
+                        .style(text_color(rgb(100, 220, 130)))
+                        .into(),
+                    Some(Err(msg)) => text(msg.as_str())
+                        .size(11)
+                        .style(text_color(rgb(230, 100, 100)))
+                        .into(),
+                    None => Space::with_width(Length::Fill).into(),
+                };
                 container(
                     column![
                         text("Database Settings")
                             .size(14)
                             .style(text_color(rgb(226, 238, 245))),
-                        field("Host", host, DbField::Host),
-                        field("Port", port, DbField::Port),
-                        field("Database", database, DbField::Database),
-                        field("User", user, DbField::User),
-                        column![
-                            lbl("Password"),
-                            text_input("", password)
-                                .on_input(|v| Message::DbConfigFieldChanged(DbField::Password, v))
-                                .secure(true)
-                                .padding(7)
-                                .size(13)
-                                .width(Length::Fill),
+                        section_label("CONNECTION"),
+                        row![
+                            field("Host", host, DbField::Host),
+                            field("Port", port, DbField::Port).width(Length::Fixed(80.0)),
                         ]
-                        .spacing(4),
+                        .spacing(8),
+                        row![
+                            field("User", user, DbField::User),
+                            column![
+                                lbl("Password"),
+                                text_input("", password)
+                                    .on_input(|v| Message::DbConfigFieldChanged(DbField::Password, v))
+                                    .secure(true)
+                                    .padding(7)
+                                    .size(13)
+                                    .width(Length::Fill),
+                            ]
+                            .spacing(4),
+                        ]
+                        .spacing(8),
+                        row![
+                            self.dialog_button(
+                                "Test Connection",
+                                Message::DbConfigTestConnection,
+                                rgb(30, 80, 110)
+                            ),
+                            conn_status_el,
+                        ]
+                        .spacing(10)
+                        .align_y(Alignment::Center),
+                        section_label("DATABASE"),
+                        row![
+                            field("Database", database, DbField::Database),
+                            column![
+                                Space::with_height(Length::Fixed(16.0)),
+                                self.dialog_button(
+                                    "Create Database",
+                                    Message::DbConfigCreateDatabase,
+                                    rgb(30, 90, 60)
+                                ),
+                            ]
+                            .spacing(4),
+                        ]
+                        .spacing(8)
+                        .align_y(Alignment::End),
+                        create_status_el,
+                        section_label("psql PATH"),
+                        field("psql binary", psql_path, DbField::PsqlPath),
                         row![
                             Space::with_width(Length::Fill),
                             self.dialog_button("Cancel", Message::DialogCancel, rgb(62, 83, 97)),
@@ -3215,7 +3441,7 @@ impl App {
                     ]
                     .spacing(12),
                 )
-                .width(Length::Fixed(460.0))
+                .width(Length::Fixed(500.0))
                 .padding(16)
                 .style(panel_style(rgb(31, 46, 55), accent_purple()))
             }

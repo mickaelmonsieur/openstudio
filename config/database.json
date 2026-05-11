@@ -1,7 +1,8 @@
 {
   "database": "openstudio",
   "host": "localhost",
-  "password": "openstudio",
+  "password": "774411",
   "port": 5432,
-  "user": "openstudio"
+  "psql_path": "/Library/PostgreSQL/18/bin/psql",
+  "user": "postgres"
 }
