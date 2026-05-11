@@ -47,7 +47,14 @@
       "icon": "../icons/512x512.png"
     },
     "win": {
-      "icon": "../icons/512x512.png"
+      "icon": "../icons/512x512.png",
+      "target": "nsis"
+    },
+    "nsis": {
+      "oneClick": false,
+      "perMachine": true,
+      "allowToChangeInstallationDirectory": false,
+      "shortcutName": "OpenStudio Admin"
     }
   }
 }
