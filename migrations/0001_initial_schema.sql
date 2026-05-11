@@ -170,6 +170,8 @@ CREATE TABLE campaigns (
     broadcast_count  INTEGER      NOT NULL DEFAULT 0,
     max_broadcasts_per_day INTEGER NOT NULL DEFAULT 0 CHECK (max_broadcasts_per_day >= 0),
     min_broadcast_gap_minutes INTEGER NOT NULL DEFAULT 0 CHECK (min_broadcast_gap_minutes >= 0),
+    splitting_enabled BOOLEAN     NOT NULL DEFAULT FALSE,
+    split_min_spots_between SMALLINT NOT NULL DEFAULT 1 CHECK (split_min_spots_between >= 1),
     station_id       INTEGER      REFERENCES stations (id),
     active           BOOLEAN      NOT NULL DEFAULT TRUE,
     encoded_at       TIMESTAMPTZ,

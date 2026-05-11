@@ -150,6 +150,7 @@ const CMP_SEL = `
   cp.id, cp.advertiser_id, cp.name, cp.station_id, cp.active,
   cp.total_broadcasts, cp.broadcast_count,
   cp.max_broadcasts_per_day, cp.min_broadcast_gap_minutes,
+  cp.splitting_enabled, cp.split_min_spots_between,
   TO_CHAR(cp.start_date, 'YYYY-MM-DD') AS start_date,
   TO_CHAR(cp.end_date,   'YYYY-MM-DD') AS end_date,
   a.name AS advertiser_name,
@@ -216,9 +217,10 @@ export async function createCampaign(db, data) {
     `INSERT INTO campaigns (
        advertiser_id, name, station_id, total_broadcasts,
        max_broadcasts_per_day, min_broadcast_gap_minutes,
+       splitting_enabled, split_min_spots_between,
        active, start_date, end_date
      )
-     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9) RETURNING id`,
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11) RETURNING id`,
     [
       data.advertiser_id,
       data.name,
@@ -226,6 +228,8 @@ export async function createCampaign(db, data) {
       data.total_broadcasts,
       data.max_broadcasts_per_day,
       data.min_broadcast_gap_minutes,
+      data.splitting_enabled,
+      data.split_min_spots_between,
       data.active,
       data.start_date,
       data.end_date
@@ -243,9 +247,11 @@ export async function updateCampaign(db, id, data) {
          total_broadcasts=$5,
          max_broadcasts_per_day=$6,
          min_broadcast_gap_minutes=$7,
-         active=$8,
-         start_date=$9,
-         end_date=$10
+         splitting_enabled=$8,
+         split_min_spots_between=$9,
+         active=$10,
+         start_date=$11,
+         end_date=$12
      WHERE id=$1`,
     [
       id,
@@ -255,6 +261,8 @@ export async function updateCampaign(db, id, data) {
       data.total_broadcasts,
       data.max_broadcasts_per_day,
       data.min_broadcast_gap_minutes,
+      data.splitting_enabled,
+      data.split_min_spots_between,
       data.active,
       data.start_date,
       data.end_date

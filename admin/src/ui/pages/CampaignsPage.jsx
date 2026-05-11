@@ -24,7 +24,9 @@ const COLS = [
   { key: 'broadcast_count', label: 'Aired',      width: '65px' },
   { key: 'total_broadcasts',label: 'Total',      width: '65px' },
   { key: 'max_broadcasts_per_day', label: 'Daily Max', width: '85px' },
-  { key: 'min_broadcast_gap_minutes', label: 'Gap Min.', width: '85px' }
+  { key: 'min_broadcast_gap_minutes', label: 'Gap Min.', width: '85px' },
+  { key: 'splitting_enabled', label: 'Split', width: '65px' },
+  { key: 'split_min_spots_between', label: 'Split Gap', width: '85px' }
 ];
 
 const LIMIT = 50;
@@ -38,6 +40,8 @@ function emptyForm() {
     total_broadcasts: 0,
     max_broadcasts_per_day: 0,
     min_broadcast_gap_minutes: 0,
+    splitting_enabled: false,
+    split_min_spots_between: 1,
     active: true,
     start_date: `${year}-01-01`,
     end_date: `${year}-12-31`
@@ -111,6 +115,8 @@ export function CampaignsPage() {
       total_broadcasts: row.total_broadcasts ?? 0,
       max_broadcasts_per_day: row.max_broadcasts_per_day ?? 0,
       min_broadcast_gap_minutes: row.min_broadcast_gap_minutes ?? 0,
+      splitting_enabled: Boolean(row.splitting_enabled),
+      split_min_spots_between: row.split_min_spots_between ?? 1,
       active:           Boolean(row.active ?? true),
       start_date:       row.start_date       || '',
       end_date:         row.end_date         || ''
@@ -400,6 +406,15 @@ export function CampaignsPage() {
                     onChange={(e) => upd('min_broadcast_gap_minutes', Number(e.target.value))} />
                 </label>
               </div>
+              <label className="checkbox-field"><span>Splitting</span>
+                <input type="checkbox" checked={form.splitting_enabled} onChange={(e) => upd('splitting_enabled', e.target.checked)} />
+              </label>
+              {form.splitting_enabled ? (
+                <label><span>Minimum Spots Between Split</span>
+                  <input type="number" min="1" value={form.split_min_spots_between}
+                    onChange={(e) => upd('split_min_spots_between', Number(e.target.value))} />
+                </label>
+              ) : null}
               <label className="checkbox-field"><span>Active</span>
                 <input type="checkbox" checked={form.active} onChange={(e) => upd('active', e.target.checked)} />
               </label>

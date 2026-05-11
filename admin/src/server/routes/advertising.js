@@ -118,6 +118,8 @@ function validateCampaign(data) {
       total_broadcasts: Math.max(0, parseInt(data?.total_broadcasts || 0, 10) || 0),
       max_broadcasts_per_day: Math.max(0, parseInt(data?.max_broadcasts_per_day || 0, 10) || 0),
       min_broadcast_gap_minutes: Math.max(0, parseInt(data?.min_broadcast_gap_minutes || 0, 10) || 0),
+      splitting_enabled: Boolean(data?.splitting_enabled),
+      split_min_spots_between: Math.max(1, parseInt(data?.split_min_spots_between || 1, 10) || 1),
       active:           Boolean(data?.active ?? true),
       start_date,
       end_date

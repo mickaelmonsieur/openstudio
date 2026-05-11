@@ -253,6 +253,8 @@ async function selectSpotsForBreak(db, options, campaignUseCounts) {
       adv.sector_id AS advertiser_sector_id,
       cp.max_broadcasts_per_day,
       cp.min_broadcast_gap_minutes,
+      cp.splitting_enabled,
+      cp.split_min_spots_between,
       ct.track_id,
       ct.position,
       ct.screen_position,
@@ -346,25 +348,31 @@ async function selectSpotsForBreak(db, options, campaignUseCounts) {
   const campaignGroups = [...campaigns.entries()]
     .map(([campaignId, tracks]) => ({
       campaignId,
-      tracks,
+      tracks: [...tracks].sort(compareSpotOrder),
       sectorId: tracks[0]?.advertiser_sector_id,
+      splittingEnabled: tracks[0]?.splitting_enabled === true,
+      splitMinSpotsBetween: Math.max(1, Number(tracks[0]?.split_min_spots_between || 1)),
       useCount: campaignUseCounts.get(campaignId) || 0,
-      scheduledCount: Number(tracks[0]?.scheduled_count || 0)
+      scheduledCount: Number(tracks[0]?.scheduled_count || 0),
+      scheduledTodayCount: Number(tracks[0]?.scheduled_today_count || 0),
+      maxBroadcastsPerDay: Number(tracks[0]?.max_broadcasts_per_day || 0),
+      selectedCount: 0
     }))
     .sort((a, b) =>
-      (a.scheduledCount + a.useCount) - (b.scheduledCount + b.useCount)
+      Number(a.tracks[0]?.screen_position ?? 1) - Number(b.tracks[0]?.screen_position ?? 1)
+      || (a.scheduledCount + a.useCount) - (b.scheduledCount + b.useCount)
       || a.campaignId - b.campaignId
     );
 
-  const selectedCampaignIds = new Set();
   let remaining = maxDuration;
   const selected = [];
   const pendingGroups = [...campaignGroups];
   let lastSectorId = undefined;
+  const lastSelectedIndexByCampaign = new Map();
 
   while (pendingGroups.length > 0) {
     const groupIndex = pendingGroups.findIndex((group) => {
-      if (selectedCampaignIds.has(group.campaignId)) return false;
+      if (!canSelectGroup(group, selected.length, lastSelectedIndexByCampaign)) return false;
       if (group.sectorId === lastSectorId) return false;
       return pickSpotForGroup(group, remaining) !== null;
     });
@@ -375,36 +383,44 @@ async function selectSpotsForBreak(db, options, campaignUseCounts) {
     const spot = pickSpotForGroup(group, remaining);
     if (!spot) continue;
     selected.push(spot);
-    selectedCampaignIds.add(group.campaignId);
+    group.selectedCount += 1;
+    lastSelectedIndexByCampaign.set(group.campaignId, selected.length - 1);
     lastSectorId = spot.advertiser_sector_id;
     remaining -= Number(spot.play_duration || 0);
     if (remaining <= EPSILON) break;
+    if (group.splittingEnabled && group.selectedCount < group.tracks.length) {
+      pendingGroups.push(group);
+    }
   }
 
-  return orderSpotsAvoidingSectorAdjacency(selected);
+  return selected;
+}
+
+function canSelectGroup(group, nextIndex, lastSelectedIndexByCampaign) {
+  if (!group.splittingEnabled && group.selectedCount > 0) return false;
+  if (group.splittingEnabled && group.selectedCount >= group.tracks.length) return false;
+
+  if (
+    group.maxBroadcastsPerDay > 0
+    && group.scheduledTodayCount + group.selectedCount >= group.maxBroadcastsPerDay
+  ) {
+    return false;
+  }
+
+  const lastIndex = lastSelectedIndexByCampaign.get(group.campaignId);
+  if (lastIndex === undefined) return true;
+  return nextIndex - lastIndex - 1 >= group.splitMinSpotsBetween;
 }
 
 function pickSpotForGroup(group, remaining) {
+  if (group.splittingEnabled) {
+    const spot = group.tracks[group.selectedCount];
+    return spot && Number(spot.play_duration || 0) <= remaining + EPSILON ? spot : null;
+  }
+
   const start = group.useCount % group.tracks.length;
   const rotated = [...group.tracks.slice(start), ...group.tracks.slice(0, start)];
   return rotated.find((candidate) => Number(candidate.play_duration || 0) <= remaining + EPSILON) || null;
-}
-
-function orderSpotsAvoidingSectorAdjacency(spots) {
-  const remaining = [...spots].sort(compareSpotOrder);
-  const ordered = [];
-  let lastSectorId = undefined;
-
-  while (remaining.length > 0) {
-    let index = remaining.findIndex((spot) => spot.advertiser_sector_id !== lastSectorId);
-    if (index < 0) break;
-
-    const [spot] = remaining.splice(index, 1);
-    ordered.push(spot);
-    lastSectorId = spot.advertiser_sector_id;
-  }
-
-  return ordered;
 }
 
 function compareSpotOrder(a, b) {
