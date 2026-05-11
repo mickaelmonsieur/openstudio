@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { ConfirmDialog } from '../crud/ConfirmDialog.jsx';
 import { DataTable } from '../crud/DataTable.jsx';
 
@@ -39,10 +39,12 @@ export function CampaignTracksPage() {
   const [formError, setFormError] = useState(null);
   const [saving, setSaving]       = useState(false);
   const [deleteTarget, setDeleteTarget] = useState(null);
+  const [previewTrackId, setPreviewTrackId] = useState(null);
 
   const [trackSearch, setTrackSearch]   = useState('');
   const [trackResults, setTrackResults] = useState([]);
   const [trackLoading, setTrackLoading] = useState(false);
+  const previewAudioRef = useRef(null);
 
   const totalPages = Math.max(1, Math.ceil(total / LIMIT));
 
@@ -58,6 +60,8 @@ export function CampaignTracksPage() {
   }, [searchInput]);
 
   useEffect(() => { load(); }, [page, searchQuery, filterCampaign]);
+
+  useEffect(() => () => stopPreview(previewAudioRef.current, setPreviewTrackId), []);
 
   async function load() {
     setLoading(true); setError(null);
@@ -152,6 +156,29 @@ export function CampaignTracksPage() {
     finally { setSaving(false); }
   }
 
+  async function togglePreview(trackId) {
+    const audio = previewAudioRef.current;
+    const id = Number(trackId);
+    if (!audio || !id) return;
+
+    if (previewTrackId === id && !audio.paused) {
+      stopPreview(audio, setPreviewTrackId);
+      return;
+    }
+
+    setError(null);
+    setPreviewTrackId(id);
+    audio.src = `/api/tracks/${id}/audio`;
+    audio.currentTime = 0;
+
+    try {
+      await audio.play();
+    } catch (err) {
+      setPreviewTrackId(null);
+      setError(err.message);
+    }
+  }
+
   return (
     <section className="crud-page">
       <header className="crud-header">
@@ -180,8 +207,26 @@ export function CampaignTracksPage() {
         </label>
       </div>
 
+      <audio
+        ref={previewAudioRef}
+        preload="none"
+        onEnded={() => setPreviewTrackId(null)}
+      />
+
       {loading ? <div className="table-loading">Loading...</div> : (
         <DataTable columns={COLS} primaryKey="id" rows={rows}
+          renderRowActions={(row) => (
+            <button
+              className="ghost-button table-icon-button"
+              disabled={!row.track_id}
+              type="button"
+              title="Toggle"
+              aria-label="Toggle playback"
+              onClick={(event) => { event.stopPropagation(); togglePreview(row.track_id); }}
+            >
+              <i className={`bi ${previewTrackId === row.track_id ? 'bi-stop-fill' : 'bi-play-fill'}`} aria-hidden="true" />
+            </button>
+          )}
           onEdit={openEdit}
           onDelete={(row) => { setError(null); setDeleteTarget(row); }}
         />
@@ -281,4 +326,11 @@ async function fetchJson(url, options = {}) {
   const payload = await response.json().catch(() => ({}));
   if (!response.ok) throw new Error(payload.error || `Request failed with status ${response.status}`);
   return payload;
+}
+
+function stopPreview(audio, setPreviewTrackId) {
+  if (!audio) return;
+  audio.pause();
+  audio.currentTime = 0;
+  setPreviewTrackId(null);
 }
