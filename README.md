@@ -13,6 +13,18 @@ Install the components in this order, regardless of your operating system:
 
 OpenStudio must be installed and used to initialize the database before installing or launching OpenStudio Admin.
 
+## Default Seed Users
+
+The seeded database includes these default application users:
+
+| Role | Login | Password |
+| --- | --- | --- |
+| Admin | `admin` | `admin123` |
+| Manager | `manager` | `changeme123` |
+| User | `user` | `user` |
+
+Admin rights are required to modify the OpenStudio application configuration. Database Settings are the exception: they can be opened and changed without an application login or password.
+
 ### macOS
 
 Download the two DMG files from the [latest release](../../releases/latest):
