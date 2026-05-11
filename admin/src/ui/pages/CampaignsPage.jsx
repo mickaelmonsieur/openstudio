@@ -360,7 +360,7 @@ export function CampaignsPage() {
 
       {modal ? (
         <div className="modal-backdrop">
-          <section className="modal-panel" role="dialog" aria-modal="true">
+          <section className="modal-panel campaign-modal" role="dialog" aria-modal="true">
             <header className="modal-header">
               <div>
                 <p className="panel-kicker">{modal === 'add' ? 'Add' : 'Edit'}</p>
@@ -368,7 +368,7 @@ export function CampaignsPage() {
               </div>
               <button className="icon-button" type="button" onClick={() => setModal(null)}>×</button>
             </header>
-            <form className="resource-form" onSubmit={save}>
+            <form className="resource-form campaign-form" onSubmit={save}>
               <label><span>Advertiser *</span>
                 <select required value={form.advertiser_id} onChange={(e) => upd('advertiser_id', e.target.value)}>
                   <option value="">— select —</option>

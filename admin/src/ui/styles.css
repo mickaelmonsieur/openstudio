@@ -800,6 +800,23 @@ h1 {
   width: min(940px, 100%);
 }
 
+.campaign-modal {
+  width: min(820px, 100%);
+  max-height: calc(100vh - 48px);
+  overflow-y: auto;
+}
+
+.campaign-form {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  align-items: start;
+}
+
+.campaign-form > .form-row,
+.campaign-form > .form-error,
+.campaign-form > .form-actions {
+  grid-column: 1 / -1;
+}
+
 .campaign-hours-modal {
   width: min(1180px, 100%);
 }
@@ -1966,6 +1983,10 @@ h1 {
   }
 
   .form-row {
+    grid-template-columns: 1fr;
+  }
+
+  .campaign-form {
     grid-template-columns: 1fr;
   }
 
