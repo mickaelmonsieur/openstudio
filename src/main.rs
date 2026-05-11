@@ -3593,17 +3593,21 @@ impl App {
                                     Message::DbConfigCreateDatabase,
                                     rgb(30, 90, 60)
                                 ),
-                                self.dialog_button(
-                                    "Delete database",
-                                    Message::DbConfigAskDeleteDatabase,
-                                    rgb(180, 35, 35)
-                                ),
                             ]
-                            .spacing(6),
+                            .spacing(4),
                         ]
                         .spacing(8)
                         .align_y(Alignment::End),
                         create_status_el,
+                        row![
+                            Space::with_width(Length::Fill),
+                            self.dialog_button(
+                                "Delete database",
+                                Message::DbConfigAskDeleteDatabase,
+                                rgb(180, 35, 35)
+                            ),
+                        ]
+                        .align_y(Alignment::Center),
                         delete_status_el,
                         delete_confirm_el,
                         section_label("psql PATH"),
