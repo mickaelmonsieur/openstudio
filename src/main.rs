@@ -46,6 +46,11 @@ fn migrations_dir() -> PathBuf {
         .unwrap_or_else(|| PathBuf::from("migrations"))
 }
 
+#[cfg(target_os = "windows")]
+const DEFAULT_PSQL_PATH: &str = r"C:\Program Files\PostgreSQL\18\bin\psql.exe";
+#[cfg(not(target_os = "windows"))]
+const DEFAULT_PSQL_PATH: &str = "/Applications/Postgres.app/Contents/Versions/18/bin/psql";
+
 const ANY_CATEGORY: &str = "Any Category";
 const ANY_SUBCATEGORY: &str = "Any Subcategory";
 const ANY_GENRE: &str = "Any Genre";
@@ -1226,7 +1231,7 @@ impl App {
                                 val["password"].as_str().unwrap_or("").to_string(),
                                 val["psql_path"]
                                     .as_str()
-                                    .unwrap_or("/Library/PostgreSQL/18/bin/psql")
+                                    .unwrap_or(DEFAULT_PSQL_PATH)
                                     .to_string(),
                             )
                         } else {
@@ -1236,7 +1241,7 @@ impl App {
                                 String::new(),
                                 String::new(),
                                 String::new(),
-                                "/Library/PostgreSQL/18/bin/psql".into(),
+                                DEFAULT_PSQL_PATH.into(),
                             )
                         }
                     } else {
@@ -1246,7 +1251,7 @@ impl App {
                             String::new(),
                             String::new(),
                             String::new(),
-                            "/Library/PostgreSQL/18/bin/psql".into(),
+                            DEFAULT_PSQL_PATH.into(),
                         )
                     };
                 self.dialog = Some(Dialog::EditDbConfig {

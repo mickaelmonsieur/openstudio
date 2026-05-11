@@ -17,7 +17,7 @@ Open each DMG and drag the app to your Applications folder.
 > Go to **System Settings → Privacy & Security → Open Anyway**.
 >
 
-**PostgreSQL 18 is required.** Download and install it from [enterprisedb.com](https://www.enterprisedb.com/downloads/postgres-postgresql-downloads).
+**PostgreSQL 18 is required.** On macOS, use [Postgres.app](https://postgresapp.com/downloads.html) — it is a universal binary (Intel + Apple Silicon). The EnterpriseDB installer is x86-64 only and runs under Rosetta.
 
 ---
 
