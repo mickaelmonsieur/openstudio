@@ -1,4 +1,4 @@
-pub mod aux;
+pub mod aux_player;
 pub mod deck;
 pub mod instant;
 pub mod picker;
