@@ -11,18 +11,20 @@ const FROM_JOIN = `
   JOIN users_roles r ON r.id = u.role_id
 `;
 
+const VISIBLE_USERS_WHERE = 'WHERE u.id <> 1';
+
 export async function countUsers(db) {
-  const { rows } = await db.query(`SELECT COUNT(*)::integer AS total ${FROM_JOIN}`);
+  const { rows } = await db.query(`SELECT COUNT(*)::integer AS total ${FROM_JOIN} ${VISIBLE_USERS_WHERE}`);
   return rows[0].total;
 }
 
 export async function listUsers(db, { limit, offset } = {}) {
   if (limit == null) {
-    const { rows } = await db.query(`SELECT ${USER_COLUMNS} ${FROM_JOIN} ORDER BY u.login`);
+    const { rows } = await db.query(`SELECT ${USER_COLUMNS} ${FROM_JOIN} ${VISIBLE_USERS_WHERE} ORDER BY u.login`);
     return rows;
   }
   const { rows } = await db.query(
-    `SELECT ${USER_COLUMNS} ${FROM_JOIN} ORDER BY u.login LIMIT $1 OFFSET $2`,
+    `SELECT ${USER_COLUMNS} ${FROM_JOIN} ${VISIBLE_USERS_WHERE} ORDER BY u.login LIMIT $1 OFFSET $2`,
     [limit, offset]
   );
   return rows;

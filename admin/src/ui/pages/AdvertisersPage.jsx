@@ -7,6 +7,8 @@ const COLS = [
   { key: 'name',        label: 'Name' },
   { key: 'sector_name', label: 'Sector',  width: '140px' },
   { key: 'vat_number',  label: 'VAT',     width: '120px' },
+  { key: 'campaigns_active', label: 'Active Campaigns', width: '140px' },
+  { key: 'campaigns_total',  label: 'Campaigns',        width: '110px' },
   { key: 'active',      label: 'Active',  width: '70px' },
   { key: 'client_since',label: 'Since',   width: '100px' }
 ];
@@ -142,9 +144,9 @@ export function AdvertisersPage() {
               <label><span>Name *</span>
                 <input autoFocus required maxLength={255} value={form.name} onChange={(e) => upd('name', e.target.value)} />
               </label>
-              <label><span>Sector</span>
-                <select value={form.sector_id} onChange={(e) => upd('sector_id', e.target.value)}>
-                  <option value="">— none —</option>
+              <label><span>Sector *</span>
+                <select required value={form.sector_id} onChange={(e) => upd('sector_id', e.target.value)}>
+                  <option value="">— select —</option>
                   {sectors.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
                 </select>
               </label>

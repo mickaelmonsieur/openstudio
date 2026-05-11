@@ -19,6 +19,11 @@ function emptyForm() {
 
 const LIMIT = 50;
 
+function campaignLabel(campaign) {
+  const campaignName = campaign.name || `Campaign #${campaign.id}`;
+  return campaign.advertiser_name ? `${campaign.advertiser_name} - ${campaignName}` : campaignName;
+}
+
 export function CampaignTracksPage() {
   const [rows, setRows]           = useState([]);
   const [total, setTotal]         = useState(0);
@@ -169,7 +174,7 @@ export function CampaignTracksPage() {
           <select value={filterCampaign} onChange={(e) => { setFilterCampaign(e.target.value); setPage(1); }}>
             <option value="">All</option>
             {campaigns.map((campaign) => (
-              <option key={campaign.id} value={campaign.id}>{campaign.name || `Campaign #${campaign.id}`}</option>
+              <option key={campaign.id} value={campaign.id}>{campaignLabel(campaign)}</option>
             ))}
           </select>
         </label>
@@ -202,7 +207,7 @@ export function CampaignTracksPage() {
               <label><span>Campaign *</span>
                 <select required value={form.campaign_id} onChange={(e) => upd('campaign_id', e.target.value)}>
                   <option value="">— select —</option>
-                  {campaigns.map((c) => <option key={c.id} value={c.id}>{c.name || `Campaign #${c.id}`}</option>)}
+                  {campaigns.map((c) => <option key={c.id} value={c.id}>{campaignLabel(c)}</option>)}
                 </select>
               </label>
 

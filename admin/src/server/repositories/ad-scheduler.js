@@ -35,7 +35,18 @@ export async function generateAdSchedule(db, options) {
 
     for (const adBreak of breaks) {
       const screenDuration = sumDuration(adBreak.fillerRows);
-      const spots = await selectSpotsForBreak(db, adBreak.date, screenDuration, stationId, campaignUseCounts);
+      const spots = await selectSpotsForBreak(
+        db,
+        {
+          date: adBreak.date,
+          hour: adBreak.hour,
+          scheduledAt: adBreak.firstScheduledAt,
+          timezone,
+          maxDuration: screenDuration,
+          stationId
+        },
+        campaignUseCounts
+      );
       const adsDuration = sumDuration(spots);
 
       if (spots.length === 0 || adsDuration <= EPSILON) {
@@ -232,12 +243,16 @@ function summarizeBreaks(breaks) {
   });
 }
 
-async function selectSpotsForBreak(db, date, maxDuration, stationId, campaignUseCounts) {
+async function selectSpotsForBreak(db, options, campaignUseCounts) {
+  const { date, hour, scheduledAt, timezone, maxDuration, stationId } = options;
   const { rows } = await db.query(
     `
     SELECT
       cp.id AS campaign_id,
       cp.name AS campaign_name,
+      adv.sector_id AS advertiser_sector_id,
+      cp.max_broadcasts_per_day,
+      cp.min_broadcast_gap_minutes,
       ct.track_id,
       ct.position,
       ct.screen_position,
@@ -248,8 +263,10 @@ async function selectSpotsForBreak(db, date, maxDuration, stationId, campaignUse
         WHEN t.cue_out IS NOT NULL AND t.cue_out > t.cue_in THEN t.cue_out - t.cue_in
         ELSE GREATEST(t.duration - t.cue_in, 0)
       END::double precision AS play_duration,
-      COALESCE(existing.scheduled_count, 0)::integer AS scheduled_count
+      COALESCE(existing.scheduled_count, 0)::integer AS scheduled_count,
+      COALESCE(day_counts.scheduled_today_count, 0)::integer AS scheduled_today_count
     FROM campaigns cp
+    JOIN advertisers adv ON adv.id = cp.advertiser_id
     JOIN campaign_tracks ct ON ct.campaign_id = cp.id
     JOIN tracks t ON t.id = ct.track_id
     LEFT JOIN (
@@ -259,17 +276,64 @@ async function selectSpotsForBreak(db, date, maxDuration, stationId, campaignUse
       WHERE q2.played = FALSE
       GROUP BY ct2.campaign_id
     ) existing ON existing.campaign_id = cp.id
+    LEFT JOIN (
+      SELECT ctday.campaign_id, COUNT(*) AS scheduled_today_count
+      FROM queue qday
+      JOIN campaign_tracks ctday ON ctday.track_id = qday.track_id
+      WHERE qday.played = FALSE
+        AND qday.scheduled_at >= ($1::date::timestamp AT TIME ZONE $5)
+        AND qday.scheduled_at < (($1::date + 1)::timestamp AT TIME ZONE $5)
+      GROUP BY ctday.campaign_id
+    ) day_counts ON day_counts.campaign_id = cp.id
     WHERE cp.active = TRUE
       AND t.active = TRUE
-      AND ($2::integer IS NULL OR cp.station_id IS NULL OR cp.station_id = $2)
+      AND ($3::integer IS NULL OR cp.station_id IS NULL OR cp.station_id = $3)
       AND (cp.start_date IS NULL OR cp.start_date <= $1::date)
       AND (cp.end_date IS NULL OR cp.end_date >= $1::date)
       AND (t.start_date IS NULL OR t.start_date <= $1::date)
       AND (t.end_date IS NULL OR t.end_date >= $1::date)
       AND (cp.total_broadcasts <= 0 OR cp.broadcast_count < cp.total_broadcasts)
-    ORDER BY COALESCE(existing.scheduled_count, 0), cp.broadcast_count, cp.id, ct.position
+      AND (
+        cp.max_broadcasts_per_day <= 0
+        OR COALESCE(day_counts.scheduled_today_count, 0) < cp.max_broadcasts_per_day
+      )
+      AND (
+        cp.min_broadcast_gap_minutes <= 0
+        OR NOT EXISTS (
+          SELECT 1
+          FROM queue qgap
+          JOIN campaign_tracks ctgap ON ctgap.track_id = qgap.track_id
+          WHERE qgap.played = FALSE
+            AND ctgap.campaign_id = cp.id
+            AND qgap.scheduled_at > $4::timestamptz - (cp.min_broadcast_gap_minutes * INTERVAL '1 minute')
+            AND qgap.scheduled_at < $4::timestamptz + (cp.min_broadcast_gap_minutes * INTERVAL '1 minute')
+        )
+      )
+      AND (
+        EXISTS (
+          SELECT 1
+          FROM campaign_broadcast_hours cbh
+          WHERE cbh.campaign_id = cp.id
+            AND cbh.iso_weekday = EXTRACT(ISODOW FROM $1::date)::integer
+            AND cbh.hour = $2::integer
+        )
+        OR EXISTS (
+          SELECT 1
+          FROM campaign_calendar_hours cch
+          WHERE cch.campaign_id = cp.id
+            AND cch.broadcast_date = $1::date
+            AND cch.hour = $2::integer
+            AND cch.active = TRUE
+        )
+      )
+    ORDER BY
+      COALESCE(day_counts.scheduled_today_count, 0),
+      COALESCE(existing.scheduled_count, 0),
+      cp.broadcast_count,
+      cp.id,
+      ct.position
     `,
-    [date, stationId]
+    [date, hour, stationId, scheduledAt, timezone]
   );
 
   const campaigns = new Map();
@@ -283,6 +347,7 @@ async function selectSpotsForBreak(db, date, maxDuration, stationId, campaignUse
     .map(([campaignId, tracks]) => ({
       campaignId,
       tracks,
+      sectorId: tracks[0]?.advertiser_sector_id,
       useCount: campaignUseCounts.get(campaignId) || 0,
       scheduledCount: Number(tracks[0]?.scheduled_count || 0)
     }))
@@ -294,21 +359,56 @@ async function selectSpotsForBreak(db, date, maxDuration, stationId, campaignUse
   const selectedCampaignIds = new Set();
   let remaining = maxDuration;
   const selected = [];
+  const pendingGroups = [...campaignGroups];
+  let lastSectorId = undefined;
 
-  for (const group of campaignGroups) {
-    if (selectedCampaignIds.has(group.campaignId)) continue;
+  while (pendingGroups.length > 0) {
+    const groupIndex = pendingGroups.findIndex((group) => {
+      if (selectedCampaignIds.has(group.campaignId)) return false;
+      if (group.sectorId === lastSectorId) return false;
+      return pickSpotForGroup(group, remaining) !== null;
+    });
 
-    const start = group.useCount % group.tracks.length;
-    const rotated = [...group.tracks.slice(start), ...group.tracks.slice(0, start)];
-    const spot = rotated.find((candidate) => Number(candidate.play_duration || 0) <= remaining + EPSILON);
+    if (groupIndex < 0) break;
+    const [group] = pendingGroups.splice(groupIndex, 1);
+
+    const spot = pickSpotForGroup(group, remaining);
     if (!spot) continue;
     selected.push(spot);
     selectedCampaignIds.add(group.campaignId);
+    lastSectorId = spot.advertiser_sector_id;
     remaining -= Number(spot.play_duration || 0);
     if (remaining <= EPSILON) break;
   }
 
-  return selected.sort((a, b) =>
+  return orderSpotsAvoidingSectorAdjacency(selected);
+}
+
+function pickSpotForGroup(group, remaining) {
+  const start = group.useCount % group.tracks.length;
+  const rotated = [...group.tracks.slice(start), ...group.tracks.slice(0, start)];
+  return rotated.find((candidate) => Number(candidate.play_duration || 0) <= remaining + EPSILON) || null;
+}
+
+function orderSpotsAvoidingSectorAdjacency(spots) {
+  const remaining = [...spots].sort(compareSpotOrder);
+  const ordered = [];
+  let lastSectorId = undefined;
+
+  while (remaining.length > 0) {
+    let index = remaining.findIndex((spot) => spot.advertiser_sector_id !== lastSectorId);
+    if (index < 0) break;
+
+    const [spot] = remaining.splice(index, 1);
+    ordered.push(spot);
+    lastSectorId = spot.advertiser_sector_id;
+  }
+
+  return ordered;
+}
+
+function compareSpotOrder(a, b) {
+  return (
     Number(a.screen_position ?? 1) - Number(b.screen_position ?? 1)
     || a.campaign_id - b.campaign_id
     || a.position - b.position

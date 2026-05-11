@@ -9,6 +9,7 @@ import {
 } from '../repositories/users.js';
 
 const LIMIT = 50;
+const PROTECTED_USER_ID = 1;
 
 function parsePagination(query) {
   const page  = Math.max(1, parseInt(query.page  || 1, 10) || 1);
@@ -70,6 +71,10 @@ export function registerUserRoutes(app, getDatabaseConfig) {
       res.status(400).json({ error: 'Invalid user id.' });
       return;
     }
+    if (id === PROTECTED_USER_ID) {
+      res.status(404).json({ error: 'User not found.' });
+      return;
+    }
 
     const row = await withDatabase(getDatabaseConfig(), (db) => getUser(db, id));
     if (!row) {
@@ -99,6 +104,10 @@ export function registerUserRoutes(app, getDatabaseConfig) {
       res.status(400).json({ error: 'Invalid user id.' });
       return;
     }
+    if (id === PROTECTED_USER_ID) {
+      res.status(403).json({ error: 'This user is protected.' });
+      return;
+    }
 
     const user = validateUser(req.body, { requirePassword: false });
     if (!user.ok) {
@@ -121,6 +130,10 @@ export function registerUserRoutes(app, getDatabaseConfig) {
     const id = parseId(req.params.id);
     if (!id) {
       res.status(400).json({ error: 'Invalid user id.' });
+      return;
+    }
+    if (id === PROTECTED_USER_ID) {
+      res.status(403).json({ error: 'This user is protected.' });
       return;
     }
 

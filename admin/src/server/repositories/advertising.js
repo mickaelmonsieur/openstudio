@@ -10,9 +10,22 @@ export async function listSectors(db) {
 const ADV_SEL = `
   a.id, a.name, a.sector_id, a.address, a.vat_number, a.notes, a.active,
   TO_CHAR(a.client_since, 'YYYY-MM-DD') AS client_since,
-  s.name AS sector_name
+  s.name AS sector_name,
+  COALESCE(campaign_counts.campaigns_total, 0)::integer AS campaigns_total,
+  COALESCE(campaign_counts.campaigns_active, 0)::integer AS campaigns_active
 `;
-const ADV_FROM = `FROM advertisers a LEFT JOIN sectors s ON s.id = a.sector_id`;
+const ADV_FROM = `
+  FROM advertisers a
+  LEFT JOIN sectors s ON s.id = a.sector_id
+  LEFT JOIN (
+    SELECT
+      advertiser_id,
+      COUNT(*)::integer AS campaigns_total,
+      COUNT(*) FILTER (WHERE active IS TRUE)::integer AS campaigns_active
+    FROM campaigns
+    GROUP BY advertiser_id
+  ) campaign_counts ON campaign_counts.advertiser_id = a.id
+`;
 
 export async function countAdvertisers(db, search = '') {
   const { where, values } = advSearch(search);
@@ -136,15 +149,22 @@ export async function deleteContact(db, id) {
 const CMP_SEL = `
   cp.id, cp.advertiser_id, cp.name, cp.station_id, cp.active,
   cp.total_broadcasts, cp.broadcast_count,
+  cp.max_broadcasts_per_day, cp.min_broadcast_gap_minutes,
   TO_CHAR(cp.start_date, 'YYYY-MM-DD') AS start_date,
   TO_CHAR(cp.end_date,   'YYYY-MM-DD') AS end_date,
   a.name AS advertiser_name,
-  s.name AS station_name
+  s.name AS station_name,
+  COALESCE(track_counts.tracks_count, 0)::integer AS tracks_count
 `;
 const CMP_FROM = `
   FROM campaigns cp
   LEFT JOIN advertisers a ON a.id = cp.advertiser_id
   LEFT JOIN stations    s ON s.id = cp.station_id
+  LEFT JOIN (
+    SELECT campaign_id, COUNT(*)::integer AS tracks_count
+    FROM campaign_tracks
+    GROUP BY campaign_id
+  ) track_counts ON track_counts.campaign_id = cp.id
 `;
 
 export async function countCampaigns(db, filters = {}) {
@@ -193,9 +213,23 @@ export async function getCampaign(db, id) {
 
 export async function createCampaign(db, data) {
   const { rows } = await db.query(
-    `INSERT INTO campaigns (advertiser_id, name, station_id, total_broadcasts, active, start_date, end_date)
-     VALUES ($1,$2,$3,$4,$5,$6,$7) RETURNING id`,
-    [data.advertiser_id, data.name, data.station_id, data.total_broadcasts, data.active, data.start_date, data.end_date]
+    `INSERT INTO campaigns (
+       advertiser_id, name, station_id, total_broadcasts,
+       max_broadcasts_per_day, min_broadcast_gap_minutes,
+       active, start_date, end_date
+     )
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9) RETURNING id`,
+    [
+      data.advertiser_id,
+      data.name,
+      data.station_id,
+      data.total_broadcasts,
+      data.max_broadcasts_per_day,
+      data.min_broadcast_gap_minutes,
+      data.active,
+      data.start_date,
+      data.end_date
+    ]
   );
   return getCampaign(db, rows[0].id);
 }
@@ -203,9 +237,28 @@ export async function createCampaign(db, data) {
 export async function updateCampaign(db, id, data) {
   await db.query(
     `UPDATE campaigns
-     SET advertiser_id=$2, name=$3, station_id=$4, total_broadcasts=$5, active=$6, start_date=$7, end_date=$8
+     SET advertiser_id=$2,
+         name=$3,
+         station_id=$4,
+         total_broadcasts=$5,
+         max_broadcasts_per_day=$6,
+         min_broadcast_gap_minutes=$7,
+         active=$8,
+         start_date=$9,
+         end_date=$10
      WHERE id=$1`,
-    [id, data.advertiser_id, data.name, data.station_id, data.total_broadcasts, data.active, data.start_date, data.end_date]
+    [
+      id,
+      data.advertiser_id,
+      data.name,
+      data.station_id,
+      data.total_broadcasts,
+      data.max_broadcasts_per_day,
+      data.min_broadcast_gap_minutes,
+      data.active,
+      data.start_date,
+      data.end_date
+    ]
   );
   return getCampaign(db, id);
 }
@@ -213,6 +266,95 @@ export async function updateCampaign(db, id, data) {
 export async function deleteCampaign(db, id) {
   const { rowCount } = await db.query('DELETE FROM campaigns WHERE id=$1', [id]);
   return rowCount > 0;
+}
+
+export async function listCampaignBroadcastHours(db, campaignId) {
+  const { rows } = await db.query(
+    `
+    SELECT iso_weekday, hour
+    FROM campaign_broadcast_hours
+    WHERE campaign_id = $1
+    ORDER BY iso_weekday, hour
+    `,
+    [campaignId]
+  );
+  return rows;
+}
+
+export async function replaceCampaignBroadcastHours(db, campaignId, hours) {
+  await db.query('BEGIN');
+  try {
+    await db.query('DELETE FROM campaign_broadcast_hours WHERE campaign_id = $1', [campaignId]);
+
+    if (hours.length > 0) {
+      const values = [];
+      const placeholders = hours.map((slot, index) => {
+        const base = index * 3;
+        values.push(campaignId, slot.iso_weekday, slot.hour);
+        return `($${base + 1}, $${base + 2}, $${base + 3})`;
+      });
+
+      await db.query(
+        `
+        INSERT INTO campaign_broadcast_hours (campaign_id, iso_weekday, hour)
+        VALUES ${placeholders.join(', ')}
+        ON CONFLICT DO NOTHING
+        `,
+        values
+      );
+    }
+
+    await db.query('COMMIT');
+    return listCampaignBroadcastHours(db, campaignId);
+  } catch (error) {
+    await db.query('ROLLBACK');
+    throw error;
+  }
+}
+
+export async function listCampaignCalendarHours(db, campaignId) {
+  const { rows } = await db.query(
+    `
+    SELECT TO_CHAR(broadcast_date, 'YYYY-MM-DD') AS broadcast_date, hour, active
+    FROM campaign_calendar_hours
+    WHERE campaign_id = $1
+    ORDER BY broadcast_date, hour
+    `,
+    [campaignId]
+  );
+  return rows;
+}
+
+export async function replaceCampaignCalendarHours(db, campaignId, hours) {
+  await db.query('BEGIN');
+  try {
+    await db.query('DELETE FROM campaign_calendar_hours WHERE campaign_id = $1', [campaignId]);
+
+    if (hours.length > 0) {
+      const values = [];
+      const placeholders = hours.map((slot, index) => {
+        const base = index * 4;
+        values.push(campaignId, slot.broadcast_date, slot.hour, slot.active);
+        return `($${base + 1}, $${base + 2}, $${base + 3}, $${base + 4})`;
+      });
+
+      await db.query(
+        `
+        INSERT INTO campaign_calendar_hours (campaign_id, broadcast_date, hour, active)
+        VALUES ${placeholders.join(', ')}
+        ON CONFLICT (campaign_id, broadcast_date, hour)
+        DO UPDATE SET active = EXCLUDED.active
+        `,
+        values
+      );
+    }
+
+    await db.query('COMMIT');
+    return listCampaignCalendarHours(db, campaignId);
+  } catch (error) {
+    await db.query('ROLLBACK');
+    throw error;
+  }
 }
 
 // ── Campaign Tracks ───────────────────────────────────────────────────────────

@@ -4,6 +4,8 @@ import {
   countAdvertisers, listAdvertisers, getAdvertiser, createAdvertiser, updateAdvertiser, deleteAdvertiser,
   countContacts, listContacts, getContact, createContact, updateContact, deleteContact,
   countCampaigns, listCampaigns, getCampaign, createCampaign, updateCampaign, deleteCampaign,
+  listCampaignBroadcastHours, replaceCampaignBroadcastHours,
+  listCampaignCalendarHours, replaceCampaignCalendarHours,
   countCampaignTracks, listCampaignTracks, getCampaignTrack, createCampaignTrack, updateCampaignTrack, deleteCampaignTrack
 } from '../repositories/advertising.js';
 
@@ -61,11 +63,13 @@ function validateAdvertiser(data) {
   const name = String(data?.name || '').trim();
   if (!name) return { ok: false, error: 'Name is required.' };
   if (name.length > 255) return { ok: false, error: 'Name is too long (max 255).' };
+  const sector_id = parseId(data?.sector_id);
+  if (!sector_id) return { ok: false, error: 'Sector is required.' };
   return {
     ok: true,
     value: {
       name,
-      sector_id:   data?.sector_id ? parseId(data.sector_id) : null,
+      sector_id,
       address:     String(data?.address  || '').trim() || null,
       vat_number:  str(data?.vat_number, 32) || null,
       notes:       String(data?.notes    || '').trim() || null,
@@ -112,6 +116,8 @@ function validateCampaign(data) {
       name,
       station_id:       data?.station_id ? parseId(data.station_id) : null,
       total_broadcasts: Math.max(0, parseInt(data?.total_broadcasts || 0, 10) || 0),
+      max_broadcasts_per_day: Math.max(0, parseInt(data?.max_broadcasts_per_day || 0, 10) || 0),
+      min_broadcast_gap_minutes: Math.max(0, parseInt(data?.min_broadcast_gap_minutes || 0, 10) || 0),
       active:           Boolean(data?.active ?? true),
       start_date,
       end_date
@@ -131,6 +137,64 @@ function validateCampaignTrack(data) {
     ok: true,
     value: { campaign_id, track_id, position: pos > 0 ? pos : null, screen_position }
   };
+}
+
+function validateBroadcastHours(data) {
+  if (!Array.isArray(data?.hours)) {
+    return { ok: false, error: 'Broadcast hours are required.' };
+  }
+
+  const seen = new Set();
+  const hours = [];
+  for (const item of data.hours) {
+    const iso_weekday = Number(item?.iso_weekday);
+    const hour = Number(item?.hour);
+    if (!Number.isInteger(iso_weekday) || iso_weekday < 1 || iso_weekday > 7) {
+      return { ok: false, error: 'Broadcast day is invalid.' };
+    }
+    if (!Number.isInteger(hour) || hour < 0 || hour > 23) {
+      return { ok: false, error: 'Broadcast hour is invalid.' };
+    }
+
+    const key = `${iso_weekday}:${hour}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    hours.push({ iso_weekday, hour });
+  }
+
+  return { ok: true, value: hours };
+}
+
+function validateCalendarHours(data) {
+  if (!Array.isArray(data?.dates)) {
+    return { ok: false, error: 'Calendar dates are required.' };
+  }
+
+  const seen = new Set();
+  const hours = [];
+  for (const dateRule of data.dates) {
+    const broadcast_date = optDate(dateRule?.broadcast_date);
+    if (!broadcast_date || !DATE_RE.test(broadcast_date)) {
+      return { ok: false, error: 'Calendar date is invalid.' };
+    }
+    if (!Array.isArray(dateRule?.hours)) {
+      return { ok: false, error: 'Calendar hours are invalid.' };
+    }
+
+    for (const value of dateRule.hours) {
+      const hour = Number(value);
+      if (!Number.isInteger(hour) || hour < 0 || hour > 23) {
+        return { ok: false, error: 'Calendar hour is invalid.' };
+      }
+
+      const key = `${broadcast_date}:${hour}`;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      hours.push({ broadcast_date, hour, active: true });
+    }
+  }
+
+  return { ok: true, value: hours };
 }
 
 function parseScreenPosition(value) {
@@ -237,6 +301,64 @@ export function registerAdvertisingRoutes(app, getDatabaseConfig) {
     if (!r.ok) { res.status(400).json({ error: r.error }); return; }
     const row = await withDatabase(getDatabaseConfig(), (db) => createCampaign(db, r.value));
     res.status(201).json({ row });
+  }));
+
+  app.get('/api/campaigns/:id/broadcast-hours', asyncRoute(async (req, res) => {
+    const id = parseId(req.params.id);
+    if (!id) { res.status(400).json({ error: 'Invalid id.' }); return; }
+    const payload = await withDatabase(getDatabaseConfig(), async (db) => {
+      const campaign = await getCampaign(db, id);
+      if (!campaign) return null;
+      const hours = await listCampaignBroadcastHours(db, id);
+      return { campaign, hours };
+    });
+    if (!payload) { res.status(404).json({ error: 'Campaign not found.' }); return; }
+    res.json(payload);
+  }));
+
+  app.put('/api/campaigns/:id/broadcast-hours', asyncRoute(async (req, res) => {
+    const id = parseId(req.params.id);
+    if (!id) { res.status(400).json({ error: 'Invalid id.' }); return; }
+    const r = validateBroadcastHours(req.body);
+    if (!r.ok) { res.status(400).json({ error: r.error }); return; }
+
+    const payload = await withDatabase(getDatabaseConfig(), async (db) => {
+      const campaign = await getCampaign(db, id);
+      if (!campaign) return null;
+      const hours = await replaceCampaignBroadcastHours(db, id, r.value);
+      return { campaign, hours };
+    });
+    if (!payload) { res.status(404).json({ error: 'Campaign not found.' }); return; }
+    res.json(payload);
+  }));
+
+  app.get('/api/campaigns/:id/calendar-hours', asyncRoute(async (req, res) => {
+    const id = parseId(req.params.id);
+    if (!id) { res.status(400).json({ error: 'Invalid id.' }); return; }
+    const payload = await withDatabase(getDatabaseConfig(), async (db) => {
+      const campaign = await getCampaign(db, id);
+      if (!campaign) return null;
+      const hours = await listCampaignCalendarHours(db, id);
+      return { campaign, hours };
+    });
+    if (!payload) { res.status(404).json({ error: 'Campaign not found.' }); return; }
+    res.json(payload);
+  }));
+
+  app.put('/api/campaigns/:id/calendar-hours', asyncRoute(async (req, res) => {
+    const id = parseId(req.params.id);
+    if (!id) { res.status(400).json({ error: 'Invalid id.' }); return; }
+    const r = validateCalendarHours(req.body);
+    if (!r.ok) { res.status(400).json({ error: r.error }); return; }
+
+    const payload = await withDatabase(getDatabaseConfig(), async (db) => {
+      const campaign = await getCampaign(db, id);
+      if (!campaign) return null;
+      const hours = await replaceCampaignCalendarHours(db, id, r.value);
+      return { campaign, hours };
+    });
+    if (!payload) { res.status(404).json({ error: 'Campaign not found.' }); return; }
+    res.json(payload);
   }));
 
   app.put('/api/campaigns/:id', asyncRoute(async (req, res) => {
