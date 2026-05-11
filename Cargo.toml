@@ -18,7 +18,7 @@ resources     = ["config/database.json"]
 signing-identity = "-"
 
 [package.metadata.packager.nsis]
-install-mode = "perMachine"
+installMode = "perMachine"
 
 [build-dependencies]
 winresource = "0.1"
