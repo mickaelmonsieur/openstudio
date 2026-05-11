@@ -64,6 +64,10 @@ fn migrations_dir() -> PathBuf {
     PathBuf::from("migrations")
 }
 
+fn pg_quote_ident(identifier: &str) -> String {
+    format!("\"{}\"", identifier.replace('"', "\"\""))
+}
+
 #[cfg(target_os = "windows")]
 const DEFAULT_PSQL_PATH: &str = r"C:\Program Files\PostgreSQL\18\bin\psql.exe";
 #[cfg(not(target_os = "windows"))]
@@ -589,6 +593,8 @@ enum Dialog {
         psql_path: String,
         connection_status: Option<Result<String, String>>,
         create_status: Option<Result<String, String>>,
+        delete_status: Option<Result<String, String>>,
+        delete_confirm: bool,
     },
     Login {
         login: String,
@@ -709,6 +715,10 @@ enum Message {
     DbConfigTestResult(Result<String, String>),
     DbConfigCreateDatabase,
     DbConfigCreateResult(Result<String, String>),
+    DbConfigAskDeleteDatabase,
+    DbConfigCancelDeleteDatabase,
+    DbConfigDeleteDatabase,
+    DbConfigDeleteResult(Result<String, String>),
     ConfigOpen,
     ConfigToggle(ConfigField),
     ConfigPreloadChanged(String),
@@ -1276,6 +1286,8 @@ impl App {
                     psql_path,
                     connection_status: None,
                     create_status: None,
+                    delete_status: None,
+                    delete_confirm: false,
                 });
                 Task::none()
             }
@@ -1497,6 +1509,101 @@ impl App {
             Message::DbConfigCreateResult(result) => {
                 if let Some(Dialog::EditDbConfig { create_status, .. }) = &mut self.dialog {
                     *create_status = Some(result);
+                }
+                Task::none()
+            }
+
+            Message::DbConfigAskDeleteDatabase => {
+                if let Some(Dialog::EditDbConfig {
+                    delete_confirm,
+                    delete_status,
+                    ..
+                }) = &mut self.dialog
+                {
+                    *delete_confirm = true;
+                    *delete_status = None;
+                }
+                Task::none()
+            }
+
+            Message::DbConfigCancelDeleteDatabase => {
+                if let Some(Dialog::EditDbConfig { delete_confirm, .. }) = &mut self.dialog {
+                    *delete_confirm = false;
+                }
+                Task::none()
+            }
+
+            Message::DbConfigDeleteDatabase => {
+                if let Some(Dialog::EditDbConfig {
+                    host,
+                    port,
+                    database,
+                    user,
+                    password,
+                    psql_path,
+                    delete_status,
+                    ..
+                }) = &mut self.dialog
+                {
+                    let database = database.trim().to_string();
+                    if database.is_empty() {
+                        *delete_status = Some(Err("Database name is required.".into()));
+                        return Task::none();
+                    }
+                    if matches!(database.as_str(), "postgres" | "template0" | "template1") {
+                        *delete_status = Some(Err(format!(
+                            "Refusing to drop protected PostgreSQL database \"{database}\"."
+                        )));
+                        return Task::none();
+                    }
+
+                    *delete_status = Some(Ok("Dropping database...".into()));
+                    let host = host.clone();
+                    let port = port.clone();
+                    let user = user.clone();
+                    let password = password.clone();
+                    let psql_path = psql_path.clone();
+                    Task::perform(
+                        async move {
+                            tokio::task::spawn_blocking(move || {
+                                let sql = format!(
+                                    "DROP DATABASE IF EXISTS {} WITH (FORCE)",
+                                    pg_quote_ident(&database)
+                                );
+                                let out = std::process::Command::new(&psql_path)
+                                    .env("PGPASSWORD", &password)
+                                    .args(["-U", &user, "-h", &host, "-p", &port, "-c", &sql, "postgres"])
+                                    .output()
+                                    .map_err(|e| e.to_string())?;
+                                if out.status.success() {
+                                    Ok(format!("Database \"{database}\" was permanently deleted."))
+                                } else {
+                                    Err(String::from_utf8_lossy(&out.stderr).trim().to_string())
+                                }
+                            })
+                            .await
+                            .unwrap_or_else(|e| Err(e.to_string()))
+                        },
+                        Message::DbConfigDeleteResult,
+                    )
+                } else {
+                    Task::none()
+                }
+            }
+
+            Message::DbConfigDeleteResult(result) => {
+                if let Some(Dialog::EditDbConfig {
+                    delete_status,
+                    delete_confirm,
+                    ..
+                }) = &mut self.dialog
+                {
+                    if result.is_ok() {
+                        self.db = None;
+                        self.status = "Disconnected (database deleted)".into();
+                        *delete_confirm = false;
+                    }
+                    *delete_status = Some(result);
                 }
                 Task::none()
             }
@@ -3354,6 +3461,8 @@ impl App {
                 psql_path,
                 connection_status,
                 create_status,
+                delete_status,
+                delete_confirm,
             }) => {
                 let lbl = |s: &'static str| text(s).size(11).style(text_color(rgb(160, 180, 195)));
                 let field = |label: &'static str, val: &str, f: DbField| {
@@ -3391,6 +3500,53 @@ impl App {
                         .style(text_color(rgb(230, 100, 100)))
                         .into(),
                     None => Space::with_width(Length::Fill).into(),
+                };
+                let delete_status_el: Element<_> = match delete_status {
+                    Some(Ok(msg)) => text(msg.as_str())
+                        .size(11)
+                        .style(text_color(rgb(100, 220, 130)))
+                        .into(),
+                    Some(Err(msg)) => text(msg.as_str())
+                        .size(11)
+                        .style(text_color(rgb(230, 100, 100)))
+                        .into(),
+                    None => Space::with_width(Length::Fill).into(),
+                };
+                let delete_confirm_el: Element<_> = if *delete_confirm {
+                    container(
+                        column![
+                            text("DANGER: permanently delete this database?")
+                                .size(13)
+                                .style(text_color(rgb(255, 210, 210))),
+                            text(format!(
+                                "This will drop \"{}\" and destroy all OpenStudio data inside it. There is no undo.",
+                                database
+                            ))
+                            .size(11)
+                            .style(text_color(rgb(245, 170, 170))),
+                            row![
+                                Space::with_width(Length::Fill),
+                                self.dialog_button(
+                                    "Keep Database",
+                                    Message::DbConfigCancelDeleteDatabase,
+                                    rgb(62, 83, 97)
+                                ),
+                                self.dialog_button(
+                                    "Drop Database",
+                                    Message::DbConfigDeleteDatabase,
+                                    rgb(180, 35, 35)
+                                ),
+                            ]
+                            .spacing(8)
+                            .align_y(Alignment::Center),
+                        ]
+                        .spacing(10),
+                    )
+                    .padding(10)
+                    .style(panel_style(rgb(50, 18, 18), rgb(190, 45, 45)))
+                    .into()
+                } else {
+                    Space::with_height(Length::Fixed(0.0)).into()
                 };
                 container(
                     column![
@@ -3437,12 +3593,19 @@ impl App {
                                     Message::DbConfigCreateDatabase,
                                     rgb(30, 90, 60)
                                 ),
+                                self.dialog_button(
+                                    "Delete database",
+                                    Message::DbConfigAskDeleteDatabase,
+                                    rgb(180, 35, 35)
+                                ),
                             ]
-                            .spacing(4),
+                            .spacing(6),
                         ]
                         .spacing(8)
                         .align_y(Alignment::End),
                         create_status_el,
+                        delete_status_el,
+                        delete_confirm_el,
                         section_label("psql PATH"),
                         field("psql binary", psql_path, DbField::PsqlPath),
                         row![

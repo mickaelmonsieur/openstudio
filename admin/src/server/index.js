@@ -32,9 +32,9 @@ const distDir = path.join(adminRoot, 'dist');
 const DEFAULT_DATABASE_CONFIG = {
   database: 'openstudio',
   host: 'localhost',
-  password: 'openstudio',
+  password: '',
   port: 5432,
-  user: 'openstudio'
+  user: 'postgres'
 };
 
 function databaseConfigPath(dataDir) {

@@ -94,9 +94,9 @@ export function App() {
   const [databaseConfig, setDatabaseConfig] = useState({
     database: 'openstudio',
     host: 'localhost',
-    password: 'openstudio',
+    password: '',
     port: 5432,
-    user: 'openstudio'
+    user: 'postgres'
   });
   const [databaseStatus, setDatabaseStatus] = useState({
     connected: false,
