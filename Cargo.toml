@@ -13,7 +13,7 @@ description   = "Professional broadcast radio software"
 formats       = ["app", "dmg"]
 icons         = ["icons/512x512.png"]
 resources     = [
-    { src = "config/database.json", target = "database.json" },
+    { src = "config/database.example.json", target = "database.json" },
     { src = "migrations/0001_initial_schema.sql", target = "migrations/0001_initial_schema.sql" },
     { src = "migrations/0002_seed.sql", target = "migrations/0002_seed.sql" },
 ]
