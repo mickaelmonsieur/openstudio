@@ -1,32 +1,33 @@
 # OpenStudio
 
-Lecteur audio FLAC professionnel — Rust / iced.
+Professional broadcast radio software.
 
-## Build & Package (macOS)
+## Installation
 
-### 1. Compiler
+### macOS
 
-```bash
-cargo build --release
-```
+Download the two DMG files from the [latest release](../../releases/latest):
 
-### 2. Packager (app + dmg signés)
+- `OpenStudio_x.x.x_aarch64.dmg` — the audio player
+- `OpenStudio Admin-x.x.x.dmg` — the admin interface *(only needed on the machine that manages the library)*
 
-```bash
-cargo packager --release
-```
+Open each DMG and drag the app to your Applications folder.
 
-Produit dans `target/release/` :
-- `OpenStudio.app` — application signée (ad-hoc)
-- `OpenStudio_0.1.0_aarch64.dmg` — image disque signée avec raccourci Applications
+> **First launch warning:** macOS will display "unidentified developer" because the app is not notarized.
+> Go to **System Settings → Privacy & Security → Open Anyway**.
+>
 
-La signature ad-hoc est configurée dans `Cargo.toml` (`[package.metadata.packager.macos]`).  
-La notarisation Apple est skippée (nécessite un compte Apple Developer à 99 €/an).
+**PostgreSQL 18 is required.** Download and install it from [enterprisedb.com](https://www.enterprisedb.com/downloads/postgres-postgresql-downloads).
 
-### 3. Distribution
+---
 
-Envoyer le `.dmg` au destinataire.  
-À la première ouverture, macOS affiche "développeur non identifié" :  
-→ **Réglages système → Confidentialité et sécurité → Ouvrir quand même**
+### Windows
 
-> AirDrop évite ce dialogue (pas d'attribut quarantine).
+Download the two installers from the [latest release](../../releases/latest):
+
+- `OpenStudio_x.x.x_x64-setup.exe` — the audio player
+- `OpenStudio Admin Setup x.x.x.exe` — the admin interface *(only needed on the machine that manages the library)*
+
+Run each installer. Windows may show a SmartScreen warning for unsigned apps — click **More info → Run anyway**.
+
+**PostgreSQL 18 (x86-64) is required.** Download and install it from [enterprisedb.com](https://www.enterprisedb.com/downloads/postgres-postgresql-downloads).

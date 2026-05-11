@@ -1,4 +1,4 @@
-name: Release macOS DMG
+name: Release
 
 on:
   push:
@@ -96,3 +96,92 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           files: admin/dist/*.dmg
+
+  build-windows:
+    name: Build and package Windows app
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache Rust build
+        uses: Swatinem/rust-cache@v2
+
+      - name: Install cargo-packager
+        run: cargo install cargo-packager --locked
+
+      - name: Set version from tag
+        if: startsWith(github.ref, 'refs/tags/v')
+        shell: bash
+        run: |
+          VERSION="${GITHUB_REF_NAME#v}"
+          sed -i "s/^version = \".*\"/version = \"$VERSION\"/" Cargo.toml
+          sed -i "/^name = \"openstudio\"/{n;s/version = \".*\"/version = \"$VERSION\"/;}" Cargo.lock
+
+      - name: Build release binary
+        run: cargo build --release --locked
+
+      - name: Package NSIS installer
+        run: cargo packager --release --formats nsis
+
+      - name: Upload Windows artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: OpenStudio-windows
+          path: target/release/*-setup.exe
+          if-no-files-found: error
+
+      - name: Publish to GitHub Release
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: target/release/*-setup.exe
+
+  build-admin-windows:
+    name: Build and package Windows admin app
+    runs-on: windows-latest
+
+    defaults:
+      run:
+        working-directory: admin
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: admin/package-lock.json
+
+      - name: Install admin dependencies
+        run: npm ci
+
+      - name: Set admin version from tag
+        if: startsWith(github.ref, 'refs/tags/v')
+        shell: bash
+        run: |
+          VERSION="${GITHUB_REF_NAME#v}"
+          npm version "$VERSION" --no-git-tag-version --allow-same-version
+
+      - name: Build admin NSIS installer
+        run: npm run dist -- --win nsis --publish never
+
+      - name: Upload Windows admin artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: OpenStudio-Admin-windows
+          path: admin/dist/*Setup*.exe
+          if-no-files-found: error
+
+      - name: Publish admin to GitHub Release
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: admin/dist/*Setup*.exe
