@@ -56,3 +56,29 @@ Run the OpenStudio installer first. Launch OpenStudio, open **Database Settings*
 After the database is ready, run the OpenStudio Admin installer. Windows may show a SmartScreen warning for unsigned apps — click **More info → Run anyway**.
 
 **PostgreSQL 18 (x86-64) is required.** Download and install it from [enterprisedb.com](https://www.enterprisedb.com/downloads/postgres-postgresql-downloads).
+
+---
+
+## 💼 Professional support
+
+I'm available for consulting for radio stations interested in deploying OpenStudio in production.
+
+👉 [mickael.be](https://www.mickael.be)
+
+---
+
+## ☕ Buy me a coffee
+
+If OpenStudio helps your radio workflow, consider buying me a coffee!
+
+[![ko-fi](https://www.ko-fi.com/img/donate_sm.png)](https://ko-fi.com/Y8Y5MXCW)
+
+---
+
+## 📄 Licence
+
+GNU General Public License v3.0
+
+https://www.gnu.org/licenses/gpl-3.0.en.html
+
+See [LICENCE](LICENCE).
