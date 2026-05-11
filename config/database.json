@@ -3,6 +3,5 @@
   "host": "localhost",
   "password": "",
   "port": 5432,
-  "psql_path": "/Applications/Postgres.app/Contents/Versions/18/bin/psql",
   "user": "postgres"
 }
