@@ -262,6 +262,7 @@ struct App {
     active_instant_page: usize,
     instant_slots: Vec<Option<LoadedTrack>>,
     active_instant_slot: Option<usize>,
+    instant_context_slot: Option<usize>,
     aux_slots: Vec<Option<LoadedTrack>>,
     aux_loops: Vec<bool>,
     app_config: db::AppConfig,
@@ -383,6 +384,7 @@ impl Default for App {
             active_instant_page: 0,
             instant_slots: vec![None; 10],
             active_instant_slot: None,
+            instant_context_slot: None,
             aux_slots: vec![None; 3],
             aux_loops: vec![false; 3],
             is_locked: app_config.start_locked,
@@ -629,6 +631,10 @@ enum Message {
     PickerLastPage(window::Id),
     PickerPreviewPlay(window::Id),
     InstantSlotPressed(usize),
+    InstantSlotRightClick(usize),
+    InstantSlotLoad(usize),
+    InstantSlotClear(usize),
+    CloseInstantContext,
     InstantStop,
     InstantSave,
     InstantSaveNameChanged(String),
@@ -984,7 +990,37 @@ impl App {
                 Task::none()
             }
             Message::InstantSlotPressed(index) => {
+                self.instant_context_slot = None;
                 self.play_instant_slot(index);
+                Task::none()
+            }
+            Message::InstantSlotRightClick(index) => {
+                self.instant_context_slot = if self.instant_context_slot == Some(index) {
+                    None
+                } else {
+                    Some(index)
+                };
+                Task::none()
+            }
+            Message::InstantSlotLoad(index) => {
+                self.instant_context_slot = None;
+                if let Some(slot) = self.instant_slots.get_mut(index) {
+                    *slot = None;
+                }
+                return self.update(Message::OpenTrackPicker(PickerTarget::Instant(index)));
+            }
+            Message::InstantSlotClear(index) => {
+                self.instant_context_slot = None;
+                if self.active_instant_slot == Some(index) {
+                    self.stop_instant();
+                }
+                if let Some(slot) = self.instant_slots.get_mut(index) {
+                    *slot = None;
+                }
+                Task::none()
+            }
+            Message::CloseInstantContext => {
+                self.instant_context_slot = None;
                 Task::none()
             }
             Message::InstantStop => {

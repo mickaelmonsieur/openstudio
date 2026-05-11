@@ -4,7 +4,3 @@
 * Sweepers
 
 ----
-
-Rust :
-
-Cart - toucher supprimer.

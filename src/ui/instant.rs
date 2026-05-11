@@ -1,7 +1,7 @@
 use super::styles::*;
 use crate::{App, InstantView, Message, PickerTarget};
 use iced::alignment::Horizontal;
-use iced::widget::{button, column, container, row, text, Space};
+use iced::widget::{button, column, container, mouse_area, row, stack, text, Space};
 use iced::{Alignment, Background, Border, Color, Element, Font, Length};
 use iced_fonts::{Bootstrap, BOOTSTRAP_FONT};
 
@@ -157,7 +157,9 @@ impl App {
     pub fn instant_cell(&self, slot_index: usize, bg: Color) -> Element<'_, Message> {
         let loaded = self.instant_slots.get(slot_index).and_then(Option::as_ref);
         let playing = self.active_instant_slot == Some(slot_index);
+        let context_open = self.instant_context_slot == Some(slot_index);
         let cell_bg = if playing { rgb(184, 42, 46) } else { bg };
+
         let content: Element<_> = if let Some(track) = loaded {
             column![
                 text(format!("{} - {}", track.artist, track.title))
@@ -183,7 +185,7 @@ impl App {
                 .into()
         };
 
-        let cell = container(content)
+        let cell_container = container(content)
             .width(Length::Fill)
             .height(Length::Fill)
             .center_x(Length::Fill)
@@ -191,8 +193,8 @@ impl App {
             .padding(5)
             .style(panel_style(cell_bg, rgb(5, 12, 15)));
 
-        if loaded.is_some() {
-            button(cell)
+        let cell_button: Element<_> = if loaded.is_some() {
+            button(cell_container)
                 .width(Length::Fill)
                 .height(Length::Fill)
                 .padding(0)
@@ -214,7 +216,7 @@ impl App {
                 })
                 .into()
         } else {
-            button(cell)
+            button(cell_container)
                 .width(Length::Fill)
                 .height(Length::Fill)
                 .padding(0)
@@ -233,7 +235,79 @@ impl App {
                     ..Default::default()
                 })
                 .into()
-        }
+        };
+
+        let with_context: Element<_> = if context_open {
+            let menu = container(
+                column![
+                    button(
+                        text("Load")
+                            .size(12)
+                            .align_x(Horizontal::Center)
+                    )
+                    .width(Length::Fill)
+                    .padding([4, 8])
+                    .on_press(Message::InstantSlotLoad(slot_index))
+                    .style(|_, status| button::Style {
+                        background: Some(Background::Color(match status {
+                            button::Status::Hovered | button::Status::Pressed => rgb(52, 100, 140),
+                            _ => rgb(30, 55, 75),
+                        })),
+                        text_color: rgb(200, 225, 245),
+                        border: Border {
+                            color: rgb(50, 80, 105),
+                            width: 1.0,
+                            radius: 2.0.into(),
+                        },
+                        ..Default::default()
+                    }),
+                    button(
+                        text("Delete")
+                            .size(12)
+                            .align_x(Horizontal::Center)
+                    )
+                    .width(Length::Fill)
+                    .padding([4, 8])
+                    .on_press(Message::InstantSlotClear(slot_index))
+                    .style(|_, status| button::Style {
+                        background: Some(Background::Color(match status {
+                            button::Status::Hovered | button::Status::Pressed => rgb(140, 40, 40),
+                            _ => rgb(90, 20, 20),
+                        })),
+                        text_color: rgb(255, 200, 200),
+                        border: Border {
+                            color: rgb(120, 40, 40),
+                            width: 1.0,
+                            radius: 2.0.into(),
+                        },
+                        ..Default::default()
+                    }),
+                ]
+                .spacing(3),
+            )
+            .width(Length::Fill)
+            .height(Length::Fill)
+            .center_x(Length::Fill)
+            .center_y(Length::Fill)
+            .padding(8)
+            .style(|_| container::Style {
+                background: Some(Background::Color(rgb(12, 20, 26))),
+                border: Border {
+                    color: rgb(50, 80, 100),
+                    width: 1.0,
+                    radius: 0.0.into(),
+                },
+                ..Default::default()
+            });
+
+            stack![cell_button, menu].into()
+        } else {
+            cell_button
+        };
+
+        mouse_area(with_context)
+            .on_right_press(Message::InstantSlotRightClick(slot_index))
+            .into()
     }
 
     pub fn small_square_button(
