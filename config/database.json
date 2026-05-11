@@ -1,7 +1,0 @@
-{
-  "database": "openstudio",
-  "host": "localhost",
-  "password": "",
-  "port": 5432,
-  "user": "postgres"
-}
