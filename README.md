@@ -5,7 +5,7 @@ Professional broadcast radio software.
 [![Build Status](https://github.com/mickaelmonsieur/OpenStudio/actions/workflows/release.yml/badge.svg)](https://github.com/mickaelmonsieur/OpenStudio/actions/workflows/release.yml)
 [![Latest Stable Release](https://img.shields.io/github/v/release/mickaelmonsieur/OpenStudio?label=latest%20stable%20release&sort=semver)](https://github.com/mickaelmonsieur/OpenStudio/releases/latest)
 [![GPL-3.0 License](https://img.shields.io/badge/license-GPL--3.0-blue.svg)](LICENCE)
-[![Ethical Open Source](https://img.shields.io/badge/ethical-open%20source-4ba3c7.svg)](https://ethicalsource.dev/)
+[![Open Source](https://img.shields.io/badge/open%20source-GPL--3.0-brightgreen.svg)](LICENCE)
 [![Ko-fi](https://img.shields.io/badge/ko--fi-support-ff5e5b?logo=kofi&logoColor=white)](https://ko-fi.com/Y8Y5MXCW)
 
 ## Installation
