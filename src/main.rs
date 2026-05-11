@@ -33,17 +33,22 @@ fn db_config_path() -> PathBuf {
 }
 
 fn migrations_dir() -> PathBuf {
-    std::env::current_exe()
-        .ok()
-        .and_then(|exe| {
-            let resources = exe.parent()?.parent()?.join("Resources");
-            // packager strips the leading directory, so migrations land flat in Resources/
-            resources
-                .join("0001_initial_schema.sql")
-                .exists()
-                .then_some(resources)
-        })
-        .unwrap_or_else(|| PathBuf::from("migrations"))
+    if let Ok(exe) = std::env::current_exe() {
+        // macOS app bundle: Contents/Resources/migrations/
+        if let Some(candidate) = exe.parent().and_then(|p| p.parent()).map(|p| p.join("Resources/migrations")) {
+            if candidate.exists() {
+                return candidate;
+            }
+        }
+        // Windows packaged: migrations/ next to the exe
+        if let Some(candidate) = exe.parent().map(|p| p.join("migrations")) {
+            if candidate.exists() {
+                return candidate;
+            }
+        }
+    }
+    // Dev: migrations/ relative to working directory
+    PathBuf::from("migrations")
 }
 
 #[cfg(target_os = "windows")]
@@ -1226,8 +1231,8 @@ impl App {
                             (
                                 val["host"].as_str().unwrap_or("localhost").to_string(),
                                 val["port"].as_u64().unwrap_or(5432).to_string(),
-                                val["database"].as_str().unwrap_or("").to_string(),
-                                val["user"].as_str().unwrap_or("").to_string(),
+                                val["database"].as_str().unwrap_or("openstudio").to_string(),
+                                val["user"].as_str().unwrap_or("postgres").to_string(),
                                 val["password"].as_str().unwrap_or("").to_string(),
                                 val["psql_path"]
                                     .as_str()
@@ -1238,8 +1243,8 @@ impl App {
                             (
                                 "localhost".into(),
                                 "5432".into(),
-                                String::new(),
-                                String::new(),
+                                "openstudio".into(),
+                                "postgres".into(),
                                 String::new(),
                                 DEFAULT_PSQL_PATH.into(),
                             )
