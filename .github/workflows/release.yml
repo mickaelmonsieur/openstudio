@@ -97,6 +97,59 @@ jobs:
         with:
           files: admin/dist/*.dmg
 
+  build-linux:
+    name: Build and package Linux x64 app
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install Linux build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libasound2-dev \
+            libwayland-dev \
+            libx11-dev \
+            libxkbcommon-dev \
+            pkg-config
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache Rust build
+        uses: Swatinem/rust-cache@v2
+
+      - name: Install cargo-packager
+        run: cargo install cargo-packager --locked
+
+      - name: Set version from tag
+        if: startsWith(github.ref, 'refs/tags/v')
+        run: |
+          VERSION="${GITHUB_REF_NAME#v}"
+          sed -i "s/^version = \".*\"/version = \"$VERSION\"/" Cargo.toml
+          sed -i "/^name = \"openstudio\"/{n;s/version = \".*\"/version = \"$VERSION\"/;}" Cargo.lock
+
+      - name: Build release binary
+        run: cargo build --release --locked
+
+      - name: Package DEB
+        run: cargo packager --release --formats deb
+
+      - name: Upload Linux artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: OpenStudio-linux-deb
+          path: target/release/*.deb
+          if-no-files-found: error
+
+      - name: Publish DEB to GitHub Release
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: target/release/*.deb
+
   build-windows:
     name: Build and package Windows app
     runs-on: windows-latest
