@@ -8,6 +8,16 @@ Professional broadcast radio software.
 [![Open Source](https://img.shields.io/badge/open%20source-GPL--3.0-brightgreen.svg)](LICENCE)
 [![Ko-fi](https://img.shields.io/badge/ko--fi-support-ff5e5b?logo=kofi&logoColor=white)](https://ko-fi.com/Y8Y5MXCW)
 
+## Screenshots
+
+Player:
+
+![Player](docs/images/player.png)
+
+Admin in Web UI:
+
+![Admin in Web UI](docs/images/admin-playlists.png)
+
 ## Platform Support
 
 OpenStudio is developed primarily for macOS. The Windows version is expected to follow the macOS version, but it may need extra testing on real broadcast setups. If you hit a Windows-specific problem, please open a [GitHub Issue](https://github.com/mickaelmonsieur/OpenStudio/issues) or send a [Pull Request](https://github.com/mickaelmonsieur/OpenStudio/pulls).
