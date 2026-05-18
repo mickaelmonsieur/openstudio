@@ -5,7 +5,7 @@ services:
     restart: unless-stopped
     environment:
       POSTGRES_DB: openstudio
-      POSTGRES_USER: openstudio
+      POSTGRES_USER: postgres
       POSTGRES_PASSWORD: openstudio
     volumes:
       - pgdata:/var/lib/postgresql
@@ -13,7 +13,7 @@ services:
     ports:
       - "5432:5432"
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U openstudio -d openstudio"]
+      test: ["CMD-SHELL", "pg_isready -U postgres -d openstudio"]
       interval: 5s
       timeout: 5s
       retries: 5
