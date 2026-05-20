@@ -98,8 +98,19 @@ jobs:
           files: admin/dist/*.dmg
 
   build-linux:
-    name: Build and package Linux x64 app
-    runs-on: ubuntu-latest
+    name: Build and package Linux ${{ matrix.deb-arch }} app
+    runs-on: ${{ matrix.runner }}
+
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - deb-arch: amd64
+            runner: ubuntu-latest
+            rust-target: x86_64-unknown-linux-gnu
+          - deb-arch: arm64
+            runner: ubuntu-24.04-arm
+            rust-target: aarch64-unknown-linux-gnu
 
     steps:
       - name: Checkout
@@ -117,6 +128,8 @@ jobs:
 
       - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.rust-target }}
 
       - name: Cache Rust build
         uses: Swatinem/rust-cache@v2
@@ -132,15 +145,15 @@ jobs:
           sed -i "/^name = \"openstudio\"/{n;s/version = \".*\"/version = \"$VERSION\"/;}" Cargo.lock
 
       - name: Build release binary
-        run: cargo build --release --locked
+        run: cargo build --release --locked --target ${{ matrix.rust-target }}
 
       - name: Package DEB
-        run: cargo packager --release --formats deb
+        run: cargo packager --release --formats deb --target ${{ matrix.rust-target }}
 
       - name: Upload Linux artifact
         uses: actions/upload-artifact@v4
         with:
-          name: OpenStudio-linux-deb
+          name: OpenStudio-linux-${{ matrix.deb-arch }}-deb
           path: target/release/*.deb
           if-no-files-found: error
 
@@ -151,8 +164,19 @@ jobs:
           files: target/release/*.deb
 
   build-admin-linux:
-    name: Build and package Linux x64 admin app
-    runs-on: ubuntu-latest
+    name: Build and package Linux ${{ matrix.deb-arch }} admin app
+    runs-on: ${{ matrix.runner }}
+
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - deb-arch: amd64
+            runner: ubuntu-latest
+            electron-arch: x64
+          - deb-arch: arm64
+            runner: ubuntu-24.04-arm
+            electron-arch: arm64
 
     defaults:
       run:
@@ -179,12 +203,12 @@ jobs:
           npm version "$VERSION" --no-git-tag-version --allow-same-version
 
       - name: Build admin DEB
-        run: npm run dist -- --linux deb --publish never
+        run: npm run dist -- --linux deb --${{ matrix.electron-arch }} --publish never
 
       - name: Upload Linux admin artifact
         uses: actions/upload-artifact@v4
         with:
-          name: OpenStudio-Admin-linux-deb
+          name: OpenStudio-Admin-linux-${{ matrix.deb-arch }}-deb
           path: admin/dist/*.deb
           if-no-files-found: error
 
