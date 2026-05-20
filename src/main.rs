@@ -22,7 +22,31 @@ use iced::{
 use iced_fonts::{Bootstrap, BOOTSTRAP_FONT};
 use ui::{accent_purple, block_style, panel_style, rgb, search_pick_list_style, text_color};
 
+fn user_db_config_path() -> Option<PathBuf> {
+    #[cfg(all(unix, not(target_os = "macos")))]
+    {
+        if let Ok(config_home) = std::env::var("XDG_CONFIG_HOME") {
+            if !config_home.is_empty() {
+                return Some(PathBuf::from(config_home).join("openstudio/database.json"));
+            }
+        }
+        if let Ok(home) = std::env::var("HOME") {
+            if !home.is_empty() {
+                return Some(PathBuf::from(home).join(".config/openstudio/database.json"));
+            }
+        }
+    }
+
+    None
+}
+
 fn db_config_path() -> PathBuf {
+    if let Some(candidate) = user_db_config_path() {
+        if candidate.exists() {
+            return candidate;
+        }
+    }
+
     if let Ok(exe) = std::env::current_exe() {
         let candidates = [
             // macOS app bundle: Contents/Resources/database.json
@@ -45,6 +69,10 @@ fn db_config_path() -> PathBuf {
 
     // Dev: config/database.json relative to working directory
     PathBuf::from("config/database.json")
+}
+
+fn db_config_save_path() -> PathBuf {
+    user_db_config_path().unwrap_or_else(db_config_path)
 }
 
 fn migrations_dir() -> PathBuf {
@@ -1343,10 +1371,15 @@ impl App {
                         "password": password,
                         "psql_path": psql_path,
                     });
-                    let path = db_config_path();
+                    let path = db_config_save_path();
                     match serde_json::to_string_pretty(&config)
                         .map_err(|e| e.to_string())
-                        .and_then(|json| std::fs::write(&path, json).map_err(|e| e.to_string()))
+                        .and_then(|json| {
+                            if let Some(parent) = path.parent() {
+                                std::fs::create_dir_all(parent).map_err(|e| e.to_string())?;
+                            }
+                            std::fs::write(&path, json).map_err(|e| e.to_string())
+                        })
                     {
                         Err(e) => {
                             self.status = format!("Config write failed: {e}");

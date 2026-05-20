@@ -105,6 +105,8 @@ sudo apt install ./OpenStudio_x.x.x_amd64.deb
 
 In **Database Settings**, keep `localhost`, port `5432`, user `postgres`, and enter the password you set above. The default `psql` path for Linux is `/usr/lib/postgresql/18/bin/psql`.
 
+On Linux, OpenStudio saves the edited database connection to `~/.config/openstudio/database.json`. The packaged `/usr/lib/openstudio/database.json` file is only used as the first-run default.
+
 After the database is ready, install OpenStudio Admin:
 
 ```bash
