@@ -16,6 +16,7 @@ export function databaseRoot(libraryRoot) {
 
 export async function listDatabaseFolders(folderPath = '', libraryRoot = '') {
   const root = libraryRoot || defaultLibraryRoot();
+  await fs.mkdir(root, { recursive: true });
   const fullPath = resolveDatabasePath(folderPath, root);
   const depth = pathDepth(fullPath, root);
 
@@ -82,6 +83,7 @@ export function getFolderImportJob(id) {
 async function runFolderImportJob(databaseConfig, job) {
   job.status = 'scanning';
   addMessage(job, `Scanning ${job.folderPath}`);
+  await fs.mkdir(job.libraryRoot, { recursive: true });
 
   const files = await findFlacFiles(job.folderPath, {
     includeSubfolders: job.includeSubfolders,

@@ -5,7 +5,7 @@ export function defaultLibraryRoot() {
   switch (os.platform()) {
     case 'win32':  return 'C:\\OpenStudio\\Library';
     case 'darwin': return '/Users/Shared/OpenStudio/Library';
-    default:       return '/var/lib/openstudio/Library';
+    default:       return path.join(os.homedir(), 'OpenStudio/Library');
   }
 }
 

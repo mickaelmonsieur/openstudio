@@ -113,6 +113,8 @@ After the database is ready, install OpenStudio Admin:
 sudo apt install ./openstudio-admin_x.x.x_linux_amd64.deb
 ```
 
+On Linux, new station library folders default to `~/OpenStudio/Library`.
+
 Use the `arm64` package names instead on ARM machines.
 
 Use `apt install ./package.deb`, not `dpkg -i`, so Debian/Ubuntu can install package dependencies such as `libxss1`. If you already used `dpkg -i` and the package was left unconfigured, run:
