@@ -109,6 +109,12 @@ sudo apt install ./openstudio-admin_x.x.x_amd64.deb
 
 Use the `arm64` package names instead on ARM machines.
 
+Use `apt install ./package.deb`, not `dpkg -i`, so Debian/Ubuntu can install package dependencies such as `libxss1`. If you already used `dpkg -i` and the package was left unconfigured, run:
+
+```bash
+sudo apt --fix-broken install
+```
+
 **PostgreSQL 18 is required.** The PostgreSQL APT repository supports current Debian and Ubuntu releases on `amd64` and `arm64`; check the PostgreSQL Linux download pages if your distribution or architecture differs.
 
 ---

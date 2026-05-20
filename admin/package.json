@@ -50,6 +50,15 @@
       "icon": "../icons/512x512.png",
       "target": "nsis"
     },
+    "linux": {
+      "icon": "../icons/512x512.png",
+      "target": "deb"
+    },
+    "deb": {
+      "depends": [
+        "libxss1"
+      ]
+    },
     "nsis": {
       "oneClick": false,
       "perMachine": true,
