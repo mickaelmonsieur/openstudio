@@ -6,7 +6,8 @@
   "main": "src/launcher/main.js",
   "productName": "OpenStudio Admin",
   "description": "OpenStudio administration launcher and web app",
-  "author": "Mickael Monsieur",
+  "author": "Mickael Monsieur <mickael.monsieur@gmail.com>",
+  "homepage": "https://github.com/mickaelmonsieur/OpenStudio",
   "scripts": {
     "dev": "electron .",
     "start": "electron .",

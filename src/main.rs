@@ -32,6 +32,8 @@ fn db_config_path() -> PathBuf {
             // Windows packaged: resources are next to the executable.
             exe.parent().map(|p| p.join("database.json")),
             exe.parent().map(|p| p.join("config/database.json")),
+            // Debian packaged: resources are installed under /usr/lib/openstudio.
+            Some(PathBuf::from("/usr/lib/openstudio/database.json")),
         ];
 
         for candidate in candidates.into_iter().flatten() {
@@ -58,6 +60,11 @@ fn migrations_dir() -> PathBuf {
             if candidate.exists() {
                 return candidate;
             }
+        }
+        // Debian packaged: resources are installed under /usr/lib/openstudio.
+        let candidate = PathBuf::from("/usr/lib/openstudio/migrations");
+        if candidate.exists() {
+            return candidate;
         }
     }
     // Dev: migrations/ relative to working directory

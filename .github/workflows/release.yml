@@ -150,6 +150,50 @@ jobs:
         with:
           files: target/release/*.deb
 
+  build-admin-linux:
+    name: Build and package Linux x64 admin app
+    runs-on: ubuntu-latest
+
+    defaults:
+      run:
+        working-directory: admin
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: admin/package-lock.json
+
+      - name: Install admin dependencies
+        run: npm ci
+
+      - name: Set admin version from tag
+        if: startsWith(github.ref, 'refs/tags/v')
+        run: |
+          VERSION="${GITHUB_REF_NAME#v}"
+          npm version "$VERSION" --no-git-tag-version --allow-same-version
+
+      - name: Build admin DEB
+        run: npm run dist -- --linux deb --publish never
+
+      - name: Upload Linux admin artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: OpenStudio-Admin-linux-deb
+          path: admin/dist/*.deb
+          if-no-files-found: error
+
+      - name: Publish admin DEB to GitHub Release
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: admin/dist/*.deb
+
   build-windows:
     name: Build and package Windows app
     runs-on: windows-latest
