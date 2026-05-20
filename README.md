@@ -93,6 +93,8 @@ sudo apt install -y postgresql-common
 sudo /usr/share/postgresql-common/pgdg/apt.postgresql.org.sh
 sudo apt update
 sudo apt install -y postgresql-18
+sudo systemctl enable --now postgresql
+sudo -u postgres psql -c "ALTER USER postgres PASSWORD 'change-this-password';"
 ```
 
 Then install OpenStudio and launch it once to open **Database Settings** and create or initialize the database:
@@ -100,6 +102,8 @@ Then install OpenStudio and launch it once to open **Database Settings** and cre
 ```bash
 sudo apt install ./OpenStudio_x.x.x_amd64.deb
 ```
+
+In **Database Settings**, keep `localhost`, port `5432`, user `postgres`, and enter the password you set above. The default `psql` path for Linux is `/usr/lib/postgresql/18/bin/psql`.
 
 After the database is ready, install OpenStudio Admin:
 

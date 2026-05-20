@@ -77,8 +77,10 @@ fn pg_quote_ident(identifier: &str) -> String {
 
 #[cfg(target_os = "windows")]
 const DEFAULT_PSQL_PATH: &str = r"C:\Program Files\PostgreSQL\18\bin\psql.exe";
-#[cfg(not(target_os = "windows"))]
+#[cfg(target_os = "macos")]
 const DEFAULT_PSQL_PATH: &str = "/Applications/Postgres.app/Contents/Versions/18/bin/psql";
+#[cfg(all(unix, not(target_os = "macos")))]
+const DEFAULT_PSQL_PATH: &str = "/usr/lib/postgresql/18/bin/psql";
 
 const ANY_CATEGORY: &str = "Any Category";
 const ANY_SUBCATEGORY: &str = "Any Subcategory";
