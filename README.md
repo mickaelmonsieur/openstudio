@@ -49,8 +49,8 @@ Admin rights are required to modify the OpenStudio application configuration. Da
 
 Download the two DMG files from the [latest release](../../releases/latest):
 
-- `OpenStudio_x.x.x_aarch64.dmg` — the audio player
-- `OpenStudio Admin-x.x.x.dmg` — the admin interface *(only needed on the machine that manages the library)*
+- `openstudio_x.x.x_macos_arm64.dmg` — the audio player
+- `openstudio-admin_x.x.x_macos_arm64.dmg` — the admin interface *(only needed on the machine that manages the library)*
 
 Open the OpenStudio DMG and drag the app to your Applications folder. Launch OpenStudio, open **Database Settings**, then create or initialize the database.
 
@@ -68,8 +68,8 @@ After the database is ready, open the OpenStudio Admin DMG and drag the app to y
 
 Download the two installers from the [latest release](../../releases/latest):
 
-- `OpenStudio_x.x.x_x64-setup.exe` — the audio player
-- `OpenStudio Admin Setup x.x.x.exe` — the admin interface *(only needed on the machine that manages the library)*
+- `openstudio_x.x.x_windows_x64_setup.exe` — the audio player
+- `openstudio-admin_x.x.x_windows_x64_setup.exe` — the admin interface *(only needed on the machine that manages the library)*
 
 Run the OpenStudio installer first. Launch OpenStudio, open **Database Settings**, then create or initialize the database.
 
@@ -83,8 +83,8 @@ After the database is ready, run the OpenStudio Admin installer. Windows may sho
 
 Download the two Debian packages from the [latest release](../../releases/latest):
 
-- `OpenStudio_x.x.x_amd64.deb` or `OpenStudio_x.x.x_arm64.deb` — the audio player
-- `openstudio-admin_x.x.x_amd64.deb` or `openstudio-admin_x.x.x_arm64.deb` — the admin interface *(only needed on the machine that manages the library)*
+- `openstudio_x.x.x_linux_amd64.deb` or `openstudio_x.x.x_linux_arm64.deb` — the audio player
+- `openstudio-admin_x.x.x_linux_amd64.deb` or `openstudio-admin_x.x.x_linux_arm64.deb` — the admin interface *(only needed on the machine that manages the library)*
 
 Install PostgreSQL 18 first. On Debian and Ubuntu, use the official PostgreSQL APT repository so you get PostgreSQL 18 even when your distribution ships an older major version:
 
@@ -100,7 +100,7 @@ sudo -u postgres psql -c "ALTER USER postgres PASSWORD 'change-this-password';"
 Then install OpenStudio and launch it once to open **Database Settings** and create or initialize the database:
 
 ```bash
-sudo apt install ./OpenStudio_x.x.x_amd64.deb
+sudo apt install ./openstudio_x.x.x_linux_amd64.deb
 ```
 
 In **Database Settings**, keep `localhost`, port `5432`, user `postgres`, and enter the password you set above. The default `psql` path for Linux is `/usr/lib/postgresql/18/bin/psql`.
@@ -110,7 +110,7 @@ On Linux, OpenStudio saves the edited database connection to `~/.config/openstud
 After the database is ready, install OpenStudio Admin:
 
 ```bash
-sudo apt install ./openstudio-admin_x.x.x_amd64.deb
+sudo apt install ./openstudio-admin_x.x.x_linux_amd64.deb
 ```
 
 Use the `arm64` package names instead on ARM machines.

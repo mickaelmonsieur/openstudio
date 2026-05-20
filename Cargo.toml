@@ -21,6 +21,9 @@ resources     = [
 [package.metadata.packager.macos]
 signing-identity = "-"
 
+[package.metadata.packager.deb]
+package-name = "openstudio"
+
 [package.metadata.packager.nsis]
 installMode = "perMachine"
 

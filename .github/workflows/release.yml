@@ -40,18 +40,23 @@ jobs:
       - name: Package app and DMG
         run: cargo packager --release
 
+      - name: Rename DMG artifact
+        run: |
+          VERSION="$(sed -n 's/^version = "\(.*\)"/\1/p' Cargo.toml | head -n 1)"
+          mv target/release/*.dmg "target/release/openstudio_${VERSION}_macos_arm64.dmg"
+
       - name: Upload DMG artifact
         uses: actions/upload-artifact@v4
         with:
-          name: OpenStudio-dmg
-          path: target/release/*.dmg
+          name: openstudio-macos-arm64-dmg
+          path: target/release/openstudio_*_macos_arm64.dmg
           if-no-files-found: error
 
       - name: Publish DMG to GitHub Release
         if: startsWith(github.ref, 'refs/tags/')
         uses: softprops/action-gh-release@v2
         with:
-          files: target/release/*.dmg
+          files: target/release/openstudio_*_macos_arm64.dmg
 
   build-admin-macos:
     name: Build and package macOS admin app
@@ -84,18 +89,23 @@ jobs:
       - name: Build admin DMG
         run: npm run dist -- --mac dmg --publish never -c.mac.identity=-
 
+      - name: Rename admin DMG artifact
+        run: |
+          VERSION="$(node -p "JSON.parse(require('fs').readFileSync('package.json', 'utf8')).version")"
+          mv dist/*.dmg "dist/openstudio-admin_${VERSION}_macos_arm64.dmg"
+
       - name: Upload admin DMG artifact
         uses: actions/upload-artifact@v4
         with:
-          name: OpenStudio-Admin-dmg
-          path: admin/dist/*.dmg
+          name: openstudio-admin-macos-arm64-dmg
+          path: admin/dist/openstudio-admin_*_macos_arm64.dmg
           if-no-files-found: error
 
       - name: Publish admin DMG to GitHub Release
         if: startsWith(github.ref, 'refs/tags/')
         uses: softprops/action-gh-release@v2
         with:
-          files: admin/dist/*.dmg
+          files: admin/dist/openstudio-admin_*_macos_arm64.dmg
 
   build-linux:
     name: Build and package Linux ${{ matrix.deb-arch }} app
@@ -150,18 +160,23 @@ jobs:
       - name: Package DEB
         run: cargo packager --release --formats deb --target ${{ matrix.rust-target }}
 
+      - name: Rename DEB artifact
+        run: |
+          VERSION="$(sed -n 's/^version = "\(.*\)"/\1/p' Cargo.toml | head -n 1)"
+          mv target/${{ matrix.rust-target }}/release/*.deb "target/${{ matrix.rust-target }}/release/openstudio_${VERSION}_linux_${{ matrix.deb-arch }}.deb"
+
       - name: Upload Linux artifact
         uses: actions/upload-artifact@v4
         with:
-          name: OpenStudio-linux-${{ matrix.deb-arch }}-deb
-          path: target/${{ matrix.rust-target }}/release/*.deb
+          name: openstudio-linux-${{ matrix.deb-arch }}-deb
+          path: target/${{ matrix.rust-target }}/release/openstudio_*_linux_${{ matrix.deb-arch }}.deb
           if-no-files-found: error
 
       - name: Publish DEB to GitHub Release
         if: startsWith(github.ref, 'refs/tags/')
         uses: softprops/action-gh-release@v2
         with:
-          files: target/${{ matrix.rust-target }}/release/*.deb
+          files: target/${{ matrix.rust-target }}/release/openstudio_*_linux_${{ matrix.deb-arch }}.deb
 
   build-admin-linux:
     name: Build and package Linux ${{ matrix.deb-arch }} admin app
@@ -205,18 +220,23 @@ jobs:
       - name: Build admin DEB
         run: npm run dist -- --linux deb --${{ matrix.electron-arch }} --publish never
 
+      - name: Rename admin DEB artifact
+        run: |
+          VERSION="$(node -p "JSON.parse(require('fs').readFileSync('package.json', 'utf8')).version")"
+          mv dist/*.deb "dist/openstudio-admin_${VERSION}_linux_${{ matrix.deb-arch }}.deb"
+
       - name: Upload Linux admin artifact
         uses: actions/upload-artifact@v4
         with:
-          name: OpenStudio-Admin-linux-${{ matrix.deb-arch }}-deb
-          path: admin/dist/*.deb
+          name: openstudio-admin-linux-${{ matrix.deb-arch }}-deb
+          path: admin/dist/openstudio-admin_*_linux_${{ matrix.deb-arch }}.deb
           if-no-files-found: error
 
       - name: Publish admin DEB to GitHub Release
         if: startsWith(github.ref, 'refs/tags/')
         uses: softprops/action-gh-release@v2
         with:
-          files: admin/dist/*.deb
+          files: admin/dist/openstudio-admin_*_linux_${{ matrix.deb-arch }}.deb
 
   build-windows:
     name: Build and package Windows app
@@ -249,18 +269,24 @@ jobs:
       - name: Package NSIS installer
         run: cargo packager --release --formats nsis
 
+      - name: Rename Windows artifact
+        shell: bash
+        run: |
+          VERSION="$(sed -n 's/^version = "\(.*\)"/\1/p' Cargo.toml | head -n 1)"
+          mv target/release/*-setup.exe "target/release/openstudio_${VERSION}_windows_x64_setup.exe"
+
       - name: Upload Windows artifact
         uses: actions/upload-artifact@v4
         with:
-          name: OpenStudio-windows
-          path: target/release/*-setup.exe
+          name: openstudio-windows-x64
+          path: target/release/openstudio_*_windows_x64_setup.exe
           if-no-files-found: error
 
       - name: Publish to GitHub Release
         if: startsWith(github.ref, 'refs/tags/')
         uses: softprops/action-gh-release@v2
         with:
-          files: target/release/*-setup.exe
+          files: target/release/openstudio_*_windows_x64_setup.exe
 
   build-admin-windows:
     name: Build and package Windows admin app
@@ -294,15 +320,21 @@ jobs:
       - name: Build admin NSIS installer
         run: npm run dist -- --win nsis --publish never
 
+      - name: Rename Windows admin artifact
+        shell: bash
+        run: |
+          VERSION="$(node -p "JSON.parse(require('fs').readFileSync('package.json', 'utf8')).version")"
+          mv dist/*Setup*.exe "dist/openstudio-admin_${VERSION}_windows_x64_setup.exe"
+
       - name: Upload Windows admin artifact
         uses: actions/upload-artifact@v4
         with:
-          name: OpenStudio-Admin-windows
-          path: admin/dist/*Setup*.exe
+          name: openstudio-admin-windows-x64
+          path: admin/dist/openstudio-admin_*_windows_x64_setup.exe
           if-no-files-found: error
 
       - name: Publish admin to GitHub Release
         if: startsWith(github.ref, 'refs/tags/')
         uses: softprops/action-gh-release@v2
         with:
-          files: admin/dist/*Setup*.exe
+          files: admin/dist/openstudio-admin_*_windows_x64_setup.exe
