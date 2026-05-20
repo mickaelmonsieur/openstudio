@@ -1929,12 +1929,20 @@ h1 {
   left: 260px;
   display: flex;
   align-items: center;
+  justify-content: space-between;
+  gap: 18px;
   min-height: 34px;
   padding: 0 18px;
   border-top: 1px solid #2f4450;
   color: #91a9b7;
   background: #101820;
   font-size: 12px;
+}
+
+.app-version {
+  color: #6f8794;
+  font-weight: 700;
+  white-space: nowrap;
 }
 
 .db-status strong {

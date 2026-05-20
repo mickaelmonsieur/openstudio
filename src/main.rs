@@ -605,6 +605,7 @@ enum PendingLogin {
 
 #[derive(Debug, Clone)]
 enum Dialog {
+    About,
     SaveInstantPage {
         name: String,
     },
@@ -723,6 +724,7 @@ enum Message {
     InstantSaveNameChanged(String),
     InstantSaveConfirm,
     DialogCancel,
+    AboutOpen,
     InstantNewPage,
     InstantDeletePage,
     InstantPreviousPage,
@@ -1130,6 +1132,10 @@ impl App {
             }
             Message::DialogCancel => {
                 self.dialog = None;
+                Task::none()
+            }
+            Message::AboutOpen => {
+                self.dialog = Some(Dialog::About);
                 Task::none()
             }
             Message::InstantNewPage => {
@@ -2854,6 +2860,7 @@ impl App {
                 }
             }
             None
+            | Some(Dialog::About)
             | Some(Dialog::EditDbConfig { .. })
             | Some(Dialog::EditConfig { .. })
             | Some(Dialog::Login { .. })
@@ -3394,6 +3401,11 @@ impl App {
             (!self.is_locked).then_some(Message::DbConfigOpen),
             if self.is_locked { inactive_color } else { db_icon_color },
         );
+        let about_btn = icon_btn(
+            Bootstrap::QuestionCircleFill,
+            Some(Message::AboutOpen),
+            active_color,
+        );
         let lock_btn = icon_btn(
             if self.is_locked {
                 Bootstrap::LockFill
@@ -3454,7 +3466,7 @@ impl App {
                 .height(Length::Fill)
                 .padding([0, 12])
                 .center_y(Length::Fill),
-                row![user_label, lock_btn, cfg_btn, db_btn]
+                row![user_label, lock_btn, cfg_btn, db_btn, about_btn]
                     .spacing(4)
                     .align_y(Alignment::Center),
             ]
@@ -3470,6 +3482,31 @@ impl App {
 
     fn dialog_overlay(&self) -> Element<'_, Message> {
         let dialog = match &self.dialog {
+            Some(Dialog::About) => container(
+                column![
+                    text("OpenStudio")
+                        .size(18)
+                        .style(text_color(rgb(226, 238, 245))),
+                    text(format!("Version {}", env!("CARGO_PKG_VERSION")))
+                        .size(13)
+                        .style(text_color(rgb(180, 200, 212))),
+                    text("Professional broadcast radio software")
+                        .size(12)
+                        .style(text_color(rgb(160, 180, 195))),
+                    text("Copyright Mickael Monsieur © 2026")
+                        .size(12)
+                        .style(text_color(rgb(160, 180, 195))),
+                    row![
+                        Space::with_width(Length::Fill),
+                        self.dialog_button("Close", Message::DialogCancel, accent_purple()),
+                    ]
+                    .align_y(Alignment::Center),
+                ]
+                .spacing(12),
+            )
+            .width(Length::Fixed(360.0))
+            .padding(18)
+            .style(panel_style(rgb(31, 46, 55), accent_purple())),
             Some(Dialog::SaveInstantPage { name }) => container(
                 column![
                     text("Save Instant Page")

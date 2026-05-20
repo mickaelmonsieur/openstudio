@@ -91,6 +91,7 @@ const modules = moduleGroups.flatMap((group) =>
 
 export function App() {
   const [apiStatus, setApiStatus] = useState('Checking server...');
+  const [appVersion, setAppVersion] = useState('');
   const [databaseConfig, setDatabaseConfig] = useState({
     database: 'openstudio',
     host: 'localhost',
@@ -111,7 +112,10 @@ export function App() {
   useEffect(() => {
     fetch('/api/hello')
       .then((response) => response.json())
-      .then((payload) => setApiStatus(`${payload.app}: ${payload.status}`))
+      .then((payload) => {
+        setApiStatus(`${payload.app}: ${payload.status}`);
+        setAppVersion(payload.version || '');
+      })
       .catch((error) => setApiStatus(`API unavailable: ${error.message}`));
   }, []);
 
@@ -526,6 +530,7 @@ export function App() {
             {databaseStatus.connected ? 'Connected' : 'Disconnected'}
           </strong>
         </span>
+        {appVersion ? <span className="app-version">OpenStudio v{appVersion}</span> : null}
       </footer>
     </main>
     </StationContext>

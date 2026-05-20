@@ -28,6 +28,7 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const adminRoot = path.resolve(__dirname, '../..');
 const projectRoot = path.resolve(adminRoot, '..');
 const distDir = path.join(adminRoot, 'dist');
+const packageJson = JSON.parse(fs.readFileSync(path.join(adminRoot, 'package.json'), 'utf8'));
 
 const DEFAULT_DATABASE_CONFIG = {
   database: 'openstudio',
@@ -144,7 +145,8 @@ export async function createOpenStudioAdminServer(config) {
   webApp.get('/api/hello', (_req, res) => {
     res.json({
       app: 'OpenStudio Admin',
-      status: 'ok'
+      status: 'ok',
+      version: packageJson.version
     });
   });
   webApp.get('/api/database', (_req, res) => {
