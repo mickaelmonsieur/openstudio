@@ -154,14 +154,14 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: OpenStudio-linux-${{ matrix.deb-arch }}-deb
-          path: target/release/*.deb
+          path: target/${{ matrix.rust-target }}/release/*.deb
           if-no-files-found: error
 
       - name: Publish DEB to GitHub Release
         if: startsWith(github.ref, 'refs/tags/')
         uses: softprops/action-gh-release@v2
         with:
-          files: target/release/*.deb
+          files: target/${{ matrix.rust-target }}/release/*.deb
 
   build-admin-linux:
     name: Build and package Linux ${{ matrix.deb-arch }} admin app
