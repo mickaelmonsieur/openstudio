@@ -79,6 +79,38 @@ After the database is ready, run the OpenStudio Admin installer. Windows may sho
 
 ---
 
+### Linux
+
+Download the two Debian packages from the [latest release](../../releases/latest):
+
+- `OpenStudio_x.x.x_amd64.deb` — the audio player
+- `openstudio-admin_x.x.x_amd64.deb` — the admin interface *(only needed on the machine that manages the library)*
+
+Install PostgreSQL 18 first. On Debian and Ubuntu, use the official PostgreSQL APT repository so you get PostgreSQL 18 even when your distribution ships an older major version:
+
+```bash
+sudo apt install -y postgresql-common
+sudo /usr/share/postgresql-common/pgdg/apt.postgresql.org.sh
+sudo apt update
+sudo apt install -y postgresql-18
+```
+
+Then install OpenStudio and launch it once to open **Database Settings** and create or initialize the database:
+
+```bash
+sudo apt install ./OpenStudio_x.x.x_amd64.deb
+```
+
+After the database is ready, install OpenStudio Admin:
+
+```bash
+sudo apt install ./openstudio-admin_x.x.x_amd64.deb
+```
+
+**PostgreSQL 18 is required.** The PostgreSQL APT repository supports current Debian and Ubuntu releases on `amd64`; check the PostgreSQL Linux download pages if your distribution or architecture differs.
+
+---
+
 ## 💼 Professional support
 
 I'm available for consulting for radio stations interested in deploying OpenStudio in production.
