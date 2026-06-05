@@ -28,6 +28,20 @@ OpenStudio is developed primarily for macOS on Apple Silicon. macOS Intel builds
 
 The Windows version is expected to follow the macOS version, but it may need extra testing on real broadcast setups. If you hit a Windows-specific problem, please open a [GitHub Issue](https://github.com/mickaelmonsieur/OpenStudio/issues) or send a [Pull Request](https://github.com/mickaelmonsieur/OpenStudio/pulls).
 
+## Audio Format Support
+
+OpenStudio currently supports FLAC files only, and we do not plan to change this. This is an intentional product choice.
+
+Professional broadcast software has often made similar format choices: many systems historically standardized on MPEG-1 Layer II (`.mp2`), while modern broadcast workflows commonly standardize on WAV. OpenStudio standardizes on FLAC because it is lossless, royalty-free, widely available, and already used by major music platforms such as Deezer.
+
+Why not WAV? WAV is an excellent professional format, but FLAC gives the same audio restitution as an equivalent uncompressed PCM WAV after decoding, while using less disk space. In other words, FLAC keeps the broadcast-grade audio quality without requiring a full-size WAV library.
+
+We intentionally avoid MP3 as a library format. MP3 has been extremely popular since the early 2000s, but it is too destructive for a professional broadcast library. Radio sound processing works best with clean audio and a healthy musical spectrum.
+
+We encourage you to start building a FLAC music database today and to convert your existing files where needed. If you convert from MP3, start from high-quality files such as 256 kbps or better; lower bitrate files will usually give poor results once they pass through broadcast audio processing.
+
+If your library contains other formats, convert them to FLAC before importing them into OpenStudio. Depending on your platform, you can use tools such as [fre:ac](https://www.freac.org/downloads-mainmenu-33) or [FFmpeg](https://ffmpeg.org/) for more technical workflows.
+
 ## Installation
 
 Install the components in this order, regardless of your operating system:
