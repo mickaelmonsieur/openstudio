@@ -20,7 +20,13 @@ Admin in Web UI:
 
 ## Platform Support
 
-OpenStudio is developed primarily for macOS. The Windows version is expected to follow the macOS version, but it may need extra testing on real broadcast setups. If you hit a Windows-specific problem, please open a [GitHub Issue](https://github.com/mickaelmonsieur/OpenStudio/issues) or send a [Pull Request](https://github.com/mickaelmonsieur/OpenStudio/pulls).
+OpenStudio is developed primarily for macOS on Apple Silicon. macOS Intel builds are provided for legacy machines while the platform remains practical to support.
+
+> **macOS Intel warning:** Apple has confirmed that macOS 26 Tahoe is the final major macOS release for Intel Macs. macOS 27 is expected in September 2026 and will be limited to Macs with Apple Silicon; its beta cycle is expected to start on Monday, June 8, 2026.
+>
+> For production installations on Intel Macs, the recommended path is to install Ubuntu 26.04 LTS and use the Linux `amd64` packages instead of staying on macOS.
+
+The Windows version is expected to follow the macOS version, but it may need extra testing on real broadcast setups. If you hit a Windows-specific problem, please open a [GitHub Issue](https://github.com/mickaelmonsieur/OpenStudio/issues) or send a [Pull Request](https://github.com/mickaelmonsieur/OpenStudio/pulls).
 
 ## Installation
 
@@ -45,7 +51,7 @@ The seeded database includes these default application users:
 
 Admin rights are required to modify the OpenStudio application configuration. Database Settings are the exception: they can be opened and changed without an application login or password.
 
-### macOS
+### macOS Apple Silicon
 
 Download the two DMG files from the [latest release](../../releases/latest):
 
@@ -61,6 +67,21 @@ After the database is ready, open the OpenStudio Admin DMG and drag the app to y
 >
 
 **PostgreSQL 18 is required.** On macOS, use [Postgres.app](https://postgresapp.com/downloads.html) — it is a universal binary (Intel + Apple Silicon). The EnterpriseDB installer is x86-64 only and runs under Rosetta.
+
+#### macOS Intel
+
+Intel Macs can use the dedicated `x64` DMG files from the [latest release](../../releases/latest):
+
+- `openstudio_x.x.x_macos_x64.dmg` — the audio player
+- `openstudio-admin_x.x.x_macos_x64.dmg` — the admin interface *(only needed on the machine that manages the library)*
+
+Install them the same way as the Apple Silicon builds: install OpenStudio first, initialize the database from **Database Settings**, then install OpenStudio Admin.
+
+> **Legacy platform warning:** macOS Intel support is temporary. macOS 27 will not install on Intel Macs, so these builds are intended only for existing Intel macOS deployments that cannot migrate immediately.
+>
+> For a longer-lived setup on Intel Mac hardware, install Ubuntu 26.04 LTS and use the Linux `amd64` packages.
+
+**PostgreSQL 18 is required.** Use [Postgres.app](https://postgresapp.com/downloads.html); the PostgreSQL 18 DMG is Universal, so the same download works on Intel and Apple Silicon Macs.
 
 ---
 

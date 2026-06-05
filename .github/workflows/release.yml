@@ -11,8 +11,19 @@ permissions:
 
 jobs:
   build-macos:
-    name: Build and package macOS app
-    runs-on: macos-14
+    name: Build and package macOS ${{ matrix.artifact-arch }} app
+    runs-on: ${{ matrix.runner }}
+
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - artifact-arch: arm64
+            runner: macos-14
+            rust-target: aarch64-apple-darwin
+          - artifact-arch: x64
+            runner: macos-15-intel
+            rust-target: x86_64-apple-darwin
 
     steps:
       - name: Checkout
@@ -20,6 +31,8 @@ jobs:
 
       - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.rust-target }}
 
       - name: Cache Rust build
         uses: Swatinem/rust-cache@v2
@@ -35,32 +48,43 @@ jobs:
           sed -i '' "/^name = \"openstudio\"/{n;s/version = \".*\"/version = \"$VERSION\"/;}" Cargo.lock
 
       - name: Build release binary
-        run: cargo build --release --locked
+        run: cargo build --release --locked --target ${{ matrix.rust-target }}
 
       - name: Package app and DMG
-        run: cargo packager --release
+        run: cargo packager --release --target ${{ matrix.rust-target }}
 
       - name: Rename DMG artifact
         run: |
           VERSION="$(sed -n 's/^version = "\(.*\)"/\1/p' Cargo.toml | head -n 1)"
-          mv target/release/*.dmg "target/release/openstudio_${VERSION}_macos_arm64.dmg"
+          mv target/${{ matrix.rust-target }}/release/*.dmg "target/${{ matrix.rust-target }}/release/openstudio_${VERSION}_macos_${{ matrix.artifact-arch }}.dmg"
 
       - name: Upload DMG artifact
         uses: actions/upload-artifact@v4
         with:
-          name: openstudio-macos-arm64-dmg
-          path: target/release/openstudio_*_macos_arm64.dmg
+          name: openstudio-macos-${{ matrix.artifact-arch }}-dmg
+          path: target/${{ matrix.rust-target }}/release/openstudio_*_macos_${{ matrix.artifact-arch }}.dmg
           if-no-files-found: error
 
       - name: Publish DMG to GitHub Release
         if: startsWith(github.ref, 'refs/tags/')
         uses: softprops/action-gh-release@v2
         with:
-          files: target/release/openstudio_*_macos_arm64.dmg
+          files: target/${{ matrix.rust-target }}/release/openstudio_*_macos_${{ matrix.artifact-arch }}.dmg
 
   build-admin-macos:
-    name: Build and package macOS admin app
-    runs-on: macos-14
+    name: Build and package macOS ${{ matrix.artifact-arch }} admin app
+    runs-on: ${{ matrix.runner }}
+
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - artifact-arch: arm64
+            runner: macos-14
+            electron-arch: arm64
+          - artifact-arch: x64
+            runner: macos-15-intel
+            electron-arch: x64
 
     defaults:
       run:
@@ -87,25 +111,25 @@ jobs:
           npm version "$VERSION" --no-git-tag-version --allow-same-version
 
       - name: Build admin DMG
-        run: npm run dist -- --mac dmg --publish never -c.mac.identity=-
+        run: npm run dist -- --mac dmg --${{ matrix.electron-arch }} --publish never -c.mac.identity=-
 
       - name: Rename admin DMG artifact
         run: |
           VERSION="$(node -p "JSON.parse(require('fs').readFileSync('package.json', 'utf8')).version")"
-          mv dist/*.dmg "dist/openstudio-admin_${VERSION}_macos_arm64.dmg"
+          mv dist/*.dmg "dist/openstudio-admin_${VERSION}_macos_${{ matrix.artifact-arch }}.dmg"
 
       - name: Upload admin DMG artifact
         uses: actions/upload-artifact@v4
         with:
-          name: openstudio-admin-macos-arm64-dmg
-          path: admin/dist/openstudio-admin_*_macos_arm64.dmg
+          name: openstudio-admin-macos-${{ matrix.artifact-arch }}-dmg
+          path: admin/dist/openstudio-admin_*_macos_${{ matrix.artifact-arch }}.dmg
           if-no-files-found: error
 
       - name: Publish admin DMG to GitHub Release
         if: startsWith(github.ref, 'refs/tags/')
         uses: softprops/action-gh-release@v2
         with:
-          files: admin/dist/openstudio-admin_*_macos_arm64.dmg
+          files: admin/dist/openstudio-admin_*_macos_${{ matrix.artifact-arch }}.dmg
 
   build-linux:
     name: Build and package Linux ${{ matrix.deb-arch }} app
