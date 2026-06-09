@@ -1790,7 +1790,7 @@ impl App {
 
             Message::AudioProcessingOpen => {
                 self.dialog = Some(Dialog::AudioProcessing {
-                    input_volume: 40.0,
+                    input_volume: self.audio.master_volume_percent(),
                     compressor_mode: "Custom Values".into(),
                     compressor_preset: "Soft 2".into(),
                     attack: "25.0".into(),
@@ -1798,14 +1798,16 @@ impl App {
                     threshold: "-27".into(),
                     gain: "15".into(),
                     release: "1500".into(),
-                    eq_enabled: true,
-                    eq_gains: vec![7.0, 3.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 3.0, 7.0],
+                    eq_enabled: self.audio.eq_enabled(),
+                    eq_gains: self.audio.eq_gains_db(),
                     agc_preset: "Disabled".into(),
                 });
                 Task::none()
             }
 
             Message::AudioProcessingInputVolumeChanged(value) => {
+                let value = value.clamp(0.0, 100.0);
+                self.audio.set_master_volume_percent(value);
                 if let Some(Dialog::AudioProcessing { input_volume, .. }) = &mut self.dialog {
                     *input_volume = value;
                 }
@@ -1868,6 +1870,7 @@ impl App {
             }
 
             Message::AudioProcessingEqEnabledChanged(value) => {
+                self.audio.set_eq_enabled(value);
                 if let Some(Dialog::AudioProcessing { eq_enabled, .. }) = &mut self.dialog {
                     *eq_enabled = value;
                 }
@@ -1875,6 +1878,7 @@ impl App {
             }
 
             Message::AudioProcessingEqGainChanged(index, value) => {
+                self.audio.set_eq_gain_db(index, value);
                 if let Some(Dialog::AudioProcessing { eq_gains, .. }) = &mut self.dialog {
                     if let Some(gain) = eq_gains.get_mut(index) {
                         *gain = value;

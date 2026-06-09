@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 use std::path::PathBuf;
-use std::sync::atomic::{AtomicBool, AtomicU32, AtomicU64, AtomicUsize, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicI32, AtomicU32, AtomicU64, AtomicUsize, Ordering};
 use std::sync::mpsc::{self, Sender, SyncSender, TrySendError};
 use std::sync::Arc;
 use std::time::Duration;
@@ -15,6 +15,10 @@ use symphonia::core::io::MediaSourceStream;
 use symphonia::core::meta::MetadataOptions;
 use symphonia::core::probe::Hint;
 use symphonia::core::units::Time;
+
+const EQ_BAND_FREQS: [f32; 10] = [
+    32.0, 63.0, 125.0, 250.0, 500.0, 1000.0, 2000.0, 4000.0, 8000.0, 16000.0,
+];
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum PlayerId {
@@ -74,16 +78,21 @@ pub struct PlayerSnapshot {
 
 pub struct AudioManager {
     players: HashMap<PlayerId, AudioPlayer>,
+    processing: Arc<AudioProcessingSettings>,
 }
 
 impl AudioManager {
     pub fn new() -> Self {
+        let processing = Arc::new(AudioProcessingSettings::default());
         let players = PlayerId::ALL
             .into_iter()
-            .map(|id| (id, AudioPlayer::new(id)))
+            .map(|id| (id, AudioPlayer::new(id, Arc::clone(&processing))))
             .collect();
 
-        Self { players }
+        Self {
+            players,
+            processing,
+        }
     }
 
     pub fn player(&self, id: PlayerId) -> &AudioPlayer {
@@ -111,11 +120,93 @@ impl AudioManager {
     pub fn any_active(&self) -> bool {
         self.players.values().any(AudioPlayer::is_active)
     }
+
+    pub fn set_master_volume_percent(&self, volume: f32) {
+        self.processing.set_master_volume_percent(volume);
+    }
+
+    pub fn master_volume_percent(&self) -> f32 {
+        self.processing.master_volume_percent()
+    }
+
+    pub fn set_eq_enabled(&self, enabled: bool) {
+        self.processing.set_eq_enabled(enabled);
+    }
+
+    pub fn eq_enabled(&self) -> bool {
+        self.processing.eq_enabled()
+    }
+
+    pub fn set_eq_gain_db(&self, band: usize, gain_db: f32) {
+        self.processing.set_eq_gain_db(band, gain_db);
+    }
+
+    pub fn eq_gains_db(&self) -> Vec<f32> {
+        self.processing.eq_gains_db()
+    }
 }
 
 impl Default for AudioManager {
     fn default() -> Self {
         Self::new()
+    }
+}
+
+pub struct AudioProcessingSettings {
+    master_volume_per_mille: AtomicU32,
+    eq_enabled: AtomicBool,
+    eq_gains_tenth_db: [AtomicI32; 10],
+}
+
+impl AudioProcessingSettings {
+    fn set_master_volume_percent(&self, volume: f32) {
+        let per_mille = (volume.clamp(0.0, 100.0) * 10.0).round() as u32;
+        self.master_volume_per_mille
+            .store(per_mille, Ordering::Relaxed);
+    }
+
+    fn master_volume_percent(&self) -> f32 {
+        self.master_volume_per_mille.load(Ordering::Relaxed) as f32 / 10.0
+    }
+
+    fn master_gain(&self) -> f32 {
+        self.master_volume_per_mille.load(Ordering::Relaxed) as f32 / 1000.0
+    }
+
+    pub fn set_eq_enabled(&self, enabled: bool) {
+        self.eq_enabled.store(enabled, Ordering::Relaxed);
+    }
+
+    pub fn eq_enabled(&self) -> bool {
+        self.eq_enabled.load(Ordering::Relaxed)
+    }
+
+    pub fn set_eq_gain_db(&self, band: usize, gain_db: f32) {
+        if let Some(gain) = self.eq_gains_tenth_db.get(band) {
+            let tenth_db = (gain_db.clamp(-15.0, 15.0) * 10.0).round() as i32;
+            gain.store(tenth_db, Ordering::Relaxed);
+        }
+    }
+
+    pub fn eq_gains_db(&self) -> Vec<f32> {
+        self.eq_gains_tenth_db
+            .iter()
+            .map(|gain| gain.load(Ordering::Relaxed) as f32 / 10.0)
+            .collect()
+    }
+
+    fn eq_gains_tenth_db(&self) -> [i32; 10] {
+        std::array::from_fn(|idx| self.eq_gains_tenth_db[idx].load(Ordering::Relaxed))
+    }
+}
+
+impl Default for AudioProcessingSettings {
+    fn default() -> Self {
+        Self {
+            master_volume_per_mille: AtomicU32::new(1000),
+            eq_enabled: AtomicBool::new(false),
+            eq_gains_tenth_db: std::array::from_fn(|_| AtomicI32::new(0)),
+        }
     }
 }
 
@@ -146,6 +237,7 @@ pub struct AudioPlayer {
     loaded_path: Option<PathBuf>,
     cue_in: Duration,
     device_name: Option<String>,
+    processing: Arc<AudioProcessingSettings>,
     duration: Option<Duration>,
     levels: Arc<AudioLevels>,
     stop_tx: Option<Sender<()>>,
@@ -159,12 +251,13 @@ pub struct AudioPlayer {
 }
 
 impl AudioPlayer {
-    fn new(id: PlayerId) -> Self {
+    fn new(id: PlayerId, processing: Arc<AudioProcessingSettings>) -> Self {
         Self {
             id,
             loaded_path: None,
             cue_in: Duration::ZERO,
             device_name: None,
+            processing,
             duration: None,
             levels: Arc::new(AudioLevels::default()),
             stop_tx: None,
@@ -222,6 +315,7 @@ impl AudioPlayer {
             preloaded,
             self.cue_in,
             Arc::clone(&self.levels),
+            Arc::clone(&self.processing),
             self.device_name.clone(),
         );
         self.stop_tx = Some(stop_tx);
@@ -463,6 +557,158 @@ impl FadeState {
     }
 }
 
+struct EqProcessor {
+    sample_rate: f32,
+    filters: Vec<[Biquad; 10]>,
+    current_gains_tenth_db: [i32; 10],
+    current_enabled: bool,
+}
+
+impl EqProcessor {
+    fn new(sample_rate: u32, channels: usize) -> Self {
+        Self {
+            sample_rate: sample_rate as f32,
+            filters: vec![[Biquad::default(); 10]; channels.max(1)],
+            current_gains_tenth_db: [i32::MIN; 10],
+            current_enabled: false,
+        }
+    }
+
+    fn process(&mut self, data: &mut [f32], processing: &AudioProcessingSettings) {
+        let enabled = processing.eq_enabled();
+        if !enabled {
+            if self.current_enabled {
+                self.reset();
+                self.current_enabled = false;
+            }
+            return;
+        }
+
+        let gains = processing.eq_gains_tenth_db();
+        if !self.current_enabled || gains != self.current_gains_tenth_db {
+            self.update_coefficients(gains);
+            self.current_enabled = true;
+        }
+
+        let channels = self.filters.len();
+        for frame in data.chunks_mut(channels) {
+            for (channel, sample) in frame.iter_mut().enumerate() {
+                let mut value = *sample;
+                for filter in &mut self.filters[channel] {
+                    value = filter.process(value);
+                }
+                *sample = value.clamp(-4.0, 4.0);
+            }
+        }
+    }
+
+    fn update_coefficients(&mut self, gains: [i32; 10]) {
+        self.current_gains_tenth_db = gains;
+        for (band, gain_tenth_db) in gains.into_iter().enumerate() {
+            let coeffs = BiquadCoefficients::peaking_eq(
+                EQ_BAND_FREQS[band],
+                self.sample_rate,
+                1.2,
+                gain_tenth_db as f32 / 10.0,
+            );
+
+            for channel_filters in &mut self.filters {
+                channel_filters[band].set_coefficients(coeffs);
+            }
+        }
+    }
+
+    fn reset(&mut self) {
+        for channel_filters in &mut self.filters {
+            for filter in channel_filters {
+                filter.reset();
+            }
+        }
+    }
+}
+
+#[derive(Clone, Copy)]
+struct Biquad {
+    coefficients: BiquadCoefficients,
+    z1: f32,
+    z2: f32,
+}
+
+impl Biquad {
+    fn set_coefficients(&mut self, coefficients: BiquadCoefficients) {
+        self.coefficients = coefficients;
+    }
+
+    fn process(&mut self, input: f32) -> f32 {
+        let output = self.coefficients.b0 * input + self.z1;
+        self.z1 = self.coefficients.b1 * input - self.coefficients.a1 * output + self.z2;
+        self.z2 = self.coefficients.b2 * input - self.coefficients.a2 * output;
+        output
+    }
+
+    fn reset(&mut self) {
+        self.z1 = 0.0;
+        self.z2 = 0.0;
+    }
+}
+
+impl Default for Biquad {
+    fn default() -> Self {
+        Self {
+            coefficients: BiquadCoefficients::identity(),
+            z1: 0.0,
+            z2: 0.0,
+        }
+    }
+}
+
+#[derive(Clone, Copy)]
+struct BiquadCoefficients {
+    b0: f32,
+    b1: f32,
+    b2: f32,
+    a1: f32,
+    a2: f32,
+}
+
+impl BiquadCoefficients {
+    fn identity() -> Self {
+        Self {
+            b0: 1.0,
+            b1: 0.0,
+            b2: 0.0,
+            a1: 0.0,
+            a2: 0.0,
+        }
+    }
+
+    fn peaking_eq(freq_hz: f32, sample_rate: f32, q: f32, gain_db: f32) -> Self {
+        if gain_db.abs() < 0.05 || freq_hz >= sample_rate * 0.45 {
+            return Self::identity();
+        }
+
+        let omega = 2.0 * std::f32::consts::PI * freq_hz / sample_rate;
+        let alpha = omega.sin() / (2.0 * q.max(0.1));
+        let amp = 10.0_f32.powf(gain_db / 40.0);
+        let cos_omega = omega.cos();
+
+        let b0 = 1.0 + alpha * amp;
+        let b1 = -2.0 * cos_omega;
+        let b2 = 1.0 - alpha * amp;
+        let a0 = 1.0 + alpha / amp;
+        let a1 = -2.0 * cos_omega;
+        let a2 = 1.0 - alpha / amp;
+
+        Self {
+            b0: b0 / a0,
+            b1: b1 / a0,
+            b2: b2 / a0,
+            a1: a1 / a0,
+            a2: a2 / a0,
+        }
+    }
+}
+
 /// Lit uniquement les métadonnées pour obtenir la durée totale du fichier.
 pub fn read_duration(path: &std::path::Path) -> Option<std::time::Duration> {
     let file = std::fs::File::open(path).ok()?;
@@ -578,6 +824,7 @@ fn play(
     preloaded: Option<Preloaded>,
     cue_in: Duration,
     levels: Arc<AudioLevels>,
+    processing: Arc<AudioProcessingSettings>,
     device_name: Option<String>,
 ) -> (
     Sender<()>,
@@ -605,6 +852,7 @@ fn play(
             fade_rx,
             position_ms_thread,
             levels,
+            processing,
             device_name,
         ) {
             eprintln!("Audio error: {e}");
@@ -624,6 +872,7 @@ fn run(
     fade_rx: mpsc::Receiver<FadeRequest>,
     position_ms: Arc<AtomicU64>,
     levels: Arc<AudioLevels>,
+    processing: Arc<AudioProcessingSettings>,
     device_name: Option<String>,
 ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     // Récupérer l'état symphonia — depuis le pré-chargement ou en ouvrant le fichier
@@ -686,6 +935,7 @@ fn run(
     let fade_finished = Arc::new(AtomicBool::new(false));
 
     let levels_cb = Arc::clone(&levels);
+    let processing_cb = Arc::clone(&processing);
     let buffered_samples_cb = Arc::clone(&buffered_samples);
     let playback_generation_cb = Arc::clone(&playback_generation);
     let fade_finished_cb = Arc::clone(&fade_finished);
@@ -693,6 +943,7 @@ fn run(
     let mut current_offset = 0;
     let mut callback_generation = 0;
     let mut fade_state = FadeState::default();
+    let mut eq_processor = EqProcessor::new(output_sample_rate, out_channels);
     let stream = device.build_output_stream(
         &config.into(),
         move |data: &mut [f32], _| {
@@ -713,6 +964,8 @@ fn run(
                 &mut fade_state,
                 &fade_finished_cb,
             );
+            eq_processor.process(data, &processing_cb);
+            apply_master_volume(data, &processing_cb);
             update_levels(&levels_cb, data, out_channels);
         },
         |err| eprintln!("CPAL error: {err}"),
@@ -956,6 +1209,17 @@ fn apply_fade_out(
 
     if fade_state.completed {
         fade_finished.store(true, Ordering::Relaxed);
+    }
+}
+
+fn apply_master_volume(data: &mut [f32], processing: &AudioProcessingSettings) {
+    let gain = processing.master_gain();
+    if (gain - 1.0).abs() <= f32::EPSILON {
+        return;
+    }
+
+    for sample in data {
+        *sample *= gain;
     }
 }
 
