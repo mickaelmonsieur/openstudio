@@ -1,0 +1,18 @@
+meta {
+  name: Play Queue Item
+  type: http
+  seq: 8
+}
+
+post {
+  url: {{baseUrl}}/deck/queue/{{queueId}}/play
+  body: none
+  auth: none
+}
+
+tests {
+  test("plays visible queue item", function() {
+    expect(res.status).to.equal(200);
+    expect(res.body.ok).to.equal(true);
+  });
+}

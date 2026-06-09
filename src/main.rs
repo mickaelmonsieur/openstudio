@@ -5,10 +5,12 @@
 
 mod audio;
 mod db;
+mod rest;
 mod ui;
 
 use std::collections::HashMap;
 use std::path::PathBuf;
+use std::sync::{Arc, Mutex};
 
 use iced::keyboard::key::Named;
 use iced::keyboard::Key;
@@ -299,6 +301,28 @@ fn pass_input_id() -> iced::widget::text_input::Id {
     iced::widget::text_input::Id::new("pass_field")
 }
 
+fn duration_ms(duration: std::time::Duration) -> u64 {
+    duration.as_millis().min(u128::from(u64::MAX)) as u64
+}
+
+fn queue_track_status(entry: &db::QueueEntry) -> rest::TrackStatus {
+    rest::TrackStatus {
+        track_id: entry.track_id,
+        artist: entry.artist_name.clone(),
+        title: entry.title.clone(),
+        duration_ms: duration_ms(entry.duration),
+    }
+}
+
+fn loaded_track_status(track: &LoadedTrack) -> rest::TrackStatus {
+    rest::TrackStatus {
+        track_id: Some(track.id),
+        artist: track.artist.clone(),
+        title: track.title.clone(),
+        duration_ms: duration_ms(track.duration),
+    }
+}
+
 // ── State ─────────────────────────────────────────────────────────────────────
 
 struct App {
@@ -343,6 +367,8 @@ struct App {
     instant_context_slot: Option<usize>,
     aux_slots: Vec<Option<LoadedTrack>>,
     aux_loops: Vec<bool>,
+    instant_loops: Vec<bool>,
+    rest_rx: Arc<Mutex<Option<std::sync::mpsc::Receiver<rest::RestCommand>>>>,
     app_config: db::AppConfig,
     timezone_options: Vec<String>,
     dialog: Option<Dialog>,
@@ -365,6 +391,8 @@ impl Default for App {
         let mut queue_entries = Vec::new();
         let mut app_config = db::AppConfig::default();
         let mut timezone_options = Vec::new();
+        let (rest_tx, rest_rx) = std::sync::mpsc::channel();
+        rest::start_server(rest_tx);
 
         let (db, status) = match db::Database::connect_from_file(&db_config_path()) {
             Ok(db) => {
@@ -465,6 +493,8 @@ impl Default for App {
             instant_context_slot: None,
             aux_slots: vec![None; 3],
             aux_loops: vec![false; 3],
+            instant_loops: vec![false; 10],
+            rest_rx: Arc::new(Mutex::new(Some(rest_rx))),
             is_locked: app_config.start_locked,
             app_config,
             timezone_options,
@@ -730,6 +760,7 @@ enum Message {
     InstantPreviousPage,
     InstantNextPage,
     ToggleAutoDj,
+    Rest(rest::RestCommand),
     QueuePreviewToggle(i32),
     QueueMoveUp,
     QueueMoveTop,
@@ -783,6 +814,10 @@ impl App {
     fn update(&mut self, message: Message) -> Task<Message> {
         match message {
             Message::NoOp => Task::none(),
+            Message::Rest(command) => {
+                self.handle_rest_command(command);
+                Task::none()
+            }
             Message::WindowClosed(window_id) => {
                 let closed = self.windows.remove(&window_id);
                 match closed {
@@ -1971,7 +2006,54 @@ impl App {
             subscriptions.push(meter);
         }
 
+        subscriptions.push(self.rest_command_subscription());
+
         Subscription::batch(subscriptions)
+    }
+
+    fn rest_command_subscription(&self) -> Subscription<Message> {
+        let receiver = Arc::clone(&self.rest_rx);
+
+        Subscription::run_with_id(
+            "openstudio-rest-api",
+            iced::stream::channel(100, move |mut output| async move {
+                use iced::futures::SinkExt;
+
+                let rx = {
+                    let Ok(mut guard) = receiver.lock() else {
+                        return;
+                    };
+                    guard.take()
+                };
+
+                let Some(rx) = rx else {
+                    return;
+                };
+                let rx = Arc::new(Mutex::new(rx));
+
+                loop {
+                    let command = tokio::task::spawn_blocking({
+                        let rx = Arc::clone(&rx);
+                        move || {
+                            let Ok(guard) = rx.lock() else {
+                                return None;
+                            };
+                            guard.recv().ok()
+                        }
+                    })
+                    .await;
+
+                    match command {
+                        Ok(Some(command)) => {
+                            if output.send(Message::Rest(command)).await.is_err() {
+                                break;
+                            }
+                        }
+                        _ => break,
+                    }
+                }
+            }),
+        )
     }
 
     fn title(&self, window_id: window::Id) -> String {
@@ -2770,6 +2852,7 @@ impl App {
                 self.instant_pages = vec![InstantPage::default()];
                 self.active_instant_page = 0;
                 self.instant_slots = vec![None; 10];
+                self.instant_loops = vec![false; 10];
             }
             Ok(pages) => {
                 self.instant_pages = pages
@@ -2790,6 +2873,7 @@ impl App {
     fn load_active_instant_slots(&mut self) {
         self.stop_instant();
         self.instant_slots = vec![None; 10];
+        self.instant_loops = vec![false; 10];
 
         let Some(db) = self.db.clone() else {
             return;
@@ -2838,6 +2922,7 @@ impl App {
         self.instant_pages.push(InstantPage::default());
         self.active_instant_page = self.instant_pages.len() - 1;
         self.instant_slots = vec![None; 10];
+        self.instant_loops = vec![false; 10];
         self.dialog = Some(Dialog::SaveInstantPage {
             name: String::new(),
         });
@@ -2916,6 +3001,7 @@ impl App {
     fn delete_active_instant_page(&mut self) {
         let Some(page_id) = self.active_instant_page_id() else {
             self.instant_slots = vec![None; 10];
+            self.instant_loops = vec![false; 10];
             self.status = String::from("Instant page is empty");
             return;
         };
@@ -2935,6 +3021,7 @@ impl App {
             self.instant_pages = vec![InstantPage::default()];
             self.active_instant_page = 0;
             self.instant_slots = vec![None; 10];
+            self.instant_loops = vec![false; 10];
         }
     }
 
@@ -2978,6 +3065,55 @@ impl App {
             .handle(PREVIEW_PLAYER_ID, audio::PlayerCommand::Stop);
     }
 
+    fn set_auto_dj_enabled(&mut self, enabled: bool) {
+        if self.autodj_enabled == enabled {
+            return;
+        }
+        self.autodj_enabled = enabled;
+        if self.autodj_enabled {
+            self.set_auto_mix_status("Waiting");
+        } else {
+            self.preloaded_queue_entry = None;
+            self.set_auto_mix_status("Disabled");
+        }
+    }
+
+    fn queue_preview_id_at_position(&self, one_based_id: usize) -> Option<i32> {
+        self.queue_entries
+            .get(one_based_id.checked_sub(1)?)
+            .map(|entry| entry.id)
+    }
+
+    fn play_queue_preview_at_position(&mut self, one_based_id: usize, toggle: bool) -> bool {
+        let Some(queue_id) = self.queue_preview_id_at_position(one_based_id) else {
+            return false;
+        };
+
+        if toggle && self.previewing_queue_id == Some(queue_id) {
+            self.stop_preview();
+            self.previewing_queue_id = None;
+            return true;
+        }
+
+        let entry = self.queue_entries.iter().find(|entry| entry.id == queue_id);
+        let (track_id, cue_in) = entry
+            .map(|entry| (entry.track_id, entry.cue_in))
+            .unwrap_or((None, std::time::Duration::ZERO));
+        let path = track_id.and_then(|track_id| self.search_track_path(track_id));
+        let Some(path) = path else {
+            return false;
+        };
+
+        self.audio.handle(
+            PREVIEW_PLAYER_ID,
+            audio::PlayerCommand::Load { path, cue_in },
+        );
+        self.audio
+            .handle(PREVIEW_PLAYER_ID, audio::PlayerCommand::Play);
+        self.previewing_queue_id = Some(queue_id);
+        true
+    }
+
     fn play_instant_slot(&mut self, index: usize) {
         let Some(track) = self.instant_slots.get(index).and_then(Option::as_ref) else {
             return;
@@ -3000,9 +3136,27 @@ impl App {
         self.active_instant_slot = None;
     }
 
+    fn stop_instant_slot(&mut self, index: usize) {
+        if self.active_instant_slot == Some(index) {
+            self.stop_instant();
+        }
+    }
+
+    fn set_instant_loop(&mut self, index: usize, enabled: bool) {
+        if let Some(looping) = self.instant_loops.get_mut(index) {
+            *looping = enabled;
+        }
+    }
+
     fn sync_instant_active_slot(&mut self) {
-        if self.active_instant_slot.is_some() && !self.audio.player(INSTANT_PLAYER_ID).is_active() {
-            self.active_instant_slot = None;
+        if let Some(index) = self.active_instant_slot {
+            if !self.audio.player(INSTANT_PLAYER_ID).is_active() {
+                if self.instant_loops.get(index).copied().unwrap_or(false) {
+                    self.play_instant_slot(index);
+                } else {
+                    self.active_instant_slot = None;
+                }
+            }
         }
     }
 
@@ -3214,6 +3368,12 @@ impl App {
         }
     }
 
+    fn set_aux_loop(&mut self, index: usize, enabled: bool) {
+        if let Some(looping) = self.aux_loops.get_mut(index) {
+            *looping = enabled;
+        }
+    }
+
     fn sync_aux_loops(&mut self, was_active: [bool; 3]) {
         for (index, was_active) in was_active.into_iter().enumerate() {
             if !was_active || self.aux_is_active(index) {
@@ -3222,6 +3382,348 @@ impl App {
             if self.aux_loops.get(index).copied().unwrap_or(false) {
                 self.play_aux_slot(index);
             }
+        }
+    }
+
+    fn handle_rest_command(&mut self, command: rest::RestCommand) {
+        use rest::RestCommand;
+
+        let reply = match command {
+            RestCommand::Status(reply) => {
+                let _ = reply.send(rest::RestReply::ok("Status", self.rest_status()));
+                return;
+            }
+            RestCommand::SetAutomix(enabled, reply) => {
+                self.set_auto_dj_enabled(enabled);
+                (
+                    reply,
+                    rest::RestReply::ok("Automix updated", self.rest_status()),
+                )
+            }
+            RestCommand::DeckPlay(reply) => {
+                if self.any_queue_active() {
+                    for player_id in QUEUE_PLAYER_IDS {
+                        if self.audio.player(player_id).is_active() {
+                            self.audio.handle(player_id, audio::PlayerCommand::Resume);
+                        }
+                    }
+                } else {
+                    self.load_next_from_queue(self.current_queue_player_id);
+                }
+                (reply, rest::RestReply::ok("Deck play", self.rest_status()))
+            }
+            RestCommand::DeckPause(reply) => {
+                for player_id in QUEUE_PLAYER_IDS {
+                    if self.audio.player(player_id).is_active() {
+                        self.audio.handle(player_id, audio::PlayerCommand::Pause);
+                    }
+                }
+                (reply, rest::RestReply::ok("Deck pause", self.rest_status()))
+            }
+            RestCommand::DeckPlayPause(reply) => {
+                if self.any_queue_active() {
+                    for player_id in QUEUE_PLAYER_IDS {
+                        if self.audio.player(player_id).is_active() {
+                            self.audio
+                                .handle(player_id, audio::PlayerCommand::TogglePause);
+                        }
+                    }
+                } else {
+                    self.load_next_from_queue(self.current_queue_player_id);
+                }
+                (
+                    reply,
+                    rest::RestReply::ok("Deck play/pause", self.rest_status()),
+                )
+            }
+            RestCommand::DeckStop(reply) => {
+                let duration = std::time::Duration::from_millis(
+                    self.app_config.stop_fade_duration_ms.max(0) as u64,
+                );
+                let had_active = self.any_queue_active();
+                for player_id in QUEUE_PLAYER_IDS {
+                    if self.audio.player(player_id).is_active() {
+                        self.audio
+                            .handle(player_id, audio::PlayerCommand::SoftStop(duration));
+                    }
+                }
+                if had_active {
+                    self.deck_soft_stopping = true;
+                }
+                self.preloaded_queue_entry = None;
+                (reply, rest::RestReply::ok("Deck stop", self.rest_status()))
+            }
+            RestCommand::DeckRestart(reply) => {
+                if self.audio.player(self.current_queue_player_id).is_active() {
+                    self.audio
+                        .handle(self.current_queue_player_id, audio::PlayerCommand::Restart);
+                }
+                (
+                    reply,
+                    rest::RestReply::ok("Deck restart", self.rest_status()),
+                )
+            }
+            RestCommand::DeckSeek(offset_ms, reply) => {
+                self.audio.handle(
+                    self.current_queue_player_id,
+                    audio::PlayerCommand::SeekRelative(offset_ms),
+                );
+                (reply, rest::RestReply::ok("Deck seek", self.rest_status()))
+            }
+            RestCommand::DeckQueuePlay(one_based_id, reply) => {
+                let index = one_based_id - 1;
+                if index >= self.queue_entries.len() {
+                    (reply, rest::RestReply::error("Queue item does not exist."))
+                } else {
+                    self.play_queue_entry_now(index);
+                    (
+                        reply,
+                        rest::RestReply::ok("Queue item started", self.rest_status()),
+                    )
+                }
+            }
+            RestCommand::DeckPreviewPlay(one_based_id, reply) => {
+                if self.play_queue_preview_at_position(one_based_id, false) {
+                    (
+                        reply,
+                        rest::RestReply::ok("Deck preview started", self.rest_status()),
+                    )
+                } else {
+                    (
+                        reply,
+                        rest::RestReply::error("Queue preview item cannot be played."),
+                    )
+                }
+            }
+            RestCommand::DeckPreviewToggle(one_based_id, reply) => {
+                if self.play_queue_preview_at_position(one_based_id, true) {
+                    (
+                        reply,
+                        rest::RestReply::ok("Deck preview toggled", self.rest_status()),
+                    )
+                } else {
+                    (
+                        reply,
+                        rest::RestReply::error("Queue preview item cannot be toggled."),
+                    )
+                }
+            }
+            RestCommand::DeckPreviewStop(reply) => {
+                self.stop_preview();
+                self.previewing_queue_id = None;
+                (
+                    reply,
+                    rest::RestReply::ok("Deck preview stopped", self.rest_status()),
+                )
+            }
+            RestCommand::DeckPreviewSeek(offset_ms, reply) => {
+                self.audio.handle(
+                    PREVIEW_PLAYER_ID,
+                    audio::PlayerCommand::SeekRelative(offset_ms),
+                );
+                (
+                    reply,
+                    rest::RestReply::ok("Deck preview seek", self.rest_status()),
+                )
+            }
+            RestCommand::InstantPlay(one_based_id, reply) => {
+                let index = one_based_id - 1;
+                if index >= self.instant_slots.len() {
+                    (
+                        reply,
+                        rest::RestReply::error("Instant slot does not exist."),
+                    )
+                } else if self.instant_slots[index].is_none() {
+                    (reply, rest::RestReply::error("Instant slot is empty."))
+                } else {
+                    self.play_instant_slot(index);
+                    (
+                        reply,
+                        rest::RestReply::ok("Instant slot started", self.rest_status()),
+                    )
+                }
+            }
+            RestCommand::InstantStop(one_based_id, reply) => {
+                let index = one_based_id - 1;
+                if index >= self.instant_slots.len() {
+                    (
+                        reply,
+                        rest::RestReply::error("Instant slot does not exist."),
+                    )
+                } else {
+                    self.stop_instant_slot(index);
+                    (
+                        reply,
+                        rest::RestReply::ok("Instant slot stopped", self.rest_status()),
+                    )
+                }
+            }
+            RestCommand::InstantSetLoop(one_based_id, enabled, reply) => {
+                let index = one_based_id - 1;
+                if index >= self.instant_slots.len() {
+                    (
+                        reply,
+                        rest::RestReply::error("Instant slot does not exist."),
+                    )
+                } else {
+                    self.set_instant_loop(index, enabled);
+                    (
+                        reply,
+                        rest::RestReply::ok("Instant loop updated", self.rest_status()),
+                    )
+                }
+            }
+            RestCommand::AuxPlay(one_based_id, reply) => {
+                let index = one_based_id - 1;
+                if index >= self.aux_slots.len() {
+                    (reply, rest::RestReply::error("Aux player does not exist."))
+                } else if self.aux_slots[index].is_none() {
+                    (reply, rest::RestReply::error("Aux player is empty."))
+                } else {
+                    self.play_aux_slot(index);
+                    (
+                        reply,
+                        rest::RestReply::ok("Aux player started", self.rest_status()),
+                    )
+                }
+            }
+            RestCommand::AuxStop(one_based_id, reply) => {
+                let index = one_based_id - 1;
+                if index >= self.aux_slots.len() {
+                    (reply, rest::RestReply::error("Aux player does not exist."))
+                } else {
+                    self.stop_aux_slot(index);
+                    (
+                        reply,
+                        rest::RestReply::ok("Aux player stopped", self.rest_status()),
+                    )
+                }
+            }
+            RestCommand::AuxSetLoop(one_based_id, enabled, reply) => {
+                let index = one_based_id - 1;
+                if index >= self.aux_loops.len() {
+                    (reply, rest::RestReply::error("Aux player does not exist."))
+                } else {
+                    self.set_aux_loop(index, enabled);
+                    (
+                        reply,
+                        rest::RestReply::ok("Aux loop updated", self.rest_status()),
+                    )
+                }
+            }
+        };
+
+        let _ = reply.0.send(reply.1);
+    }
+
+    fn rest_status(&self) -> rest::RestStatus {
+        let deck_snapshot = self.audio.player(self.current_queue_player_id).snapshot();
+        let preview_snapshot = self.audio.player(PREVIEW_PLAYER_ID).snapshot();
+        let instant_snapshot = self.audio.player(INSTANT_PLAYER_ID).snapshot();
+
+        rest::RestStatus {
+            automix: rest::AutomixStatus {
+                enabled: self.autodj_enabled,
+                label: self.auto_mix_status.clone(),
+            },
+            deck: rest::DeckStatus {
+                active: self.any_queue_active(),
+                playing: self.ui_playing(),
+                current_player: Self::player_id_label(self.current_queue_player_id).to_string(),
+                position_ms: duration_ms(deck_snapshot.position),
+                duration_ms: deck_snapshot.duration.map(duration_ms),
+                current: self.current_queue_entry.as_ref().map(queue_track_status),
+            },
+            preview: rest::PreviewStatus {
+                active: self.audio.player(PREVIEW_PLAYER_ID).is_active(),
+                playing: self.audio.player(PREVIEW_PLAYER_ID).is_playing(),
+                queue_id: self.previewing_queue_id,
+                position_ms: duration_ms(preview_snapshot.position),
+                duration_ms: preview_snapshot.duration.map(duration_ms),
+            },
+            instant: rest::InstantStatus {
+                active_slot: self.active_instant_slot.map(|index| index + 1),
+                active: self.audio.player(INSTANT_PLAYER_ID).is_active(),
+                playing: self.audio.player(INSTANT_PLAYER_ID).is_playing(),
+                slots: self.instant_rest_slots(&instant_snapshot),
+            },
+            aux: self.aux_rest_slots(),
+            queue: self
+                .queue_entries
+                .iter()
+                .enumerate()
+                .map(|(index, entry)| rest::QueueItemStatus {
+                    id: index + 1,
+                    queue_id: entry.id,
+                    track: Some(queue_track_status(entry)),
+                })
+                .collect(),
+        }
+    }
+
+    fn instant_rest_slots(
+        &self,
+        instant_snapshot: &audio::PlayerSnapshot,
+    ) -> Vec<rest::SlotPlayerStatus> {
+        self.instant_slots
+            .iter()
+            .enumerate()
+            .map(|(index, slot)| {
+                let active = self.active_instant_slot == Some(index)
+                    && self.audio.player(INSTANT_PLAYER_ID).is_active();
+                rest::SlotPlayerStatus {
+                    id: index + 1,
+                    loaded: slot.is_some(),
+                    active,
+                    playing: active && self.audio.player(INSTANT_PLAYER_ID).is_playing(),
+                    loop_enabled: self.instant_loops.get(index).copied().unwrap_or(false),
+                    position_ms: if active {
+                        duration_ms(instant_snapshot.position)
+                    } else {
+                        0
+                    },
+                    duration_ms: slot.as_ref().map(|track| duration_ms(track.duration)),
+                    track: slot.as_ref().map(loaded_track_status),
+                }
+            })
+            .collect()
+    }
+
+    fn aux_rest_slots(&self) -> Vec<rest::SlotPlayerStatus> {
+        self.aux_slots
+            .iter()
+            .enumerate()
+            .map(|(index, slot)| {
+                let player_id = Self::aux_player_id(index);
+                let snapshot = player_id.map(|id| self.audio.player(id).snapshot());
+                let active = player_id.is_some_and(|id| self.audio.player(id).is_active());
+                let playing = player_id.is_some_and(|id| self.audio.player(id).is_playing());
+                rest::SlotPlayerStatus {
+                    id: index + 1,
+                    loaded: slot.is_some(),
+                    active,
+                    playing,
+                    loop_enabled: self.aux_loops.get(index).copied().unwrap_or(false),
+                    position_ms: snapshot
+                        .as_ref()
+                        .map(|snapshot| duration_ms(snapshot.position))
+                        .unwrap_or(0),
+                    duration_ms: slot.as_ref().map(|track| duration_ms(track.duration)),
+                    track: slot.as_ref().map(loaded_track_status),
+                }
+            })
+            .collect()
+    }
+
+    fn player_id_label(player_id: audio::PlayerId) -> &'static str {
+        match player_id {
+            audio::PlayerId::QueueA => "queue_a",
+            audio::PlayerId::QueueB => "queue_b",
+            audio::PlayerId::Instant => "instant",
+            audio::PlayerId::Aux1 => "aux_1",
+            audio::PlayerId::Aux2 => "aux_2",
+            audio::PlayerId::Aux3 => "aux_3",
+            audio::PlayerId::Preview => "preview",
         }
     }
 

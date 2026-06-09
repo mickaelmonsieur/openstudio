@@ -1,0 +1,9 @@
+{
+  "version": "1",
+  "name": "OpenStudio Player REST",
+  "type": "collection",
+  "ignore": [
+    "node_modules",
+    ".git"
+  ]
+}

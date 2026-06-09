@@ -1,0 +1,18 @@
+meta {
+  name: Play Queue Preview
+  type: http
+  seq: 1
+}
+
+post {
+  url: {{baseUrl}}/deck/queue/{{queueId}}/preview/play
+  body: none
+  auth: none
+}
+
+tests {
+  test("starts queue preview", function() {
+    expect(res.status).to.equal(200);
+    expect(res.body.ok).to.equal(true);
+  });
+}

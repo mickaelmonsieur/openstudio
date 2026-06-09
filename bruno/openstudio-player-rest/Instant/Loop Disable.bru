@@ -1,0 +1,28 @@
+meta {
+  name: Loop Disable
+  type: http
+  seq: 4
+}
+
+put {
+  url: {{baseUrl}}/instant/{{instantId}}/loop
+  body: json
+  auth: none
+}
+
+headers {
+  Content-Type: application/json
+}
+
+body:json {
+  {
+    "enabled": false
+  }
+}
+
+tests {
+  test("disables instant loop", function() {
+    expect(res.status).to.equal(200);
+    expect(res.body.ok).to.equal(true);
+  });
+}

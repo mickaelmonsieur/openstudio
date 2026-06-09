@@ -1,0 +1,29 @@
+meta {
+  name: Disable
+  type: http
+  seq: 2
+}
+
+put {
+  url: {{baseUrl}}/automix
+  body: json
+  auth: none
+}
+
+headers {
+  Content-Type: application/json
+}
+
+body:json {
+  {
+    "enabled": false
+  }
+}
+
+tests {
+  test("disables automix", function() {
+    expect(res.status).to.equal(200);
+    expect(res.body.ok).to.equal(true);
+    expect(res.body.status.automix.enabled).to.equal(false);
+  });
+}

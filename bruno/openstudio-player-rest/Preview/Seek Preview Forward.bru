@@ -1,0 +1,28 @@
+meta {
+  name: Seek Preview Forward
+  type: http
+  seq: 4
+}
+
+post {
+  url: {{baseUrl}}/deck/preview/seek
+  body: json
+  auth: none
+}
+
+headers {
+  Content-Type: application/json
+}
+
+body:json {
+  {
+    "offset_ms": {{seekForwardMs}}
+  }
+}
+
+tests {
+  test("seeks preview forward", function() {
+    expect(res.status).to.equal(200);
+    expect(res.body.ok).to.equal(true);
+  });
+}

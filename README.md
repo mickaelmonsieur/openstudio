@@ -18,6 +18,12 @@ Admin in Web UI:
 
 ![Admin in Web UI](docs/images/admin-playlists.png)
 
+## Player REST API
+
+The Rust player exposes playback-control endpoints on `0.0.0.0:7080`.
+See [docs/rest-api.md](docs/rest-api.md) for the route reference.
+The Bruno test collection is available in [bruno/openstudio-player-rest](bruno/openstudio-player-rest).
+
 ## Platform Support
 
 OpenStudio is developed primarily for macOS on Apple Silicon. macOS Intel builds are provided for legacy machines while the platform remains practical to support.
