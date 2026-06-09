@@ -129,6 +129,14 @@ impl AudioManager {
         self.processing.master_volume_percent()
     }
 
+    pub fn set_processing_bypassed(&self, bypassed: bool) {
+        self.processing.set_bypassed(bypassed);
+    }
+
+    pub fn processing_bypassed(&self) -> bool {
+        self.processing.bypassed()
+    }
+
     pub fn set_eq_enabled(&self, enabled: bool) {
         self.processing.set_eq_enabled(enabled);
     }
@@ -144,6 +152,46 @@ impl AudioManager {
     pub fn eq_gains_db(&self) -> Vec<f32> {
         self.processing.eq_gains_db()
     }
+
+    pub fn set_compressor_attack_ms(&self, value: f32) {
+        self.processing.set_compressor_attack_ms(value);
+    }
+
+    pub fn compressor_attack_ms(&self) -> f32 {
+        self.processing.compressor_attack_ms()
+    }
+
+    pub fn set_compressor_ratio(&self, value: f32) {
+        self.processing.set_compressor_ratio(value);
+    }
+
+    pub fn compressor_ratio(&self) -> f32 {
+        self.processing.compressor_ratio()
+    }
+
+    pub fn set_compressor_threshold_db(&self, value: f32) {
+        self.processing.set_compressor_threshold_db(value);
+    }
+
+    pub fn compressor_threshold_db(&self) -> f32 {
+        self.processing.compressor_threshold_db()
+    }
+
+    pub fn set_compressor_gain_db(&self, value: f32) {
+        self.processing.set_compressor_gain_db(value);
+    }
+
+    pub fn compressor_gain_db(&self) -> f32 {
+        self.processing.compressor_gain_db()
+    }
+
+    pub fn set_compressor_release_ms(&self, value: f32) {
+        self.processing.set_compressor_release_ms(value);
+    }
+
+    pub fn compressor_release_ms(&self) -> f32 {
+        self.processing.compressor_release_ms()
+    }
 }
 
 impl Default for AudioManager {
@@ -153,12 +201,26 @@ impl Default for AudioManager {
 }
 
 pub struct AudioProcessingSettings {
+    bypassed: AtomicBool,
     master_volume_per_mille: AtomicU32,
     eq_enabled: AtomicBool,
     eq_gains_tenth_db: [AtomicI32; 10],
+    compressor_attack_tenth_ms: AtomicU32,
+    compressor_ratio_hundredths: AtomicU32,
+    compressor_threshold_tenth_db: AtomicI32,
+    compressor_gain_tenth_db: AtomicI32,
+    compressor_release_tenth_ms: AtomicU32,
 }
 
 impl AudioProcessingSettings {
+    fn set_bypassed(&self, bypassed: bool) {
+        self.bypassed.store(bypassed, Ordering::Relaxed);
+    }
+
+    fn bypassed(&self) -> bool {
+        self.bypassed.load(Ordering::Relaxed)
+    }
+
     fn set_master_volume_percent(&self, volume: f32) {
         let per_mille = (volume.clamp(0.0, 100.0) * 10.0).round() as u32;
         self.master_volume_per_mille
@@ -198,14 +260,85 @@ impl AudioProcessingSettings {
     fn eq_gains_tenth_db(&self) -> [i32; 10] {
         std::array::from_fn(|idx| self.eq_gains_tenth_db[idx].load(Ordering::Relaxed))
     }
+
+    fn set_compressor_attack_ms(&self, value: f32) {
+        self.compressor_attack_tenth_ms.store(
+            (value.clamp(0.1, 5000.0) * 10.0).round() as u32,
+            Ordering::Relaxed,
+        );
+    }
+
+    fn compressor_attack_ms(&self) -> f32 {
+        self.compressor_attack_tenth_ms.load(Ordering::Relaxed) as f32 / 10.0
+    }
+
+    fn set_compressor_ratio(&self, value: f32) {
+        self.compressor_ratio_hundredths.store(
+            (value.clamp(1.0, 40.0) * 100.0).round() as u32,
+            Ordering::Relaxed,
+        );
+    }
+
+    fn compressor_ratio(&self) -> f32 {
+        self.compressor_ratio_hundredths.load(Ordering::Relaxed) as f32 / 100.0
+    }
+
+    fn set_compressor_threshold_db(&self, value: f32) {
+        self.compressor_threshold_tenth_db.store(
+            (value.clamp(-80.0, 0.0) * 10.0).round() as i32,
+            Ordering::Relaxed,
+        );
+    }
+
+    fn compressor_threshold_db(&self) -> f32 {
+        self.compressor_threshold_tenth_db.load(Ordering::Relaxed) as f32 / 10.0
+    }
+
+    fn set_compressor_gain_db(&self, value: f32) {
+        self.compressor_gain_tenth_db.store(
+            (value.clamp(-24.0, 24.0) * 10.0).round() as i32,
+            Ordering::Relaxed,
+        );
+    }
+
+    fn compressor_gain_db(&self) -> f32 {
+        self.compressor_gain_tenth_db.load(Ordering::Relaxed) as f32 / 10.0
+    }
+
+    fn set_compressor_release_ms(&self, value: f32) {
+        self.compressor_release_tenth_ms.store(
+            (value.clamp(1.0, 10000.0) * 10.0).round() as u32,
+            Ordering::Relaxed,
+        );
+    }
+
+    fn compressor_release_ms(&self) -> f32 {
+        self.compressor_release_tenth_ms.load(Ordering::Relaxed) as f32 / 10.0
+    }
+
+    fn compressor_params(&self) -> CompressorParams {
+        CompressorParams {
+            attack_ms: self.compressor_attack_ms(),
+            ratio: self.compressor_ratio(),
+            threshold_db: self.compressor_threshold_db(),
+            makeup_gain_db: self.compressor_gain_db(),
+            release_ms: self.compressor_release_ms(),
+        }
+    }
 }
 
 impl Default for AudioProcessingSettings {
     fn default() -> Self {
         Self {
+            bypassed: AtomicBool::new(false),
             master_volume_per_mille: AtomicU32::new(1000),
             eq_enabled: AtomicBool::new(false),
             eq_gains_tenth_db: std::array::from_fn(|_| AtomicI32::new(0)),
+            compressor_attack_tenth_ms: AtomicU32::new(250),
+            compressor_ratio_hundredths: AtomicU32::new(400),
+            compressor_threshold_tenth_db: AtomicI32::new(-270),
+            compressor_gain_tenth_db: AtomicI32::new(0),
+            compressor_release_tenth_ms: AtomicU32::new(15000),
         }
     }
 }
@@ -709,6 +842,101 @@ impl BiquadCoefficients {
     }
 }
 
+#[derive(Clone, Copy, PartialEq)]
+struct CompressorParams {
+    attack_ms: f32,
+    ratio: f32,
+    threshold_db: f32,
+    makeup_gain_db: f32,
+    release_ms: f32,
+}
+
+struct Compressor {
+    sample_rate: f32,
+    current_gain: f32,
+    params: CompressorParams,
+    attack_coeff: f32,
+    release_coeff: f32,
+}
+
+impl Compressor {
+    fn new(sample_rate: u32) -> Self {
+        let params = CompressorParams {
+            attack_ms: 25.0,
+            ratio: 4.0,
+            threshold_db: -27.0,
+            makeup_gain_db: 0.0,
+            release_ms: 1500.0,
+        };
+        let mut compressor = Self {
+            sample_rate: sample_rate as f32,
+            current_gain: 1.0,
+            params,
+            attack_coeff: 0.0,
+            release_coeff: 0.0,
+        };
+        compressor.update_params(params);
+        compressor
+    }
+
+    fn process(&mut self, data: &mut [f32], channels: usize, processing: &AudioProcessingSettings) {
+        let params = processing.compressor_params();
+        if params != self.params {
+            self.update_params(params);
+        }
+
+        if self.params.ratio <= 1.01 && self.params.makeup_gain_db.abs() < 0.05 {
+            return;
+        }
+
+        let channels = channels.max(1);
+        for frame in data.chunks_mut(channels) {
+            let peak = frame
+                .iter()
+                .map(|sample| sample.abs())
+                .fold(0.0_f32, f32::max)
+                .max(0.000_001);
+            let level_db = 20.0 * peak.log10();
+            let gain_reduction_db = if level_db > self.params.threshold_db {
+                let compressed_db = self.params.threshold_db
+                    + (level_db - self.params.threshold_db) / self.params.ratio;
+                compressed_db - level_db
+            } else {
+                0.0
+            };
+            let target_gain = db_to_gain(gain_reduction_db + self.params.makeup_gain_db);
+            let coeff = if target_gain < self.current_gain {
+                self.attack_coeff
+            } else {
+                self.release_coeff
+            };
+            self.current_gain = target_gain + coeff * (self.current_gain - target_gain);
+
+            for sample in frame {
+                *sample = (*sample * self.current_gain).clamp(-4.0, 4.0);
+            }
+        }
+    }
+
+    fn update_params(&mut self, params: CompressorParams) {
+        self.params = params;
+        self.attack_coeff = smoothing_coeff(params.attack_ms, self.sample_rate);
+        self.release_coeff = smoothing_coeff(params.release_ms, self.sample_rate);
+    }
+
+    fn reset(&mut self) {
+        self.current_gain = 1.0;
+    }
+}
+
+fn smoothing_coeff(time_ms: f32, sample_rate: f32) -> f32 {
+    (-1.0 / ((time_ms.max(0.1) / 1000.0) * sample_rate.max(1.0))).exp()
+}
+
+fn db_to_gain(db: f32) -> f32 {
+    10.0_f32.powf(db / 20.0)
+}
+
 /// Lit uniquement les métadonnées pour obtenir la durée totale du fichier.
 pub fn read_duration(path: &std::path::Path) -> Option<std::time::Duration> {
     let file = std::fs::File::open(path).ok()?;
@@ -944,6 +1172,7 @@ fn run(
     let mut callback_generation = 0;
     let mut fade_state = FadeState::default();
     let mut eq_processor = EqProcessor::new(output_sample_rate, out_channels);
+    let mut compressor = Compressor::new(output_sample_rate);
     let stream = device.build_output_stream(
         &config.into(),
         move |data: &mut [f32], _| {
@@ -964,8 +1193,14 @@ fn run(
                 &mut fade_state,
                 &fade_finished_cb,
             );
-            eq_processor.process(data, &processing_cb);
-            apply_master_volume(data, &processing_cb);
+            if processing_cb.bypassed() {
+                eq_processor.reset();
+                compressor.reset();
+            } else {
+                eq_processor.process(data, &processing_cb);
+                compressor.process(data, out_channels, &processing_cb);
+                apply_master_volume(data, &processing_cb);
+            }
             update_levels(&levels_cb, data, out_channels);
         },
         |err| eprintln!("CPAL error: {err}"),

@@ -671,6 +671,7 @@ enum Dialog {
         delete_confirm: bool,
     },
     AudioProcessing {
+        processing_bypassed: bool,
         input_volume: f32,
         compressor_mode: String,
         compressor_preset: String,
@@ -715,6 +716,66 @@ enum ConfigField {
     AutoMixOnStart,
     AutoPlayOnStart,
     StartLocked,
+}
+
+#[derive(Debug, Clone, Copy)]
+struct CompressorPreset {
+    name: &'static str,
+    attack_ms: f32,
+    ratio: f32,
+    threshold_db: f32,
+    gain_db: f32,
+    release_ms: f32,
+}
+
+const COMPRESSOR_PRESETS: [CompressorPreset; 5] = [
+    CompressorPreset {
+        name: "Soft 1",
+        attack_ms: 35.0,
+        ratio: 1.8,
+        threshold_db: -18.0,
+        gain_db: 1.0,
+        release_ms: 700.0,
+    },
+    CompressorPreset {
+        name: "Soft 2",
+        attack_ms: 25.0,
+        ratio: 2.5,
+        threshold_db: -22.0,
+        gain_db: 2.0,
+        release_ms: 900.0,
+    },
+    CompressorPreset {
+        name: "Medium",
+        attack_ms: 15.0,
+        ratio: 3.5,
+        threshold_db: -24.0,
+        gain_db: 3.0,
+        release_ms: 800.0,
+    },
+    CompressorPreset {
+        name: "Strong",
+        attack_ms: 8.0,
+        ratio: 5.0,
+        threshold_db: -28.0,
+        gain_db: 4.0,
+        release_ms: 650.0,
+    },
+    CompressorPreset {
+        name: "Voice",
+        attack_ms: 5.0,
+        ratio: 3.0,
+        threshold_db: -20.0,
+        gain_db: 2.5,
+        release_ms: 280.0,
+    },
+];
+
+fn find_compressor_preset(name: &str) -> Option<CompressorPreset> {
+    COMPRESSOR_PRESETS
+        .iter()
+        .copied()
+        .find(|preset| preset.name == name)
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -810,6 +871,7 @@ enum Message {
     DbConfigDeleteResult(Result<String, String>),
     ConfigOpen,
     AudioProcessingOpen,
+    AudioProcessingBypassChanged(bool),
     AudioProcessingInputVolumeChanged(f32),
     AudioProcessingModeChanged(String),
     AudioProcessingPresetChanged(String),
@@ -1790,18 +1852,31 @@ impl App {
 
             Message::AudioProcessingOpen => {
                 self.dialog = Some(Dialog::AudioProcessing {
+                    processing_bypassed: self.audio.processing_bypassed(),
                     input_volume: self.audio.master_volume_percent(),
                     compressor_mode: "Custom Values".into(),
                     compressor_preset: "Soft 2".into(),
-                    attack: "25.0".into(),
-                    ratio: "4".into(),
-                    threshold: "-27".into(),
-                    gain: "15".into(),
-                    release: "1500".into(),
+                    attack: format!("{:.1}", self.audio.compressor_attack_ms()),
+                    ratio: format!("{:.2}", self.audio.compressor_ratio()),
+                    threshold: format!("{:.1}", self.audio.compressor_threshold_db()),
+                    gain: format!("{:.1}", self.audio.compressor_gain_db()),
+                    release: format!("{:.1}", self.audio.compressor_release_ms()),
                     eq_enabled: self.audio.eq_enabled(),
                     eq_gains: self.audio.eq_gains_db(),
                     agc_preset: "Disabled".into(),
                 });
+                Task::none()
+            }
+
+            Message::AudioProcessingBypassChanged(value) => {
+                self.audio.set_processing_bypassed(value);
+                if let Some(Dialog::AudioProcessing {
+                    processing_bypassed,
+                    ..
+                }) = &mut self.dialog
+                {
+                    *processing_bypassed = value;
+                }
                 Task::none()
             }
 
@@ -1815,55 +1890,117 @@ impl App {
             }
 
             Message::AudioProcessingModeChanged(value) => {
+                let should_apply_preset = value == "By Preset";
+                let mut preset_to_apply = None;
                 if let Some(Dialog::AudioProcessing {
-                    compressor_mode, ..
+                    compressor_mode,
+                    compressor_preset,
+                    ..
                 }) = &mut self.dialog
                 {
                     *compressor_mode = value;
+                    if should_apply_preset {
+                        preset_to_apply = find_compressor_preset(compressor_preset);
+                    }
+                }
+                if let Some(preset) = preset_to_apply {
+                    self.apply_compressor_preset(preset);
                 }
                 Task::none()
             }
 
             Message::AudioProcessingPresetChanged(value) => {
+                let preset_to_apply = find_compressor_preset(&value);
                 if let Some(Dialog::AudioProcessing {
-                    compressor_preset, ..
+                    compressor_mode,
+                    compressor_preset,
+                    ..
                 }) = &mut self.dialog
                 {
+                    *compressor_mode = "By Preset".into();
                     *compressor_preset = value;
+                }
+                if let Some(preset) = preset_to_apply {
+                    self.apply_compressor_preset(preset);
                 }
                 Task::none()
             }
 
             Message::AudioProcessingAttackChanged(value) => {
-                if let Some(Dialog::AudioProcessing { attack, .. }) = &mut self.dialog {
+                if let Ok(parsed) = value.parse::<f32>() {
+                    self.audio.set_compressor_attack_ms(parsed);
+                }
+                if let Some(Dialog::AudioProcessing {
+                    compressor_mode,
+                    attack,
+                    ..
+                }) = &mut self.dialog
+                {
+                    *compressor_mode = "Custom Values".into();
                     *attack = value;
                 }
                 Task::none()
             }
 
             Message::AudioProcessingRatioChanged(value) => {
-                if let Some(Dialog::AudioProcessing { ratio, .. }) = &mut self.dialog {
+                if let Ok(parsed) = value.parse::<f32>() {
+                    self.audio.set_compressor_ratio(parsed);
+                }
+                if let Some(Dialog::AudioProcessing {
+                    compressor_mode,
+                    ratio,
+                    ..
+                }) = &mut self.dialog
+                {
+                    *compressor_mode = "Custom Values".into();
                     *ratio = value;
                 }
                 Task::none()
             }
 
             Message::AudioProcessingThresholdChanged(value) => {
-                if let Some(Dialog::AudioProcessing { threshold, .. }) = &mut self.dialog {
+                if let Ok(parsed) = value.parse::<f32>() {
+                    self.audio.set_compressor_threshold_db(parsed);
+                }
+                if let Some(Dialog::AudioProcessing {
+                    compressor_mode,
+                    threshold,
+                    ..
+                }) = &mut self.dialog
+                {
+                    *compressor_mode = "Custom Values".into();
                     *threshold = value;
                 }
                 Task::none()
             }
 
             Message::AudioProcessingGainChanged(value) => {
-                if let Some(Dialog::AudioProcessing { gain, .. }) = &mut self.dialog {
+                if let Ok(parsed) = value.parse::<f32>() {
+                    self.audio.set_compressor_gain_db(parsed);
+                }
+                if let Some(Dialog::AudioProcessing {
+                    compressor_mode,
+                    gain,
+                    ..
+                }) = &mut self.dialog
+                {
+                    *compressor_mode = "Custom Values".into();
                     *gain = value;
                 }
                 Task::none()
             }
 
             Message::AudioProcessingReleaseChanged(value) => {
-                if let Some(Dialog::AudioProcessing { release, .. }) = &mut self.dialog {
+                if let Ok(parsed) = value.parse::<f32>() {
+                    self.audio.set_compressor_release_ms(parsed);
+                }
+                if let Some(Dialog::AudioProcessing {
+                    compressor_mode,
+                    release,
+                    ..
+                }) = &mut self.dialog
+                {
+                    *compressor_mode = "Custom Values".into();
                     *release = value;
                 }
                 Task::none()
@@ -4661,6 +4798,7 @@ impl App {
                 .style(panel_style(rgb(31, 46, 55), accent_purple()))
             }
             Some(Dialog::AudioProcessing {
+                processing_bypassed,
                 input_volume,
                 compressor_mode,
                 compressor_preset,
@@ -4724,13 +4862,10 @@ impl App {
                 .into();
 
                 let compressor_modes = vec!["By Preset".to_string(), "Custom Values".to_string()];
-                let compressor_presets = vec![
-                    "Soft 1".to_string(),
-                    "Soft 2".to_string(),
-                    "Medium".to_string(),
-                    "Strong".to_string(),
-                    "Voice".to_string(),
-                ];
+                let compressor_presets = COMPRESSOR_PRESETS
+                    .iter()
+                    .map(|preset| preset.name.to_string())
+                    .collect::<Vec<_>>();
                 let compressor_body: Element<_> = column![
                     row![
                         label("Mode"),
@@ -4857,9 +4992,10 @@ impl App {
                                 .size(18)
                                 .style(text_color(rgb(226, 238, 245))),
                             Space::with_width(Length::Fill),
-                            text("UI preview")
-                                .size(11)
-                                .style(text_color(rgb(125, 154, 171))),
+                            checkbox("Bypass", *processing_bypassed)
+                                .on_toggle(Message::AudioProcessingBypassChanged)
+                                .size(14)
+                                .text_size(12),
                         ]
                         .spacing(8)
                         .align_y(Alignment::Center),
@@ -5048,6 +5184,32 @@ impl App {
             ..Default::default()
         })
         .into()
+    }
+
+    fn apply_compressor_preset(&mut self, preset: CompressorPreset) {
+        self.audio.set_compressor_attack_ms(preset.attack_ms);
+        self.audio.set_compressor_ratio(preset.ratio);
+        self.audio.set_compressor_threshold_db(preset.threshold_db);
+        self.audio.set_compressor_gain_db(preset.gain_db);
+        self.audio.set_compressor_release_ms(preset.release_ms);
+
+        if let Some(Dialog::AudioProcessing {
+            compressor_mode,
+            attack,
+            ratio,
+            threshold,
+            gain,
+            release,
+            ..
+        }) = &mut self.dialog
+        {
+            *compressor_mode = "By Preset".into();
+            *attack = format!("{:.1}", preset.attack_ms);
+            *ratio = format!("{:.2}", preset.ratio);
+            *threshold = format!("{:.1}", preset.threshold_db);
+            *gain = format!("{:.1}", preset.gain_db);
+            *release = format!("{:.1}", preset.release_ms);
+        }
     }
 
     fn dialog_button(
