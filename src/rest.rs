@@ -1,6 +1,6 @@
 use serde::Serialize;
 use serde_json::Value;
-use std::io::{Read, Write};
+use std::io::{ErrorKind, Read, Write};
 use std::net::{TcpListener, TcpStream};
 use std::sync::mpsc::{self, Sender};
 use std::thread;
@@ -127,7 +127,8 @@ pub struct TrackStatus {
     pub duration_ms: u64,
 }
 
-pub fn start_server(tx: Sender<RestCommand>) {
+pub fn start_server(tx: Sender<RestCommand>) -> Sender<()> {
+    let (shutdown_tx, shutdown_rx) = mpsc::channel();
     thread::spawn(move || {
         let listener = match TcpListener::bind(REST_BIND_ADDRESS) {
             Ok(listener) => listener,
@@ -137,14 +138,32 @@ pub fn start_server(tx: Sender<RestCommand>) {
             }
         };
 
-        for stream in listener.incoming() {
-            let Ok(stream) = stream else {
-                continue;
-            };
-            let tx = tx.clone();
-            thread::spawn(move || handle_connection(stream, tx));
+        if let Err(error) = listener.set_nonblocking(true) {
+            eprintln!("OpenStudio REST server failed to switch nonblocking mode: {error}");
+            return;
+        }
+
+        loop {
+            if shutdown_rx.try_recv().is_ok() {
+                break;
+            }
+
+            match listener.accept() {
+                Ok((stream, _)) => {
+                    let tx = tx.clone();
+                    thread::spawn(move || handle_connection(stream, tx));
+                }
+                Err(error) if error.kind() == ErrorKind::WouldBlock => {
+                    thread::sleep(Duration::from_millis(50));
+                }
+                Err(error) => {
+                    eprintln!("OpenStudio REST server accept failed: {error}");
+                    thread::sleep(Duration::from_millis(250));
+                }
+            }
         }
     });
+    shutdown_tx
 }
 
 fn handle_connection(mut stream: TcpStream, tx: Sender<RestCommand>) {

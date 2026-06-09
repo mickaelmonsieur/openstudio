@@ -16,7 +16,7 @@ use iced::keyboard::key::Named;
 use iced::keyboard::Key;
 use iced::widget::{
     button, checkbox, column, container, mouse_area, pick_list, responsive, row, stack, text,
-    text_input, Space,
+    text_input, vertical_slider, Space,
 };
 use iced::{
     window, Alignment, Background, Border, Color, Element, Length, Size, Subscription, Task, Theme,
@@ -80,7 +80,11 @@ fn db_config_save_path() -> PathBuf {
 fn migrations_dir() -> PathBuf {
     if let Ok(exe) = std::env::current_exe() {
         // macOS app bundle: Contents/Resources/migrations/
-        if let Some(candidate) = exe.parent().and_then(|p| p.parent()).map(|p| p.join("Resources/migrations")) {
+        if let Some(candidate) = exe
+            .parent()
+            .and_then(|p| p.parent())
+            .map(|p| p.join("Resources/migrations"))
+        {
             if candidate.exists() {
                 return candidate;
             }
@@ -369,6 +373,7 @@ struct App {
     aux_loops: Vec<bool>,
     instant_loops: Vec<bool>,
     rest_rx: Arc<Mutex<Option<std::sync::mpsc::Receiver<rest::RestCommand>>>>,
+    rest_shutdown_tx: Option<std::sync::mpsc::Sender<()>>,
     app_config: db::AppConfig,
     timezone_options: Vec<String>,
     dialog: Option<Dialog>,
@@ -392,7 +397,7 @@ impl Default for App {
         let mut app_config = db::AppConfig::default();
         let mut timezone_options = Vec::new();
         let (rest_tx, rest_rx) = std::sync::mpsc::channel();
-        rest::start_server(rest_tx);
+        let rest_shutdown_tx = rest::start_server(rest_tx);
 
         let (db, status) = match db::Database::connect_from_file(&db_config_path()) {
             Ok(db) => {
@@ -495,6 +500,7 @@ impl Default for App {
             aux_loops: vec![false; 3],
             instant_loops: vec![false; 10],
             rest_rx: Arc::new(Mutex::new(Some(rest_rx))),
+            rest_shutdown_tx: Some(rest_shutdown_tx),
             is_locked: app_config.start_locked,
             app_config,
             timezone_options,
@@ -664,6 +670,19 @@ enum Dialog {
         delete_status: Option<Result<String, String>>,
         delete_confirm: bool,
     },
+    AudioProcessing {
+        input_volume: f32,
+        compressor_mode: String,
+        compressor_preset: String,
+        attack: String,
+        ratio: String,
+        threshold: String,
+        gain: String,
+        release: String,
+        eq_enabled: bool,
+        eq_gains: Vec<f32>,
+        agc_preset: String,
+    },
     Login {
         login: String,
         password: String,
@@ -790,6 +809,18 @@ enum Message {
     DbConfigDeleteDatabase,
     DbConfigDeleteResult(Result<String, String>),
     ConfigOpen,
+    AudioProcessingOpen,
+    AudioProcessingInputVolumeChanged(f32),
+    AudioProcessingModeChanged(String),
+    AudioProcessingPresetChanged(String),
+    AudioProcessingAttackChanged(String),
+    AudioProcessingRatioChanged(String),
+    AudioProcessingThresholdChanged(String),
+    AudioProcessingGainChanged(String),
+    AudioProcessingReleaseChanged(String),
+    AudioProcessingEqEnabledChanged(bool),
+    AudioProcessingEqGainChanged(usize, f32),
+    AudioProcessingAgcPresetChanged(String),
     ConfigToggle(ConfigField),
     ConfigPreloadChanged(String),
     ConfigFadeOutDurationChanged(String),
@@ -822,6 +853,7 @@ impl App {
                 let closed = self.windows.remove(&window_id);
                 match closed {
                     Some(WindowKind::Main) => {
+                        self.shutdown_rest_server();
                         self.stop_queue_players();
                         iced::exit()
                     }
@@ -1420,8 +1452,7 @@ impl App {
                                 std::fs::create_dir_all(parent).map_err(|e| e.to_string())?;
                             }
                             std::fs::write(&path, json).map_err(|e| e.to_string())
-                        })
-                    {
+                        }) {
                         Err(e) => {
                             self.status = format!("Config write failed: {e}");
                             return Task::none();
@@ -1492,24 +1523,31 @@ impl App {
                                 let out = std::process::Command::new(&psql_path)
                                     .env("PGPASSWORD", &password)
                                     .args([
-                                        "-U", &user,
-                                        "-h", &host,
-                                        "-p", &port,
-                                        "-c", "SELECT version();",
+                                        "-U",
+                                        &user,
+                                        "-h",
+                                        &host,
+                                        "-p",
+                                        &port,
+                                        "-c",
+                                        "SELECT version();",
                                         "postgres",
                                     ])
                                     .output();
                                 match out {
                                     Ok(o) if o.status.success() => {
                                         let v = String::from_utf8_lossy(&o.stdout);
-                                        let version = v.lines()
-                                            .nth(2)
-                                            .unwrap_or("")
-                                            .trim()
-                                            .to_string();
-                                        Ok(if version.is_empty() { "Connected".into() } else { version })
+                                        let version =
+                                            v.lines().nth(2).unwrap_or("").trim().to_string();
+                                        Ok(if version.is_empty() {
+                                            "Connected".into()
+                                        } else {
+                                            version
+                                        })
                                     }
-                                    Ok(o) => Err(String::from_utf8_lossy(&o.stderr).trim().to_string()),
+                                    Ok(o) => {
+                                        Err(String::from_utf8_lossy(&o.stderr).trim().to_string())
+                                    }
                                     Err(e) => Err(e.to_string()),
                                 }
                             })
@@ -1524,7 +1562,10 @@ impl App {
             }
 
             Message::DbConfigTestResult(result) => {
-                if let Some(Dialog::EditDbConfig { connection_status, .. }) = &mut self.dialog {
+                if let Some(Dialog::EditDbConfig {
+                    connection_status, ..
+                }) = &mut self.dialog
+                {
                     *connection_status = Some(result);
                 }
                 Task::none()
@@ -1566,16 +1607,42 @@ impl App {
                                     }
                                 };
 
-                                run(&["-U", &user, "-h", &host, "-p", &port,
-                                      "-c", &format!("CREATE DATABASE \"{database}\""),
-                                      "postgres"])?;
+                                run(&[
+                                    "-U",
+                                    &user,
+                                    "-h",
+                                    &host,
+                                    "-p",
+                                    &port,
+                                    "-c",
+                                    &format!("CREATE DATABASE \"{database}\""),
+                                    "postgres",
+                                ])?;
 
                                 let m1 = mig_dir.join("0001_initial_schema.sql");
                                 let m2 = mig_dir.join("0002_seed.sql");
-                                run(&["-U", &user, "-h", &host, "-p", &port,
-                                      "-f", m1.to_str().unwrap_or(""), &database])?;
-                                run(&["-U", &user, "-h", &host, "-p", &port,
-                                      "-f", m2.to_str().unwrap_or(""), &database])?;
+                                run(&[
+                                    "-U",
+                                    &user,
+                                    "-h",
+                                    &host,
+                                    "-p",
+                                    &port,
+                                    "-f",
+                                    m1.to_str().unwrap_or(""),
+                                    &database,
+                                ])?;
+                                run(&[
+                                    "-U",
+                                    &user,
+                                    "-h",
+                                    &host,
+                                    "-p",
+                                    &port,
+                                    "-f",
+                                    m2.to_str().unwrap_or(""),
+                                    &database,
+                                ])?;
 
                                 Ok(format!("Database \"{database}\" created and initialized."))
                             })
@@ -1655,7 +1722,10 @@ impl App {
                                 );
                                 let out = std::process::Command::new(&psql_path)
                                     .env("PGPASSWORD", &password)
-                                    .args(["-U", &user, "-h", &host, "-p", &port, "-c", &sql, "postgres"])
+                                    .args([
+                                        "-U", &user, "-h", &host, "-p", &port, "-c", &sql,
+                                        "postgres",
+                                    ])
                                     .output()
                                     .map_err(|e| e.to_string())?;
                                 if out.status.success() {
@@ -1715,6 +1785,108 @@ impl App {
                     device_aux: self.app_config.device_aux.clone(),
                     device_preview: self.app_config.device_preview.clone(),
                 });
+                Task::none()
+            }
+
+            Message::AudioProcessingOpen => {
+                self.dialog = Some(Dialog::AudioProcessing {
+                    input_volume: 40.0,
+                    compressor_mode: "Custom Values".into(),
+                    compressor_preset: "Soft 2".into(),
+                    attack: "25.0".into(),
+                    ratio: "4".into(),
+                    threshold: "-27".into(),
+                    gain: "15".into(),
+                    release: "1500".into(),
+                    eq_enabled: true,
+                    eq_gains: vec![7.0, 3.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 3.0, 7.0],
+                    agc_preset: "Disabled".into(),
+                });
+                Task::none()
+            }
+
+            Message::AudioProcessingInputVolumeChanged(value) => {
+                if let Some(Dialog::AudioProcessing { input_volume, .. }) = &mut self.dialog {
+                    *input_volume = value;
+                }
+                Task::none()
+            }
+
+            Message::AudioProcessingModeChanged(value) => {
+                if let Some(Dialog::AudioProcessing {
+                    compressor_mode, ..
+                }) = &mut self.dialog
+                {
+                    *compressor_mode = value;
+                }
+                Task::none()
+            }
+
+            Message::AudioProcessingPresetChanged(value) => {
+                if let Some(Dialog::AudioProcessing {
+                    compressor_preset, ..
+                }) = &mut self.dialog
+                {
+                    *compressor_preset = value;
+                }
+                Task::none()
+            }
+
+            Message::AudioProcessingAttackChanged(value) => {
+                if let Some(Dialog::AudioProcessing { attack, .. }) = &mut self.dialog {
+                    *attack = value;
+                }
+                Task::none()
+            }
+
+            Message::AudioProcessingRatioChanged(value) => {
+                if let Some(Dialog::AudioProcessing { ratio, .. }) = &mut self.dialog {
+                    *ratio = value;
+                }
+                Task::none()
+            }
+
+            Message::AudioProcessingThresholdChanged(value) => {
+                if let Some(Dialog::AudioProcessing { threshold, .. }) = &mut self.dialog {
+                    *threshold = value;
+                }
+                Task::none()
+            }
+
+            Message::AudioProcessingGainChanged(value) => {
+                if let Some(Dialog::AudioProcessing { gain, .. }) = &mut self.dialog {
+                    *gain = value;
+                }
+                Task::none()
+            }
+
+            Message::AudioProcessingReleaseChanged(value) => {
+                if let Some(Dialog::AudioProcessing { release, .. }) = &mut self.dialog {
+                    *release = value;
+                }
+                Task::none()
+            }
+
+            Message::AudioProcessingEqEnabledChanged(value) => {
+                if let Some(Dialog::AudioProcessing { eq_enabled, .. }) = &mut self.dialog {
+                    *eq_enabled = value;
+                }
+                Task::none()
+            }
+
+            Message::AudioProcessingEqGainChanged(index, value) => {
+                if let Some(Dialog::AudioProcessing { eq_gains, .. }) = &mut self.dialog {
+                    if let Some(gain) = eq_gains.get_mut(index) {
+                        *gain = value;
+                    }
+                }
+                Task::none()
+            }
+
+            Message::AudioProcessingAgcPresetChanged(value) => {
+                if let Some(Dialog::AudioProcessing { agc_preset, .. }) = &mut self.dialog {
+                    *agc_preset = value;
+                }
                 Task::none()
             }
 
@@ -1865,6 +2037,7 @@ impl App {
 
             Message::ConfirmQuit => {
                 if let Some(Dialog::ConfirmClose { window_id }) = self.dialog {
+                    self.shutdown_rest_server();
                     return window::close(window_id);
                 }
                 Task::none()
@@ -1889,7 +2062,10 @@ impl App {
             }
 
             Message::LoginFieldChanged(field, value) => {
-                if let Some(Dialog::Login { login, password, .. }) = &mut self.dialog {
+                if let Some(Dialog::Login {
+                    login, password, ..
+                }) = &mut self.dialog
+                {
                     match field {
                         LoginField::Login => *login = value,
                         LoginField::Password => *password = value,
@@ -1906,9 +2082,9 @@ impl App {
                         0 => iced::widget::text_input::focus(login_input_id()),
                         1 => iced::widget::text_input::focus(pass_input_id()),
                         // Blur tous les text_inputs pour que Enter atteigne la subscription
-                        _ => iced::widget::text_input::focus(
-                            iced::widget::text_input::Id::new("__none__"),
-                        ),
+                        _ => iced::widget::text_input::focus(iced::widget::text_input::Id::new(
+                            "__none__",
+                        )),
                     };
                 }
                 Task::none()
@@ -1925,7 +2101,10 @@ impl App {
             }
 
             Message::LoginSubmit => {
-                if let Some(Dialog::Login { login, password, .. }) = &self.dialog {
+                if let Some(Dialog::Login {
+                    login, password, ..
+                }) = &self.dialog
+                {
                     if let Some(db) = self.db.clone() {
                         let login = login.clone();
                         let password = password.clone();
@@ -2054,6 +2233,12 @@ impl App {
                 }
             }),
         )
+    }
+
+    fn shutdown_rest_server(&mut self) {
+        if let Some(tx) = self.rest_shutdown_tx.take() {
+            let _ = tx.send(());
+        }
     }
 
     fn title(&self, window_id: window::Id) -> String {
@@ -2737,22 +2922,41 @@ impl App {
     }
 
     fn apply_audio_device_config(&mut self, cfg: &db::AppConfig) {
-        let to_opt = |s: &str| if s.is_empty() { None } else { Some(s.to_string()) };
+        let to_opt = |s: &str| {
+            if s.is_empty() {
+                None
+            } else {
+                Some(s.to_string())
+            }
+        };
         for player_id in [audio::PlayerId::QueueA, audio::PlayerId::QueueB] {
-            self.audio.player_mut(player_id).set_device(to_opt(&cfg.device_deck));
+            self.audio
+                .player_mut(player_id)
+                .set_device(to_opt(&cfg.device_deck));
         }
-        self.audio.player_mut(audio::PlayerId::Instant).set_device(to_opt(&cfg.device_instant));
-        for player_id in [audio::PlayerId::Aux1, audio::PlayerId::Aux2, audio::PlayerId::Aux3] {
-            self.audio.player_mut(player_id).set_device(to_opt(&cfg.device_aux));
+        self.audio
+            .player_mut(audio::PlayerId::Instant)
+            .set_device(to_opt(&cfg.device_instant));
+        for player_id in [
+            audio::PlayerId::Aux1,
+            audio::PlayerId::Aux2,
+            audio::PlayerId::Aux3,
+        ] {
+            self.audio
+                .player_mut(player_id)
+                .set_device(to_opt(&cfg.device_aux));
         }
-        self.audio.player_mut(audio::PlayerId::Preview).set_device(to_opt(&cfg.device_preview));
+        self.audio
+            .player_mut(audio::PlayerId::Preview)
+            .set_device(to_opt(&cfg.device_preview));
     }
 
     fn update_track_end_at(&mut self) {
         let elapsed = self.elapsed();
-        let new_end = self.current_queue_entry.as_ref().map(|e| {
-            std::time::SystemTime::now() + e.cue_out.saturating_sub(elapsed)
-        });
+        let new_end = self
+            .current_queue_entry
+            .as_ref()
+            .map(|e| std::time::SystemTime::now() + e.cue_out.saturating_sub(elapsed));
         let should_update = match (self.track_end_at, new_end) {
             (None, None) => false,
             (Some(_), None) | (None, Some(_)) => true,
@@ -2948,6 +3152,7 @@ impl App {
             | Some(Dialog::About)
             | Some(Dialog::EditDbConfig { .. })
             | Some(Dialog::EditConfig { .. })
+            | Some(Dialog::AudioProcessing { .. })
             | Some(Dialog::Login { .. })
             | Some(Dialog::ConfirmClose { .. }) => self.active_instant_page_name(),
         };
@@ -3800,14 +4005,10 @@ impl App {
             .into()
         };
 
-        let content: Element<_> = column![
-            self.deck_header(false),
-            middle,
-            self.footer_bar(),
-        ]
-        .width(Length::Fill)
-        .height(Length::Fill)
-        .into();
+        let content: Element<_> = column![self.deck_header(false), middle, self.footer_bar(),]
+            .width(Length::Fill)
+            .height(Length::Fill)
+            .into();
 
         if self.dialog.is_some() {
             stack([content, self.dialog_overlay()]).into()
@@ -3898,10 +4099,23 @@ impl App {
                 active_color
             },
         );
+        let audio_btn = icon_btn(
+            Bootstrap::Sliders,
+            (!self.is_locked).then_some(Message::AudioProcessingOpen),
+            if self.is_locked {
+                inactive_color
+            } else {
+                active_color
+            },
+        );
         let db_btn = icon_btn(
             Bootstrap::DatabaseFill,
             (!self.is_locked).then_some(Message::DbConfigOpen),
-            if self.is_locked { inactive_color } else { db_icon_color },
+            if self.is_locked {
+                inactive_color
+            } else {
+                db_icon_color
+            },
         );
         let about_btn = icon_btn(
             Bootstrap::QuestionCircleFill,
@@ -3968,7 +4182,7 @@ impl App {
                 .height(Length::Fill)
                 .padding([0, 12])
                 .center_y(Length::Fill),
-                row![user_label, lock_btn, cfg_btn, db_btn, about_btn]
+                row![user_label, lock_btn, cfg_btn, audio_btn, db_btn, about_btn]
                     .spacing(4)
                     .align_y(Alignment::Center),
             ]
@@ -4057,9 +4271,8 @@ impl App {
                     ]
                     .spacing(4)
                 };
-                let section_label = |s: &'static str| {
-                    text(s).size(10).style(text_color(rgb(100, 130, 150)))
-                };
+                let section_label =
+                    |s: &'static str| text(s).size(10).style(text_color(rgb(100, 130, 150)));
                 let conn_status_el: Element<_> = match connection_status {
                     Some(Ok(msg)) => text(msg.as_str())
                         .size(11)
@@ -4145,7 +4358,10 @@ impl App {
                             column![
                                 lbl("Password"),
                                 text_input("", password)
-                                    .on_input(|v| Message::DbConfigFieldChanged(DbField::Password, v))
+                                    .on_input(|v| Message::DbConfigFieldChanged(
+                                        DbField::Password,
+                                        v
+                                    ))
                                     .secure(true)
                                     .padding(7)
                                     .size(13)
@@ -4353,9 +4569,7 @@ impl App {
                         stored.to_string()
                     };
                     row![
-                        text(label)
-                            .size(11)
-                            .style(text_color(rgb(160, 180, 195))),
+                        text(label).size(11).style(text_color(rgb(160, 180, 195))),
                         Space::with_width(Length::Fill),
                         pick_list(opts, Some(selected), move |name: String| {
                             let v = if name == "(Default)" {
@@ -4408,16 +4622,17 @@ impl App {
                 ]
                 .spacing(10)
                 .padding([10, 12]);
-                let audio_fieldset =
-                    container(column![audio_fieldset_label, audio_fieldset_body].spacing(0))
-                        .style(|_| container::Style {
-                            border: Border {
-                                color: rgb(62, 83, 97),
-                                width: 1.0,
-                                radius: 3.0.into(),
-                            },
-                            ..Default::default()
-                        });
+                let audio_fieldset = container(
+                    column![audio_fieldset_label, audio_fieldset_body].spacing(0),
+                )
+                .style(|_| container::Style {
+                    border: Border {
+                        color: rgb(62, 83, 97),
+                        width: 1.0,
+                        radius: 3.0.into(),
+                    },
+                    ..Default::default()
+                });
 
                 container(
                     column![
@@ -4438,6 +4653,227 @@ impl App {
                     .spacing(16),
                 )
                 .width(Length::Fixed(480.0))
+                .padding(16)
+                .style(panel_style(rgb(31, 46, 55), accent_purple()))
+            }
+            Some(Dialog::AudioProcessing {
+                input_volume,
+                compressor_mode,
+                compressor_preset,
+                attack,
+                ratio,
+                threshold,
+                gain,
+                release,
+                eq_enabled,
+                eq_gains,
+                agc_preset,
+            }) => {
+                let label =
+                    |s: &'static str| text(s).size(11).style(text_color(rgb(160, 180, 195)));
+                let value_label =
+                    |s: String| text(s).size(11).style(text_color(rgb(226, 238, 245)));
+                let numeric_field = |caption: &'static str,
+                                     value: &str,
+                                     on_input: fn(String) -> Message|
+                 -> Element<'_, Message> {
+                    column![
+                        label(caption),
+                        text_input("", value)
+                            .on_input(on_input)
+                            .padding(5)
+                            .size(12)
+                            .width(Length::Fixed(72.0)),
+                    ]
+                    .spacing(3)
+                    .into()
+                };
+
+                let input_body: Element<_> = row![
+                    label("Volume"),
+                    text_input("", &format!("{input_volume:.0}"))
+                        .on_input(|value| {
+                            value
+                                .parse::<f32>()
+                                .ok()
+                                .map(|v| {
+                                    Message::AudioProcessingInputVolumeChanged(v.clamp(0.0, 100.0))
+                                })
+                                .unwrap_or(Message::NoOp)
+                        })
+                        .padding(5)
+                        .size(12)
+                        .width(Length::Fixed(58.0)),
+                    text("0=mute, 100=max")
+                        .size(11)
+                        .style(text_color(rgb(160, 180, 195))),
+                    Space::with_width(Length::Fill),
+                    vertical_slider(
+                        0.0..=100.0,
+                        *input_volume,
+                        Message::AudioProcessingInputVolumeChanged
+                    )
+                    .height(Length::Fixed(56.0)),
+                ]
+                .spacing(10)
+                .align_y(Alignment::Center)
+                .into();
+
+                let compressor_modes = vec!["By Preset".to_string(), "Custom Values".to_string()];
+                let compressor_presets = vec![
+                    "Soft 1".to_string(),
+                    "Soft 2".to_string(),
+                    "Medium".to_string(),
+                    "Strong".to_string(),
+                    "Voice".to_string(),
+                ];
+                let compressor_body: Element<_> = column![
+                    row![
+                        label("Mode"),
+                        pick_list(
+                            compressor_modes,
+                            Some(compressor_mode.clone()),
+                            Message::AudioProcessingModeChanged,
+                        )
+                        .padding(5)
+                        .text_size(12)
+                        .width(Length::Fixed(140.0))
+                        .style(search_pick_list_style),
+                        label("Preset"),
+                        pick_list(
+                            compressor_presets,
+                            Some(compressor_preset.clone()),
+                            Message::AudioProcessingPresetChanged,
+                        )
+                        .padding(5)
+                        .text_size(12)
+                        .width(Length::Fill)
+                        .style(search_pick_list_style),
+                    ]
+                    .spacing(10)
+                    .align_y(Alignment::Center),
+                    row![
+                        numeric_field("Attack", attack, Message::AudioProcessingAttackChanged),
+                        numeric_field("Ratio", ratio, Message::AudioProcessingRatioChanged),
+                        numeric_field(
+                            "Threshold",
+                            threshold,
+                            Message::AudioProcessingThresholdChanged
+                        ),
+                        numeric_field("Gain", gain, Message::AudioProcessingGainChanged),
+                        numeric_field("Release", release, Message::AudioProcessingReleaseChanged),
+                    ]
+                    .spacing(10),
+                ]
+                .spacing(10)
+                .into();
+
+                let eq_freqs = [
+                    "32", "63", "125", "250", "500", "1k", "2k", "4k", "8k", "16k",
+                ];
+                let mut eq_slider_row =
+                    iced::widget::Row::new().spacing(12).align_y(Alignment::End);
+                for (idx, freq) in eq_freqs.iter().enumerate() {
+                    let current = eq_gains.get(idx).copied().unwrap_or(0.0);
+                    let band = column![
+                        value_label(format!("{current:.0}dB")),
+                        vertical_slider(-15.0..=15.0, current, move |v| {
+                            Message::AudioProcessingEqGainChanged(idx, v)
+                        })
+                        .height(Length::Fixed(108.0)),
+                        label(freq),
+                    ]
+                    .spacing(4)
+                    .align_x(Alignment::Center)
+                    .width(Length::Fixed(52.0));
+                    eq_slider_row = eq_slider_row.push(band);
+                }
+                let eq_scale = column![
+                    text("+15dB").size(11).style(text_color(rgb(160, 180, 195))),
+                    Space::with_height(Length::Fill),
+                    text("0dB").size(11).style(text_color(rgb(160, 180, 195))),
+                    Space::with_height(Length::Fill),
+                    text("-15dB").size(11).style(text_color(rgb(160, 180, 195))),
+                ]
+                .height(Length::Fixed(108.0));
+                let eq_body: Element<_> = column![
+                    row![
+                        Space::with_width(Length::Fill),
+                        checkbox("Enable", *eq_enabled)
+                            .on_toggle(Message::AudioProcessingEqEnabledChanged)
+                            .size(14)
+                            .text_size(12),
+                    ]
+                    .align_y(Alignment::Center),
+                    row![
+                        column![
+                            Space::with_height(Length::Fixed(19.0)),
+                            eq_scale,
+                            Space::with_height(Length::Fixed(17.0)),
+                        ],
+                        eq_slider_row,
+                    ]
+                    .spacing(12)
+                    .align_y(Alignment::Center),
+                ]
+                .spacing(8)
+                .into();
+
+                let agc_presets = vec![
+                    "Disabled".to_string(),
+                    "Light".to_string(),
+                    "Normal".to_string(),
+                    "Strong".to_string(),
+                    "Voice".to_string(),
+                ];
+                let agc_body: Element<_> = row![
+                    label("Automatic Gain Control (AGC) Preset"),
+                    pick_list(
+                        agc_presets,
+                        Some(agc_preset.clone()),
+                        Message::AudioProcessingAgcPresetChanged,
+                    )
+                    .padding(5)
+                    .text_size(12)
+                    .width(Length::Fixed(260.0))
+                    .style(search_pick_list_style),
+                ]
+                .spacing(10)
+                .align_y(Alignment::Center)
+                .into();
+
+                container(
+                    column![
+                        row![
+                            text(Bootstrap::Sliders.to_string())
+                                .font(BOOTSTRAP_FONT)
+                                .size(16)
+                                .style(text_color(rgb(100, 140, 170))),
+                            text("Audio Processing")
+                                .size(18)
+                                .style(text_color(rgb(226, 238, 245))),
+                            Space::with_width(Length::Fill),
+                            text("UI preview")
+                                .size(11)
+                                .style(text_color(rgb(125, 154, 171))),
+                        ]
+                        .spacing(8)
+                        .align_y(Alignment::Center),
+                        self.audio_processing_fieldset("In Chain Volume", input_body),
+                        self.audio_processing_fieldset("Compressor Audio", compressor_body),
+                        self.audio_processing_fieldset("10 Band Equalizer", eq_body),
+                        self.audio_processing_fieldset("AGC", agc_body),
+                        row![
+                            Space::with_width(Length::Fill),
+                            self.dialog_button("Cancel", Message::DialogCancel, rgb(62, 83, 97)),
+                            self.dialog_button("Save", Message::DialogCancel, accent_purple()),
+                        ]
+                        .spacing(8)
+                        .align_y(Alignment::Center),
+                    ]
+                    .spacing(12),
+                )
+                .width(Length::Fixed(700.0))
                 .padding(16)
                 .style(panel_style(rgb(31, 46, 55), accent_purple()))
             }
@@ -4468,7 +4904,11 @@ impl App {
                         })),
                         text_color: Color::WHITE,
                         border: Border {
-                            color: if unlock_focused { Color::WHITE } else { rgb(29, 43, 52) },
+                            color: if unlock_focused {
+                                Color::WHITE
+                            } else {
+                                rgb(29, 43, 52)
+                            },
                             width: if unlock_focused { 1.5 } else { 1.0 },
                             radius: 2.0.into(),
                         },
@@ -4484,7 +4924,11 @@ impl App {
                         })),
                         text_color: Color::WHITE,
                         border: Border {
-                            color: if cancel_focused { Color::WHITE } else { rgb(29, 43, 52) },
+                            color: if cancel_focused {
+                                Color::WHITE
+                            } else {
+                                rgb(29, 43, 52)
+                            },
                             width: if cancel_focused { 1.5 } else { 1.0 },
                             radius: 2.0.into(),
                         },
@@ -4525,13 +4969,9 @@ impl App {
                         ]
                         .spacing(4),
                         error_row,
-                        row![
-                            Space::with_width(Length::Fill),
-                            btn_cancel,
-                            btn_unlock,
-                        ]
-                        .spacing(8)
-                        .align_y(Alignment::Center),
+                        row![Space::with_width(Length::Fill), btn_cancel, btn_unlock,]
+                            .spacing(8)
+                            .align_y(Alignment::Center),
                     ]
                     .spacing(12),
                 )
@@ -4579,6 +5019,30 @@ impl App {
                 }),
         )
         .on_press(Message::NoOp)
+        .into()
+    }
+
+    fn audio_processing_fieldset<'a>(
+        &self,
+        title: &'static str,
+        body: Element<'a, Message>,
+    ) -> Element<'a, Message> {
+        container(
+            column![
+                container(text(title).size(11).style(text_color(rgb(160, 180, 195))))
+                    .padding([3, 8]),
+                container(body).padding([10, 12]),
+            ]
+            .spacing(0),
+        )
+        .style(|_| container::Style {
+            border: Border {
+                color: rgb(62, 83, 97),
+                width: 1.0,
+                radius: 3.0.into(),
+            },
+            ..Default::default()
+        })
         .into()
     }
 
