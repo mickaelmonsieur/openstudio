@@ -564,6 +564,7 @@ impl AudioPlayer {
             self.cue_in,
             Arc::clone(&self.levels),
             Arc::clone(&self.processing),
+            self.id != PlayerId::Preview,
             self.device_name.clone(),
         );
         self.stop_tx = Some(stop_tx);
@@ -1250,6 +1251,7 @@ fn play(
     cue_in: Duration,
     levels: Arc<AudioLevels>,
     processing: Arc<AudioProcessingSettings>,
+    processing_enabled: bool,
     device_name: Option<String>,
 ) -> (
     Sender<()>,
@@ -1278,6 +1280,7 @@ fn play(
             position_ms_thread,
             levels,
             processing,
+            processing_enabled,
             device_name,
         ) {
             eprintln!("Audio error: {e}");
@@ -1298,6 +1301,7 @@ fn run(
     position_ms: Arc<AtomicU64>,
     levels: Arc<AudioLevels>,
     processing: Arc<AudioProcessingSettings>,
+    processing_enabled: bool,
     device_name: Option<String>,
 ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     // Récupérer l'état symphonia — depuis le pré-chargement ou en ouvrant le fichier
@@ -1391,7 +1395,7 @@ fn run(
                 &mut fade_state,
                 &fade_finished_cb,
             );
-            if processing_cb.bypassed() {
+            if !processing_enabled || processing_cb.bypassed() {
                 agc_processor.reset();
                 eq_processor.reset();
                 compressor.reset();
