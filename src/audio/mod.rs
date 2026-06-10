@@ -192,6 +192,14 @@ impl AudioManager {
     pub fn compressor_release_ms(&self) -> f32 {
         self.processing.compressor_release_ms()
     }
+
+    pub fn set_agc_preset(&self, preset: AgcPreset) {
+        self.processing.set_agc_preset(preset);
+    }
+
+    pub fn agc_preset(&self) -> AgcPreset {
+        self.processing.agc_preset()
+    }
 }
 
 impl Default for AudioManager {
@@ -203,6 +211,7 @@ impl Default for AudioManager {
 pub struct AudioProcessingSettings {
     bypassed: AtomicBool,
     master_volume_per_mille: AtomicU32,
+    agc_preset: AtomicU32,
     eq_enabled: AtomicBool,
     eq_gains_tenth_db: [AtomicI32; 10],
     compressor_attack_tenth_ms: AtomicU32,
@@ -210,6 +219,99 @@ pub struct AudioProcessingSettings {
     compressor_threshold_tenth_db: AtomicI32,
     compressor_gain_tenth_db: AtomicI32,
     compressor_release_tenth_ms: AtomicU32,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum AgcPreset {
+    Disabled,
+    Light,
+    Normal,
+    Strong,
+    Voice,
+}
+
+impl AgcPreset {
+    pub const ALL: [Self; 5] = [
+        Self::Disabled,
+        Self::Light,
+        Self::Normal,
+        Self::Strong,
+        Self::Voice,
+    ];
+
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Disabled => "Disabled",
+            Self::Light => "Light",
+            Self::Normal => "Normal",
+            Self::Strong => "Strong",
+            Self::Voice => "Voice",
+        }
+    }
+
+    pub fn from_str(value: &str) -> Option<Self> {
+        Self::ALL
+            .into_iter()
+            .find(|preset| preset.as_str() == value)
+    }
+
+    fn from_index(index: u32) -> Self {
+        match index {
+            1 => Self::Light,
+            2 => Self::Normal,
+            3 => Self::Strong,
+            4 => Self::Voice,
+            _ => Self::Disabled,
+        }
+    }
+
+    fn index(self) -> u32 {
+        match self {
+            Self::Disabled => 0,
+            Self::Light => 1,
+            Self::Normal => 2,
+            Self::Strong => 3,
+            Self::Voice => 4,
+        }
+    }
+
+    fn params(self) -> Option<AgcParams> {
+        match self {
+            Self::Disabled => None,
+            Self::Light => Some(AgcParams {
+                target_db: -18.0,
+                gate_db: -46.0,
+                max_gain_db: 6.0,
+                min_gain_db: -6.0,
+                rise_ms: 3500.0,
+                fall_ms: 450.0,
+            }),
+            Self::Normal => Some(AgcParams {
+                target_db: -16.0,
+                gate_db: -48.0,
+                max_gain_db: 10.0,
+                min_gain_db: -8.0,
+                rise_ms: 2200.0,
+                fall_ms: 300.0,
+            }),
+            Self::Strong => Some(AgcParams {
+                target_db: -14.0,
+                gate_db: -50.0,
+                max_gain_db: 14.0,
+                min_gain_db: -10.0,
+                rise_ms: 1300.0,
+                fall_ms: 180.0,
+            }),
+            Self::Voice => Some(AgcParams {
+                target_db: -17.0,
+                gate_db: -42.0,
+                max_gain_db: 12.0,
+                min_gain_db: -8.0,
+                rise_ms: 900.0,
+                fall_ms: 140.0,
+            }),
+        }
+    }
 }
 
 impl AudioProcessingSettings {
@@ -233,6 +335,18 @@ impl AudioProcessingSettings {
 
     fn master_gain(&self) -> f32 {
         self.master_volume_per_mille.load(Ordering::Relaxed) as f32 / 1000.0
+    }
+
+    fn set_agc_preset(&self, preset: AgcPreset) {
+        self.agc_preset.store(preset.index(), Ordering::Relaxed);
+    }
+
+    fn agc_preset(&self) -> AgcPreset {
+        AgcPreset::from_index(self.agc_preset.load(Ordering::Relaxed))
+    }
+
+    fn agc_params(&self) -> Option<AgcParams> {
+        self.agc_preset().params()
     }
 
     pub fn set_eq_enabled(&self, enabled: bool) {
@@ -332,6 +446,7 @@ impl Default for AudioProcessingSettings {
         Self {
             bypassed: AtomicBool::new(false),
             master_volume_per_mille: AtomicU32::new(1000),
+            agc_preset: AtomicU32::new(0),
             eq_enabled: AtomicBool::new(false),
             eq_gains_tenth_db: std::array::from_fn(|_| AtomicI32::new(0)),
             compressor_attack_tenth_ms: AtomicU32::new(250),
@@ -695,6 +810,88 @@ struct EqProcessor {
     filters: Vec<[Biquad; 10]>,
     current_gains_tenth_db: [i32; 10],
     current_enabled: bool,
+}
+
+#[derive(Clone, Copy, PartialEq)]
+struct AgcParams {
+    target_db: f32,
+    gate_db: f32,
+    max_gain_db: f32,
+    min_gain_db: f32,
+    rise_ms: f32,
+    fall_ms: f32,
+}
+
+struct AgcProcessor {
+    sample_rate: f32,
+    current_gain: f32,
+    current_params: Option<AgcParams>,
+    rise_coeff: f32,
+    fall_coeff: f32,
+}
+
+impl AgcProcessor {
+    fn new(sample_rate: u32) -> Self {
+        Self {
+            sample_rate: sample_rate as f32,
+            current_gain: 1.0,
+            current_params: None,
+            rise_coeff: 0.0,
+            fall_coeff: 0.0,
+        }
+    }
+
+    fn process(&mut self, data: &mut [f32], channels: usize, processing: &AudioProcessingSettings) {
+        let params = processing.agc_params();
+        if params != self.current_params {
+            self.update_params(params);
+        }
+
+        let Some(params) = self.current_params else {
+            return;
+        };
+
+        let channels = channels.max(1);
+        for frame in data.chunks_mut(channels) {
+            let mean_square =
+                frame.iter().map(|sample| sample * sample).sum::<f32>() / frame.len().max(1) as f32;
+            let rms = mean_square.sqrt().max(0.000_001);
+            let level_db = 20.0 * rms.log10();
+
+            let target_gain = if level_db < params.gate_db {
+                1.0
+            } else {
+                db_to_gain(
+                    (params.target_db - level_db).clamp(params.min_gain_db, params.max_gain_db),
+                )
+            };
+
+            let coeff = if target_gain > self.current_gain {
+                self.rise_coeff
+            } else {
+                self.fall_coeff
+            };
+            self.current_gain = target_gain + coeff * (self.current_gain - target_gain);
+
+            for sample in frame {
+                *sample = (*sample * self.current_gain).clamp(-4.0, 4.0);
+            }
+        }
+    }
+
+    fn update_params(&mut self, params: Option<AgcParams>) {
+        self.current_params = params;
+        if let Some(params) = params {
+            self.rise_coeff = smoothing_coeff(params.rise_ms, self.sample_rate);
+            self.fall_coeff = smoothing_coeff(params.fall_ms, self.sample_rate);
+        } else {
+            self.reset();
+        }
+    }
+
+    fn reset(&mut self) {
+        self.current_gain = 1.0;
+    }
 }
 
 impl EqProcessor {
@@ -1171,6 +1368,7 @@ fn run(
     let mut current_offset = 0;
     let mut callback_generation = 0;
     let mut fade_state = FadeState::default();
+    let mut agc_processor = AgcProcessor::new(output_sample_rate);
     let mut eq_processor = EqProcessor::new(output_sample_rate, out_channels);
     let mut compressor = Compressor::new(output_sample_rate);
     let stream = device.build_output_stream(
@@ -1194,9 +1392,11 @@ fn run(
                 &fade_finished_cb,
             );
             if processing_cb.bypassed() {
+                agc_processor.reset();
                 eq_processor.reset();
                 compressor.reset();
             } else {
+                agc_processor.process(data, out_channels, &processing_cb);
                 eq_processor.process(data, &processing_cb);
                 compressor.process(data, out_channels, &processing_cb);
                 apply_master_volume(data, &processing_cb);

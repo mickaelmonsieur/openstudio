@@ -373,5 +373,17 @@ CREATE TABLE configurations (
     device_deck          TEXT    NOT NULL DEFAULT '',
     device_instant       TEXT    NOT NULL DEFAULT '',
     device_aux           TEXT    NOT NULL DEFAULT '',
-    device_preview       TEXT    NOT NULL DEFAULT ''
+    device_preview       TEXT    NOT NULL DEFAULT '',
+    audio_processing_bypassed BOOLEAN NOT NULL DEFAULT false,
+    audio_master_volume_percent REAL NOT NULL DEFAULT 100.0,
+    audio_eq_enabled     BOOLEAN NOT NULL DEFAULT false,
+    audio_eq_gains       TEXT    NOT NULL DEFAULT '[0,0,0,0,0,0,0,0,0,0]',
+    audio_compressor_mode TEXT   NOT NULL DEFAULT 'Custom Values',
+    audio_compressor_preset TEXT NOT NULL DEFAULT 'Soft 2',
+    audio_compressor_attack_ms REAL NOT NULL DEFAULT 25.0,
+    audio_compressor_ratio REAL NOT NULL DEFAULT 4.0,
+    audio_compressor_threshold_db REAL NOT NULL DEFAULT -27.0,
+    audio_compressor_gain_db REAL NOT NULL DEFAULT 0.0,
+    audio_compressor_release_ms REAL NOT NULL DEFAULT 1500.0,
+    audio_agc_preset     TEXT    NOT NULL DEFAULT 'Disabled'
 );

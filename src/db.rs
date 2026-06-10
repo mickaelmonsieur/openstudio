@@ -22,6 +22,18 @@ pub struct AppConfig {
     pub device_aux: String,
     pub device_preview: String,
     pub start_locked: bool,
+    pub audio_processing_bypassed: bool,
+    pub audio_master_volume_percent: f32,
+    pub audio_eq_enabled: bool,
+    pub audio_eq_gains: Vec<f32>,
+    pub audio_compressor_mode: String,
+    pub audio_compressor_preset: String,
+    pub audio_compressor_attack_ms: f32,
+    pub audio_compressor_ratio: f32,
+    pub audio_compressor_threshold_db: f32,
+    pub audio_compressor_gain_db: f32,
+    pub audio_compressor_release_ms: f32,
+    pub audio_agc_preset: String,
 }
 
 impl Default for AppConfig {
@@ -38,6 +50,18 @@ impl Default for AppConfig {
             device_aux: String::new(),
             device_preview: String::new(),
             start_locked: false,
+            audio_processing_bypassed: false,
+            audio_master_volume_percent: 100.0,
+            audio_eq_enabled: false,
+            audio_eq_gains: vec![0.0; 10],
+            audio_compressor_mode: String::from("Custom Values"),
+            audio_compressor_preset: String::from("Soft 2"),
+            audio_compressor_attack_ms: 25.0,
+            audio_compressor_ratio: 4.0,
+            audio_compressor_threshold_db: -27.0,
+            audio_compressor_gain_db: 0.0,
+            audio_compressor_release_ms: 1500.0,
+            audio_agc_preset: String::from("Disabled"),
         }
     }
 }
@@ -582,22 +606,61 @@ impl Database {
 
     pub fn load_config(&self) -> Result<AppConfig, DbError> {
         let mut client = self.client.lock().map_err(|_| DbError::LockPoisoned)?;
-        let row = client.query_one(
-            "SELECT auto_mix_on_start, auto_play_on_start, preload, fade_out_duration_ms, stop_fade_duration_ms, timezone, device_deck, device_instant, device_aux, device_preview, start_locked FROM configurations LIMIT 1",
-            &[],
-        )?;
+        let row = client.query_one("SELECT * FROM configurations LIMIT 1", &[])?;
+        let default_cfg = AppConfig::default();
+        let eq_gains_json: String = row
+            .try_get("audio_eq_gains")
+            .unwrap_or_else(|_| String::from("[0,0,0,0,0,0,0,0,0,0]"));
+        let mut audio_eq_gains = serde_json::from_str::<Vec<f32>>(&eq_gains_json)
+            .unwrap_or_else(|_| default_cfg.audio_eq_gains.clone());
+        audio_eq_gains.resize(10, 0.0);
+        audio_eq_gains.truncate(10);
         Ok(AppConfig {
-            auto_mix_on_start: row.get(0),
-            auto_play_on_start: row.get(1),
-            preload: row.get(2),
-            fade_out_duration_ms: row.get(3),
-            stop_fade_duration_ms: row.get(4),
-            timezone: row.get(5),
-            device_deck: row.get(6),
-            device_instant: row.get(7),
-            device_aux: row.get(8),
-            device_preview: row.get(9),
-            start_locked: row.get(10),
+            auto_mix_on_start: row.get("auto_mix_on_start"),
+            auto_play_on_start: row.get("auto_play_on_start"),
+            preload: row.get("preload"),
+            fade_out_duration_ms: row.get("fade_out_duration_ms"),
+            stop_fade_duration_ms: row.get("stop_fade_duration_ms"),
+            timezone: row.get("timezone"),
+            device_deck: row.get("device_deck"),
+            device_instant: row.get("device_instant"),
+            device_aux: row.get("device_aux"),
+            device_preview: row.get("device_preview"),
+            start_locked: row.get("start_locked"),
+            audio_processing_bypassed: row
+                .try_get("audio_processing_bypassed")
+                .unwrap_or(default_cfg.audio_processing_bypassed),
+            audio_master_volume_percent: row
+                .try_get("audio_master_volume_percent")
+                .unwrap_or(default_cfg.audio_master_volume_percent),
+            audio_eq_enabled: row
+                .try_get("audio_eq_enabled")
+                .unwrap_or(default_cfg.audio_eq_enabled),
+            audio_eq_gains,
+            audio_compressor_mode: row
+                .try_get("audio_compressor_mode")
+                .unwrap_or(default_cfg.audio_compressor_mode),
+            audio_compressor_preset: row
+                .try_get("audio_compressor_preset")
+                .unwrap_or(default_cfg.audio_compressor_preset),
+            audio_compressor_attack_ms: row
+                .try_get("audio_compressor_attack_ms")
+                .unwrap_or(default_cfg.audio_compressor_attack_ms),
+            audio_compressor_ratio: row
+                .try_get("audio_compressor_ratio")
+                .unwrap_or(default_cfg.audio_compressor_ratio),
+            audio_compressor_threshold_db: row
+                .try_get("audio_compressor_threshold_db")
+                .unwrap_or(default_cfg.audio_compressor_threshold_db),
+            audio_compressor_gain_db: row
+                .try_get("audio_compressor_gain_db")
+                .unwrap_or(default_cfg.audio_compressor_gain_db),
+            audio_compressor_release_ms: row
+                .try_get("audio_compressor_release_ms")
+                .unwrap_or(default_cfg.audio_compressor_release_ms),
+            audio_agc_preset: row
+                .try_get("audio_agc_preset")
+                .unwrap_or(default_cfg.audio_agc_preset),
         })
     }
 
@@ -618,8 +681,35 @@ impl Database {
 
     pub fn save_config(&self, cfg: &AppConfig) -> Result<(), DbError> {
         let mut client = self.client.lock().map_err(|_| DbError::LockPoisoned)?;
+        let audio_eq_gains = serde_json::to_string(&cfg.audio_eq_gains)
+            .unwrap_or_else(|_| String::from("[0,0,0,0,0,0,0,0,0,0]"));
         client.execute(
-            "UPDATE configurations SET auto_mix_on_start = $1, auto_play_on_start = $2, preload = $3, fade_out_duration_ms = $4, stop_fade_duration_ms = $5, timezone = $6, device_deck = $7, device_instant = $8, device_aux = $9, device_preview = $10, start_locked = $11",
+            "
+            UPDATE configurations
+            SET auto_mix_on_start = $1,
+                auto_play_on_start = $2,
+                preload = $3,
+                fade_out_duration_ms = $4,
+                stop_fade_duration_ms = $5,
+                timezone = $6,
+                device_deck = $7,
+                device_instant = $8,
+                device_aux = $9,
+                device_preview = $10,
+                start_locked = $11,
+                audio_processing_bypassed = $12,
+                audio_master_volume_percent = $13,
+                audio_eq_enabled = $14,
+                audio_eq_gains = $15,
+                audio_compressor_mode = $16,
+                audio_compressor_preset = $17,
+                audio_compressor_attack_ms = $18,
+                audio_compressor_ratio = $19,
+                audio_compressor_threshold_db = $20,
+                audio_compressor_gain_db = $21,
+                audio_compressor_release_ms = $22,
+                audio_agc_preset = $23
+            ",
             &[
                 &cfg.auto_mix_on_start,
                 &cfg.auto_play_on_start,
@@ -632,6 +722,18 @@ impl Database {
                 &cfg.device_aux,
                 &cfg.device_preview,
                 &cfg.start_locked,
+                &cfg.audio_processing_bypassed,
+                &cfg.audio_master_volume_percent,
+                &cfg.audio_eq_enabled,
+                &audio_eq_gains,
+                &cfg.audio_compressor_mode,
+                &cfg.audio_compressor_preset,
+                &cfg.audio_compressor_attack_ms,
+                &cfg.audio_compressor_ratio,
+                &cfg.audio_compressor_threshold_db,
+                &cfg.audio_compressor_gain_db,
+                &cfg.audio_compressor_release_ms,
+                &cfg.audio_agc_preset,
             ],
         )?;
         Ok(())

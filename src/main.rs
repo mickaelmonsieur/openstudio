@@ -510,6 +510,7 @@ impl Default for App {
             login_pending: None,
         };
         app.ensure_configured_timezone_option();
+        app.apply_audio_processing_config(&app.app_config.clone());
         app.apply_audio_device_config(&app.app_config.clone());
         app.load_instant_pages_from_db();
         let auto_mix_status = app.auto_mix_status.clone();
@@ -778,6 +779,16 @@ fn find_compressor_preset(name: &str) -> Option<CompressorPreset> {
         .find(|preset| preset.name == name)
 }
 
+fn normalized_eq_gains(gains: &[f32]) -> Vec<f32> {
+    let mut normalized = gains
+        .iter()
+        .take(10)
+        .map(|gain| gain.clamp(-15.0, 15.0))
+        .collect::<Vec<_>>();
+    normalized.resize(10, 0.0);
+    normalized
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum DeviceTarget {
     Deck,
@@ -883,6 +894,7 @@ enum Message {
     AudioProcessingEqEnabledChanged(bool),
     AudioProcessingEqGainChanged(usize, f32),
     AudioProcessingAgcPresetChanged(String),
+    AudioProcessingSave,
     ConfigToggle(ConfigField),
     ConfigPreloadChanged(String),
     ConfigFadeOutDurationChanged(String),
@@ -1854,8 +1866,8 @@ impl App {
                 self.dialog = Some(Dialog::AudioProcessing {
                     processing_bypassed: self.audio.processing_bypassed(),
                     input_volume: self.audio.master_volume_percent(),
-                    compressor_mode: "Custom Values".into(),
-                    compressor_preset: "Soft 2".into(),
+                    compressor_mode: self.app_config.audio_compressor_mode.clone(),
+                    compressor_preset: self.app_config.audio_compressor_preset.clone(),
                     attack: format!("{:.1}", self.audio.compressor_attack_ms()),
                     ratio: format!("{:.2}", self.audio.compressor_ratio()),
                     threshold: format!("{:.1}", self.audio.compressor_threshold_db()),
@@ -1863,7 +1875,7 @@ impl App {
                     release: format!("{:.1}", self.audio.compressor_release_ms()),
                     eq_enabled: self.audio.eq_enabled(),
                     eq_gains: self.audio.eq_gains_db(),
-                    agc_preset: "Disabled".into(),
+                    agc_preset: self.audio.agc_preset().as_str().into(),
                 });
                 Task::none()
             }
@@ -2025,8 +2037,33 @@ impl App {
             }
 
             Message::AudioProcessingAgcPresetChanged(value) => {
+                if let Some(preset) = audio::AgcPreset::from_str(&value) {
+                    self.audio.set_agc_preset(preset);
+                }
                 if let Some(Dialog::AudioProcessing { agc_preset, .. }) = &mut self.dialog {
                     *agc_preset = value;
+                }
+                Task::none()
+            }
+
+            Message::AudioProcessingSave => {
+                let Some(cfg) = self.audio_processing_config_from_dialog() else {
+                    return Task::none();
+                };
+                self.apply_audio_processing_config(&cfg);
+                self.app_config = cfg.clone();
+                self.dialog = None;
+                if let Some(db) = self.db.clone() {
+                    return Task::perform(
+                        async move {
+                            tokio::task::spawn_blocking(move || {
+                                db.save_config(&cfg).map_err(|e| e.to_string())
+                            })
+                            .await
+                            .unwrap_or_else(|e| Err(e.to_string()))
+                        },
+                        Message::ConfigSaved,
+                    );
                 }
                 Task::none()
             }
@@ -2118,27 +2155,26 @@ impl App {
                     device_preview,
                 }) = &self.dialog
                 {
-                    let cfg = db::AppConfig {
-                        auto_mix_on_start: *auto_mix_on_start,
-                        auto_play_on_start: *auto_play_on_start,
-                        start_locked: *start_locked,
-                        preload: preload.trim().parse::<i32>().unwrap_or(10).max(0),
-                        fade_out_duration_ms: fade_out_duration_ms
-                            .trim()
-                            .parse::<i32>()
-                            .unwrap_or(2500)
-                            .max(0),
-                        stop_fade_duration_ms: stop_fade_duration_ms
-                            .trim()
-                            .parse::<i32>()
-                            .unwrap_or(1000)
-                            .max(0),
-                        timezone: timezone.clone(),
-                        device_deck: device_deck.clone(),
-                        device_instant: device_instant.clone(),
-                        device_aux: device_aux.clone(),
-                        device_preview: device_preview.clone(),
-                    };
+                    let mut cfg = self.app_config.clone();
+                    cfg.auto_mix_on_start = *auto_mix_on_start;
+                    cfg.auto_play_on_start = *auto_play_on_start;
+                    cfg.start_locked = *start_locked;
+                    cfg.preload = preload.trim().parse::<i32>().unwrap_or(10).max(0);
+                    cfg.fade_out_duration_ms = fade_out_duration_ms
+                        .trim()
+                        .parse::<i32>()
+                        .unwrap_or(2500)
+                        .max(0);
+                    cfg.stop_fade_duration_ms = stop_fade_duration_ms
+                        .trim()
+                        .parse::<i32>()
+                        .unwrap_or(1000)
+                        .max(0);
+                    cfg.timezone = timezone.clone();
+                    cfg.device_deck = device_deck.clone();
+                    cfg.device_instant = device_instant.clone();
+                    cfg.device_aux = device_aux.clone();
+                    cfg.device_preview = device_preview.clone();
                     self.apply_audio_device_config(&cfg);
                     self.app_config = cfg.clone();
                     self.ensure_configured_timezone_option();
@@ -3090,6 +3126,90 @@ impl App {
         self.audio
             .player_mut(audio::PlayerId::Preview)
             .set_device(to_opt(&cfg.device_preview));
+    }
+
+    fn apply_audio_processing_config(&mut self, cfg: &db::AppConfig) {
+        self.audio
+            .set_processing_bypassed(cfg.audio_processing_bypassed);
+        self.audio
+            .set_master_volume_percent(cfg.audio_master_volume_percent);
+        self.audio.set_eq_enabled(cfg.audio_eq_enabled);
+        for (index, gain) in normalized_eq_gains(&cfg.audio_eq_gains)
+            .into_iter()
+            .enumerate()
+        {
+            self.audio.set_eq_gain_db(index, gain);
+        }
+        self.audio
+            .set_compressor_attack_ms(cfg.audio_compressor_attack_ms);
+        self.audio.set_compressor_ratio(cfg.audio_compressor_ratio);
+        self.audio
+            .set_compressor_threshold_db(cfg.audio_compressor_threshold_db);
+        self.audio
+            .set_compressor_gain_db(cfg.audio_compressor_gain_db);
+        self.audio
+            .set_compressor_release_ms(cfg.audio_compressor_release_ms);
+        let agc_preset =
+            audio::AgcPreset::from_str(&cfg.audio_agc_preset).unwrap_or(audio::AgcPreset::Disabled);
+        self.audio.set_agc_preset(agc_preset);
+    }
+
+    fn audio_processing_config_from_dialog(&self) -> Option<db::AppConfig> {
+        let Some(Dialog::AudioProcessing {
+            processing_bypassed,
+            input_volume,
+            compressor_mode,
+            compressor_preset,
+            attack,
+            ratio,
+            threshold,
+            gain,
+            release,
+            eq_enabled,
+            eq_gains,
+            agc_preset,
+        }) = &self.dialog
+        else {
+            return None;
+        };
+
+        let mut cfg = self.app_config.clone();
+        cfg.audio_processing_bypassed = *processing_bypassed;
+        cfg.audio_master_volume_percent = input_volume.clamp(0.0, 100.0);
+        cfg.audio_eq_enabled = *eq_enabled;
+        cfg.audio_eq_gains = normalized_eq_gains(eq_gains);
+        cfg.audio_compressor_mode = compressor_mode.clone();
+        cfg.audio_compressor_preset = compressor_preset.clone();
+        cfg.audio_compressor_attack_ms = attack
+            .trim()
+            .parse::<f32>()
+            .unwrap_or(cfg.audio_compressor_attack_ms)
+            .clamp(0.1, 5000.0);
+        cfg.audio_compressor_ratio = ratio
+            .trim()
+            .parse::<f32>()
+            .unwrap_or(cfg.audio_compressor_ratio)
+            .clamp(1.0, 40.0);
+        cfg.audio_compressor_threshold_db = threshold
+            .trim()
+            .parse::<f32>()
+            .unwrap_or(cfg.audio_compressor_threshold_db)
+            .clamp(-80.0, 0.0);
+        cfg.audio_compressor_gain_db = gain
+            .trim()
+            .parse::<f32>()
+            .unwrap_or(cfg.audio_compressor_gain_db)
+            .clamp(-24.0, 24.0);
+        cfg.audio_compressor_release_ms = release
+            .trim()
+            .parse::<f32>()
+            .unwrap_or(cfg.audio_compressor_release_ms)
+            .clamp(1.0, 10000.0);
+        cfg.audio_agc_preset = audio::AgcPreset::from_str(agc_preset)
+            .unwrap_or(audio::AgcPreset::Disabled)
+            .as_str()
+            .into();
+        Some(cfg)
     }
 
     fn update_track_end_at(&mut self) {
@@ -4958,13 +5078,10 @@ impl App {
                 .spacing(8)
                 .into();
 
-                let agc_presets = vec![
-                    "Disabled".to_string(),
-                    "Light".to_string(),
-                    "Normal".to_string(),
-                    "Strong".to_string(),
-                    "Voice".to_string(),
-                ];
+                let agc_presets = audio::AgcPreset::ALL
+                    .iter()
+                    .map(|preset| preset.as_str().to_string())
+                    .collect::<Vec<_>>();
                 let agc_body: Element<_> = row![
                     label("Automatic Gain Control (AGC) Preset"),
                     pick_list(
@@ -5006,7 +5123,11 @@ impl App {
                         row![
                             Space::with_width(Length::Fill),
                             self.dialog_button("Cancel", Message::DialogCancel, rgb(62, 83, 97)),
-                            self.dialog_button("Save", Message::DialogCancel, accent_purple()),
+                            self.dialog_button(
+                                "Save",
+                                Message::AudioProcessingSave,
+                                accent_purple()
+                            ),
                         ]
                         .spacing(8)
                         .align_y(Alignment::Center),
