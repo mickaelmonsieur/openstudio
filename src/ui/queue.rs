@@ -49,6 +49,7 @@ impl App {
             self.side_mode("REPLACE", true, Some(Message::QueueReplaceTrack)),
             self.side_mode("REMOVE", false, Some(Message::QueueRemoveEntry)),
             self.side_mode("CLEAR", false, Some(Message::QueueClearAll)),
+            self.side_mode("RELOAD", false, Some(Message::QueueReload)),
         ]
         .spacing(1)
         .width(Length::Fixed(78.0))
