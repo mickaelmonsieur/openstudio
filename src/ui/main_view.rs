@@ -1024,6 +1024,7 @@ impl App {
                 };
                 let channel_options = vec![String::from("Mono"), String::from("Stéréo")];
                 let streaming_status = self.streaming_status();
+                let diagnostics = self.streaming_diagnostics();
                 let status_color = if streaming_status == "Connected" {
                     rgb(100, 200, 120)
                 } else if streaming_status == "Disabled" {
@@ -1114,6 +1115,33 @@ impl App {
                 ]
                 .spacing(9)
                 .into();
+                let diagnostic_cell = |label: &'static str, value: u64| -> Element<'_, Message> {
+                    column![
+                        text(label).size(10).style(text_color(rgb(160, 180, 195))),
+                        text(value.to_string())
+                            .size(13)
+                            .style(text_color(rgb(226, 238, 245))),
+                    ]
+                    .spacing(2)
+                    .width(Length::Fill)
+                    .into()
+                };
+                let diagnostics_body: Element<_> = column![
+                    row![
+                        diagnostic_cell("Clip", diagnostics.clip_warnings),
+                        diagnostic_cell("In drop", diagnostics.input_drops),
+                        diagnostic_cell("Out drop", diagnostics.output_drops),
+                    ]
+                    .spacing(12),
+                    row![
+                        diagnostic_cell("Underrun", diagnostics.source_underruns),
+                        diagnostic_cell("Frames", diagnostics.mixed_frames),
+                        Space::with_width(Length::Fill),
+                    ]
+                    .spacing(12),
+                ]
+                .spacing(8)
+                .into();
 
                 container(
                     column![
@@ -1145,6 +1173,7 @@ impl App {
                         .align_y(Alignment::Center),
                         self.audio_processing_fieldset("Encoding", encoding_body),
                         self.audio_processing_fieldset("Server", server_body),
+                        self.audio_processing_fieldset("Diagnostics", diagnostics_body),
                         row![
                             Space::with_width(Length::Fill),
                             self.dialog_button("Cancel", Message::DialogCancel, rgb(62, 83, 97)),

@@ -18,7 +18,7 @@ use symphonia::core::units::Time;
 
 mod broadcast;
 
-pub use broadcast::{BroadcastBus, BroadcastFrame};
+pub use broadcast::{BroadcastBus, BroadcastDiagnostics, BroadcastFrame};
 
 const EQ_BAND_FREQS: [f32; 10] = [
     32.0, 63.0, 125.0, 250.0, 500.0, 1000.0, 2000.0, 4000.0, 8000.0, 16000.0,
@@ -216,6 +216,10 @@ impl AudioManager {
     #[allow(dead_code)]
     pub fn take_broadcast_output(&self) -> Option<mpsc::Receiver<BroadcastFrame>> {
         self.broadcast.take_output()
+    }
+
+    pub fn broadcast_diagnostics(&self) -> BroadcastDiagnostics {
+        self.broadcast.diagnostics()
     }
 }
 

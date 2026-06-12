@@ -1,4 +1,4 @@
-use crate::{db, streaming, App};
+use crate::{audio, db, streaming, App};
 
 impl App {
     pub(crate) fn sync_streaming_encoder(&mut self) {
@@ -39,6 +39,10 @@ impl App {
             .as_ref()
             .map(|handle| handle.status())
             .unwrap_or_else(|| String::from("Stopped"))
+    }
+
+    pub(crate) fn streaming_diagnostics(&self) -> audio::BroadcastDiagnostics {
+        self.audio.broadcast_diagnostics()
     }
 
     pub(crate) fn sync_streaming_metadata_for_current_track(&self) {

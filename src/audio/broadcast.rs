@@ -1,5 +1,7 @@
 use std::collections::{HashMap, VecDeque};
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::mpsc::{self, Receiver, SyncSender, TrySendError};
+use std::sync::Arc;
 use std::sync::Mutex;
 use std::thread;
 use std::time::{Duration, Instant};
@@ -14,6 +16,7 @@ const OUTPUT_QUEUE_CAPACITY: usize = 64;
 const MIX_CHUNK_FRAMES: usize = 1024;
 const MIX_IDLE_SLEEP: Duration = Duration::from_millis(2);
 const MIX_FLUSH_AFTER: Duration = Duration::from_millis(20);
+const CLIP_WARNING_THRESHOLD: f32 = 0.98;
 
 #[derive(Debug, Clone)]
 #[allow(dead_code)]
@@ -23,20 +26,54 @@ pub struct BroadcastFrame {
     pub samples: Vec<f32>,
 }
 
+#[derive(Debug, Clone, Copy, Default)]
+pub struct BroadcastDiagnostics {
+    pub input_drops: u64,
+    pub output_drops: u64,
+    pub source_underruns: u64,
+    pub clip_warnings: u64,
+    pub mixed_frames: u64,
+}
+
+#[derive(Default)]
+struct BroadcastStats {
+    input_drops: AtomicU64,
+    output_drops: AtomicU64,
+    source_underruns: AtomicU64,
+    clip_warnings: AtomicU64,
+    mixed_frames: AtomicU64,
+}
+
+impl BroadcastStats {
+    fn snapshot(&self) -> BroadcastDiagnostics {
+        BroadcastDiagnostics {
+            input_drops: self.input_drops.load(Ordering::Relaxed),
+            output_drops: self.output_drops.load(Ordering::Relaxed),
+            source_underruns: self.source_underruns.load(Ordering::Relaxed),
+            clip_warnings: self.clip_warnings.load(Ordering::Relaxed),
+            mixed_frames: self.mixed_frames.load(Ordering::Relaxed),
+        }
+    }
+}
+
 #[derive(Clone)]
 pub struct BroadcastBus {
     input_tx: SyncSender<BroadcastInput>,
     output_rx: std::sync::Arc<Mutex<Option<Receiver<BroadcastFrame>>>>,
+    stats: Arc<BroadcastStats>,
 }
 
 impl BroadcastBus {
     pub fn new() -> Self {
         let (input_tx, input_rx) = mpsc::sync_channel(INPUT_QUEUE_CAPACITY);
         let (output_tx, output_rx) = mpsc::sync_channel(OUTPUT_QUEUE_CAPACITY);
-        thread::spawn(move || run_mixer(input_rx, output_tx));
+        let stats = Arc::new(BroadcastStats::default());
+        let worker_stats = Arc::clone(&stats);
+        thread::spawn(move || run_mixer(input_rx, output_tx, worker_stats));
         Self {
             input_tx,
             output_rx: std::sync::Arc::new(Mutex::new(Some(output_rx))),
+            stats,
         }
     }
 
@@ -59,13 +96,21 @@ impl BroadcastBus {
         };
 
         match self.input_tx.try_send(input) {
-            Ok(()) | Err(TrySendError::Full(_)) | Err(TrySendError::Disconnected(_)) => {}
+            Ok(()) => {}
+            Err(TrySendError::Full(_)) => {
+                self.stats.input_drops.fetch_add(1, Ordering::Relaxed);
+            }
+            Err(TrySendError::Disconnected(_)) => {}
         }
     }
 
     #[allow(dead_code)]
     pub fn take_output(&self) -> Option<Receiver<BroadcastFrame>> {
         self.output_rx.lock().ok()?.take()
+    }
+
+    pub fn diagnostics(&self) -> BroadcastDiagnostics {
+        self.stats.snapshot()
     }
 }
 
@@ -82,7 +127,11 @@ struct BroadcastInput {
     samples: Vec<f32>,
 }
 
-fn run_mixer(input_rx: Receiver<BroadcastInput>, output_tx: SyncSender<BroadcastFrame>) {
+fn run_mixer(
+    input_rx: Receiver<BroadcastInput>,
+    output_tx: SyncSender<BroadcastFrame>,
+    stats: Arc<BroadcastStats>,
+) {
     let mut sources: HashMap<PlayerId, VecDeque<f32>> = HashMap::new();
     let mut last_input_at = Instant::now();
 
@@ -106,14 +155,17 @@ fn run_mixer(input_rx: Receiver<BroadcastInput>, output_tx: SyncSender<Broadcast
         let should_flush_partial = max_frames > 0 && last_input_at.elapsed() >= MIX_FLUSH_AFTER;
         if max_frames >= MIX_CHUNK_FRAMES || should_flush_partial {
             let frames = max_frames.min(MIX_CHUNK_FRAMES);
-            let samples = mix_next_frames(&mut sources, frames);
+            let samples = mix_next_frames(&mut sources, frames, &stats);
             let frame = BroadcastFrame {
                 sample_rate: BROADCAST_SAMPLE_RATE,
                 channels: BROADCAST_CHANNELS,
                 samples,
             };
             match output_tx.try_send(frame) {
-                Ok(()) | Err(TrySendError::Full(_)) => {}
+                Ok(()) => {}
+                Err(TrySendError::Full(_)) => {
+                    stats.output_drops.fetch_add(1, Ordering::Relaxed);
+                }
                 Err(TrySendError::Disconnected(_)) => break,
             }
         } else {
@@ -133,7 +185,11 @@ fn run_mixer(input_rx: Receiver<BroadcastInput>, output_tx: SyncSender<Broadcast
     }
 }
 
-fn mix_next_frames(sources: &mut HashMap<PlayerId, VecDeque<f32>>, frames: usize) -> Vec<f32> {
+fn mix_next_frames(
+    sources: &mut HashMap<PlayerId, VecDeque<f32>>,
+    frames: usize,
+    stats: &BroadcastStats,
+) -> Vec<f32> {
     let mut out = vec![0.0; frames * BROADCAST_CHANNELS];
     let mut active_sources = 0usize;
 
@@ -142,6 +198,10 @@ fn mix_next_frames(sources: &mut HashMap<PlayerId, VecDeque<f32>>, frames: usize
             continue;
         }
         active_sources += 1;
+        let expected_samples = frames * BROADCAST_CHANNELS;
+        if queue.len() < expected_samples {
+            stats.source_underruns.fetch_add(1, Ordering::Relaxed);
+        }
         for sample in out.iter_mut() {
             if let Some(value) = queue.pop_front() {
                 *sample += value;
@@ -155,8 +215,15 @@ fn mix_next_frames(sources: &mut HashMap<PlayerId, VecDeque<f32>>, frames: usize
         1.0
     };
     for sample in &mut out {
-        *sample = soft_limit(*sample * gain);
+        let mixed = *sample * gain;
+        if mixed.abs() >= CLIP_WARNING_THRESHOLD {
+            stats.clip_warnings.fetch_add(1, Ordering::Relaxed);
+        }
+        *sample = soft_limit(mixed);
     }
+    stats
+        .mixed_frames
+        .fetch_add(frames as u64, Ordering::Relaxed);
     out
 }
 
