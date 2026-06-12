@@ -110,6 +110,7 @@ impl App {
             | Some(Dialog::EditDbConfig { .. })
             | Some(Dialog::EditConfig { .. })
             | Some(Dialog::AudioProcessing { .. })
+            | Some(Dialog::StreamEncoder { .. })
             | Some(Dialog::Login { .. })
             | Some(Dialog::ConfirmClose { .. }) => self.active_instant_page_name(),
         };

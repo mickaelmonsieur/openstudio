@@ -34,6 +34,15 @@ pub struct AppConfig {
     pub audio_compressor_gain_db: f32,
     pub audio_compressor_release_ms: f32,
     pub audio_agc_preset: String,
+    pub encoder_bitrate: i32,
+    pub encoder_sample_rate: i32,
+    pub encoder_channels: i32,
+    pub encoder_type: String,
+    pub encoder_server_host: String,
+    pub encoder_server_port: i32,
+    pub encoder_password: String,
+    pub encoder_mountpoint: String,
+    pub encoder_reconnect_seconds: i32,
 }
 
 impl Default for AppConfig {
@@ -62,6 +71,15 @@ impl Default for AppConfig {
             audio_compressor_gain_db: 0.0,
             audio_compressor_release_ms: 1500.0,
             audio_agc_preset: String::from("Disabled"),
+            encoder_bitrate: 128,
+            encoder_sample_rate: 44100,
+            encoder_channels: 2,
+            encoder_type: String::from("LAME MP3"),
+            encoder_server_host: String::from("openstudio.entrypoint.belstream.net"),
+            encoder_server_port: 80,
+            encoder_password: String::new(),
+            encoder_mountpoint: String::from("/live"),
+            encoder_reconnect_seconds: 10,
         }
     }
 }
@@ -215,6 +233,33 @@ impl Database {
 
             ALTER TABLE configurations
             ADD COLUMN IF NOT EXISTS timezone TEXT NOT NULL DEFAULT 'Europe/Paris';
+
+            ALTER TABLE configurations
+            ADD COLUMN IF NOT EXISTS encoder_bitrate INTEGER NOT NULL DEFAULT 128;
+
+            ALTER TABLE configurations
+            ADD COLUMN IF NOT EXISTS encoder_sample_rate INTEGER NOT NULL DEFAULT 44100;
+
+            ALTER TABLE configurations
+            ADD COLUMN IF NOT EXISTS encoder_channels INTEGER NOT NULL DEFAULT 2;
+
+            ALTER TABLE configurations
+            ADD COLUMN IF NOT EXISTS encoder_type TEXT NOT NULL DEFAULT 'LAME MP3';
+
+            ALTER TABLE configurations
+            ADD COLUMN IF NOT EXISTS encoder_server_host TEXT NOT NULL DEFAULT 'openstudio.entrypoint.belstream.net';
+
+            ALTER TABLE configurations
+            ADD COLUMN IF NOT EXISTS encoder_server_port INTEGER NOT NULL DEFAULT 80;
+
+            ALTER TABLE configurations
+            ADD COLUMN IF NOT EXISTS encoder_password TEXT NOT NULL DEFAULT '';
+
+            ALTER TABLE configurations
+            ADD COLUMN IF NOT EXISTS encoder_mountpoint TEXT NOT NULL DEFAULT '/live';
+
+            ALTER TABLE configurations
+            ADD COLUMN IF NOT EXISTS encoder_reconnect_seconds INTEGER NOT NULL DEFAULT 10;
 
             CREATE TABLE IF NOT EXISTS automix_log (
                 id        INTEGER     GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
@@ -661,6 +706,33 @@ impl Database {
             audio_agc_preset: row
                 .try_get("audio_agc_preset")
                 .unwrap_or(default_cfg.audio_agc_preset),
+            encoder_bitrate: row
+                .try_get("encoder_bitrate")
+                .unwrap_or(default_cfg.encoder_bitrate),
+            encoder_sample_rate: row
+                .try_get("encoder_sample_rate")
+                .unwrap_or(default_cfg.encoder_sample_rate),
+            encoder_channels: row
+                .try_get("encoder_channels")
+                .unwrap_or(default_cfg.encoder_channels),
+            encoder_type: row
+                .try_get("encoder_type")
+                .unwrap_or(default_cfg.encoder_type),
+            encoder_server_host: row
+                .try_get("encoder_server_host")
+                .unwrap_or(default_cfg.encoder_server_host),
+            encoder_server_port: row
+                .try_get("encoder_server_port")
+                .unwrap_or(default_cfg.encoder_server_port),
+            encoder_password: row
+                .try_get("encoder_password")
+                .unwrap_or(default_cfg.encoder_password),
+            encoder_mountpoint: row
+                .try_get("encoder_mountpoint")
+                .unwrap_or(default_cfg.encoder_mountpoint),
+            encoder_reconnect_seconds: row
+                .try_get("encoder_reconnect_seconds")
+                .unwrap_or(default_cfg.encoder_reconnect_seconds),
         })
     }
 
@@ -708,7 +780,16 @@ impl Database {
                 audio_compressor_threshold_db = $20,
                 audio_compressor_gain_db = $21,
                 audio_compressor_release_ms = $22,
-                audio_agc_preset = $23
+                audio_agc_preset = $23,
+                encoder_bitrate = $24,
+                encoder_sample_rate = $25,
+                encoder_channels = $26,
+                encoder_type = $27,
+                encoder_server_host = $28,
+                encoder_server_port = $29,
+                encoder_password = $30,
+                encoder_mountpoint = $31,
+                encoder_reconnect_seconds = $32
             ",
             &[
                 &cfg.auto_mix_on_start,
@@ -734,6 +815,15 @@ impl Database {
                 &cfg.audio_compressor_gain_db,
                 &cfg.audio_compressor_release_ms,
                 &cfg.audio_agc_preset,
+                &cfg.encoder_bitrate,
+                &cfg.encoder_sample_rate,
+                &cfg.encoder_channels,
+                &cfg.encoder_type,
+                &cfg.encoder_server_host,
+                &cfg.encoder_server_port,
+                &cfg.encoder_password,
+                &cfg.encoder_mountpoint,
+                &cfg.encoder_reconnect_seconds,
             ],
         )?;
         Ok(())

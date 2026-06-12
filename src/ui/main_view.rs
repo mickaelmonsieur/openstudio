@@ -137,22 +137,33 @@ impl App {
         let inactive_color = rgb(70, 90, 105);
 
         let authenticated = self.current_user_role >= 1;
+        let admin_enabled =
+            !self.is_locked && self.db.is_some() && matches!(self.current_user_role, 1 | 2);
         let cfg_btn = icon_btn(
             Bootstrap::GearFill,
-            (!self.is_locked && self.db.is_some()).then_some(Message::ConfigOpen),
-            if self.is_locked || self.db.is_none() {
-                inactive_color
-            } else {
+            admin_enabled.then_some(Message::ConfigOpen),
+            if admin_enabled {
                 active_color
+            } else {
+                inactive_color
             },
         );
         let audio_btn = icon_btn(
             Bootstrap::Sliders,
-            (!self.is_locked).then_some(Message::AudioProcessingOpen),
-            if self.is_locked {
-                inactive_color
-            } else {
+            admin_enabled.then_some(Message::AudioProcessingOpen),
+            if admin_enabled {
                 active_color
+            } else {
+                inactive_color
+            },
+        );
+        let encoder_btn = icon_btn(
+            Bootstrap::CloudUploadFill,
+            admin_enabled.then_some(Message::StreamEncoderOpen),
+            if admin_enabled {
+                active_color
+            } else {
+                inactive_color
             },
         );
         let db_btn = icon_btn(
@@ -229,9 +240,17 @@ impl App {
                 .height(Length::Fill)
                 .padding([0, 12])
                 .center_y(Length::Fill),
-                row![user_label, lock_btn, cfg_btn, audio_btn, db_btn, about_btn]
-                    .spacing(4)
-                    .align_y(Alignment::Center),
+                row![
+                    user_label,
+                    lock_btn,
+                    cfg_btn,
+                    audio_btn,
+                    encoder_btn,
+                    db_btn,
+                    about_btn
+                ]
+                .spacing(4)
+                .align_y(Alignment::Center),
             ]
             .align_y(Alignment::Center)
             .width(Length::Fill)
@@ -921,6 +940,199 @@ impl App {
                     .spacing(12),
                 )
                 .width(Length::Fixed(700.0))
+                .padding(16)
+                .style(panel_style(rgb(31, 46, 55), accent_purple()))
+            }
+            Some(Dialog::StreamEncoder {
+                bitrate,
+                sample_rate,
+                channels,
+                encoder_type,
+                server_host,
+                server_port,
+                password,
+                mountpoint,
+                reconnect_seconds,
+                error,
+            }) => {
+                let label =
+                    |s: &'static str| text(s).size(11).style(text_color(rgb(160, 180, 195)));
+                let field_label = |s: &'static str| {
+                    container(label(s))
+                        .width(Length::Fixed(128.0))
+                        .align_x(Alignment::End)
+                };
+                let disabled_text = |s: String, width: f32| -> Element<'_, Message> {
+                    container(
+                        row![
+                            text(s).size(12).style(text_color(rgb(135, 155, 168))),
+                            Space::with_width(Length::Fill),
+                            text("▾").size(10).style(text_color(rgb(105, 122, 134))),
+                        ]
+                        .align_y(Alignment::Center),
+                    )
+                    .width(Length::Fixed(width))
+                    .padding([5, 8])
+                    .style(|_| container::Style {
+                        background: Some(Background::Color(rgb(36, 47, 55))),
+                        border: Border {
+                            color: rgb(54, 70, 82),
+                            width: 1.0,
+                            radius: 2.0.into(),
+                        },
+                        ..Default::default()
+                    })
+                    .into()
+                };
+                let read_only_field = |s: String, width: f32| -> Element<'_, Message> {
+                    container(text(s).size(12).style(text_color(rgb(135, 155, 168))))
+                        .width(Length::Fixed(width))
+                        .padding([5, 8])
+                        .style(|_| container::Style {
+                            background: Some(Background::Color(rgb(36, 47, 55))),
+                            border: Border {
+                                color: rgb(54, 70, 82),
+                                width: 1.0,
+                                radius: 2.0.into(),
+                            },
+                            ..Default::default()
+                        })
+                        .into()
+                };
+                let input_field = |value: &str,
+                                   width: f32,
+                                   on_input: fn(String) -> Message|
+                 -> Element<'_, Message> {
+                    text_input("", value)
+                        .on_input(on_input)
+                        .padding(5)
+                        .size(12)
+                        .width(Length::Fixed(width))
+                        .into()
+                };
+                let password_error: Element<_> = if let Some(error) = error {
+                    row![
+                        Space::with_width(Length::Fixed(138.0)),
+                        text(error.clone())
+                            .size(11)
+                            .style(text_color(rgb(220, 100, 80))),
+                    ]
+                    .into()
+                } else {
+                    Space::new(Length::Shrink, Length::Shrink).into()
+                };
+                let channel_options = vec![String::from("Mono"), String::from("Stéréo")];
+                let encoding_body: Element<_> = column![
+                    row![
+                        field_label("Encoder Type"),
+                        disabled_text(encoder_type.clone(), 132.0),
+                    ]
+                    .spacing(10)
+                    .align_y(Alignment::Center),
+                    row![
+                        field_label("Bitrate"),
+                        input_field(bitrate, 64.0, Message::StreamEncoderBitrateChanged),
+                        text("kbps").size(11).style(text_color(rgb(160, 180, 195))),
+                    ]
+                    .spacing(10)
+                    .align_y(Alignment::Center),
+                    row![
+                        field_label("Samplerate"),
+                        input_field(sample_rate, 82.0, Message::StreamEncoderSampleRateChanged),
+                        text("Hz").size(11).style(text_color(rgb(160, 180, 195))),
+                    ]
+                    .spacing(10)
+                    .align_y(Alignment::Center),
+                    row![
+                        field_label("Channels"),
+                        pick_list(
+                            channel_options,
+                            Some(channels.clone()),
+                            Message::StreamEncoderChannelsChanged,
+                        )
+                        .padding(5)
+                        .text_size(12)
+                        .width(Length::Fixed(132.0))
+                        .style(search_pick_list_style),
+                    ]
+                    .spacing(10)
+                    .align_y(Alignment::Center),
+                ]
+                .spacing(9)
+                .into();
+                let server_body: Element<_> = column![
+                    row![
+                        field_label("Server Host"),
+                        read_only_field(server_host.clone(), 300.0),
+                    ]
+                    .spacing(10)
+                    .align_y(Alignment::Center),
+                    row![
+                        field_label("Server Port"),
+                        read_only_field(server_port.clone(), 82.0),
+                    ]
+                    .spacing(10)
+                    .align_y(Alignment::Center),
+                    row![
+                        field_label("Mountpoint"),
+                        input_field(mountpoint, 190.0, Message::StreamEncoderMountpointChanged),
+                    ]
+                    .spacing(10)
+                    .align_y(Alignment::Center),
+                    row![
+                        field_label("Password"),
+                        text_input("", password)
+                            .secure(true)
+                            .on_input(Message::StreamEncoderPasswordChanged)
+                            .padding(5)
+                            .size(12)
+                            .width(Length::Fixed(190.0)),
+                    ]
+                    .spacing(10)
+                    .align_y(Alignment::Center),
+                    password_error,
+                    row![
+                        field_label("Reconnect"),
+                        input_field(
+                            reconnect_seconds,
+                            64.0,
+                            Message::StreamEncoderReconnectChanged
+                        ),
+                        text("sec").size(11).style(text_color(rgb(160, 180, 195))),
+                    ]
+                    .spacing(10)
+                    .align_y(Alignment::Center),
+                ]
+                .spacing(9)
+                .into();
+
+                container(
+                    column![
+                        row![
+                            text(Bootstrap::CloudUploadFill.to_string())
+                                .font(BOOTSTRAP_FONT)
+                                .size(16)
+                                .style(text_color(rgb(100, 140, 170))),
+                            text("Streaming Encoder")
+                                .size(18)
+                                .style(text_color(rgb(226, 238, 245))),
+                            Space::with_width(Length::Fill),
+                        ]
+                        .spacing(10)
+                        .align_y(Alignment::Center),
+                        self.audio_processing_fieldset("Encoding", encoding_body),
+                        self.audio_processing_fieldset("Server", server_body),
+                        row![
+                            Space::with_width(Length::Fill),
+                            self.dialog_button("Cancel", Message::DialogCancel, rgb(62, 83, 97)),
+                            self.dialog_button("OK", Message::StreamEncoderSave, accent_purple()),
+                        ]
+                        .spacing(8)
+                        .align_y(Alignment::Center),
+                    ]
+                    .spacing(14),
+                )
+                .width(Length::Fixed(620.0))
                 .padding(16)
                 .style(panel_style(rgb(31, 46, 55), accent_purple()))
             }

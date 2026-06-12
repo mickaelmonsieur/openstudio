@@ -385,5 +385,14 @@ CREATE TABLE configurations (
     audio_compressor_threshold_db REAL NOT NULL DEFAULT -27.0,
     audio_compressor_gain_db REAL NOT NULL DEFAULT 0.0,
     audio_compressor_release_ms REAL NOT NULL DEFAULT 1500.0,
-    audio_agc_preset     TEXT    NOT NULL DEFAULT 'Disabled'
+    audio_agc_preset     TEXT    NOT NULL DEFAULT 'Disabled',
+    encoder_bitrate      INTEGER NOT NULL DEFAULT 128,
+    encoder_sample_rate  INTEGER NOT NULL DEFAULT 44100,
+    encoder_channels     INTEGER NOT NULL DEFAULT 2,
+    encoder_type         TEXT    NOT NULL DEFAULT 'LAME MP3',
+    encoder_server_host  TEXT    NOT NULL DEFAULT 'openstudio.entrypoint.belstream.net',
+    encoder_server_port  INTEGER NOT NULL DEFAULT 80,
+    encoder_password     TEXT    NOT NULL DEFAULT '',
+    encoder_mountpoint   TEXT    NOT NULL DEFAULT '/live',
+    encoder_reconnect_seconds INTEGER NOT NULL DEFAULT 10
 );

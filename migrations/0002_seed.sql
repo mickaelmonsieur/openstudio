@@ -492,7 +492,32 @@ INSERT INTO configurations (
     preload,
     fade_out_duration_ms,
     stop_fade_duration_ms,
-    timezone
+    timezone,
+    encoder_bitrate,
+    encoder_sample_rate,
+    encoder_channels,
+    encoder_type,
+    encoder_server_host,
+    encoder_server_port,
+    encoder_password,
+    encoder_mountpoint,
+    encoder_reconnect_seconds
 )
-VALUES (false, false, false, 10, 2500, 1000, 'Europe/Paris');
-
+VALUES (
+    false,
+    false,
+    false,
+    10,
+    2500,
+    1000,
+    'Europe/Paris',
+    128,
+    44100,
+    2,
+    'LAME MP3',
+    'openstudio.entrypoint.belstream.net',
+    80,
+    '',
+    '/live',
+    10
+);

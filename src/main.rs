@@ -12,6 +12,7 @@ mod app_paths;
 mod app_queue;
 mod app_rest;
 mod app_search;
+mod app_stream_encoder;
 mod app_time;
 mod audio;
 mod db;
@@ -405,6 +406,18 @@ enum Dialog {
         eq_gains: Vec<f32>,
         agc_preset: String,
     },
+    StreamEncoder {
+        bitrate: String,
+        sample_rate: String,
+        channels: String,
+        encoder_type: String,
+        server_host: String,
+        server_port: String,
+        password: String,
+        mountpoint: String,
+        reconnect_seconds: String,
+        error: Option<String>,
+    },
     Login {
         login: String,
         password: String,
@@ -546,6 +559,14 @@ enum Message {
     AudioProcessingEqGainChanged(usize, f32),
     AudioProcessingAgcPresetChanged(String),
     AudioProcessingSave,
+    StreamEncoderOpen,
+    StreamEncoderBitrateChanged(String),
+    StreamEncoderSampleRateChanged(String),
+    StreamEncoderChannelsChanged(String),
+    StreamEncoderPasswordChanged(String),
+    StreamEncoderMountpointChanged(String),
+    StreamEncoderReconnectChanged(String),
+    StreamEncoderSave,
     ConfigToggle(ConfigField),
     ConfigPreloadChanged(String),
     ConfigFadeOutDurationChanged(String),
@@ -1707,6 +1728,68 @@ impl App {
                     return Task::none();
                 };
                 self.apply_audio_processing_config(&cfg);
+                self.app_config = cfg.clone();
+                self.dialog = None;
+                if let Some(db) = self.db.clone() {
+                    return Task::perform(
+                        async move {
+                            tokio::task::spawn_blocking(move || {
+                                db.save_config(&cfg).map_err(|e| e.to_string())
+                            })
+                            .await
+                            .unwrap_or_else(|e| Err(e.to_string()))
+                        },
+                        Message::ConfigSaved,
+                    );
+                }
+                Task::none()
+            }
+
+            Message::StreamEncoderOpen => {
+                self.open_stream_encoder_dialog();
+                Task::none()
+            }
+
+            Message::StreamEncoderBitrateChanged(value) => {
+                self.set_stream_encoder_bitrate_input(value)
+            }
+
+            Message::StreamEncoderSampleRateChanged(value) => {
+                self.set_stream_encoder_sample_rate_input(value)
+            }
+
+            Message::StreamEncoderChannelsChanged(value) => {
+                self.set_stream_encoder_channels_input(value)
+            }
+
+            Message::StreamEncoderPasswordChanged(value) => {
+                self.update_stream_encoder_dialog(|dialog| {
+                    if let Dialog::StreamEncoder {
+                        password, error, ..
+                    } = dialog
+                    {
+                        *password = value;
+                        *error = None;
+                    }
+                })
+            }
+
+            Message::StreamEncoderMountpointChanged(value) => {
+                self.set_stream_encoder_mountpoint_input(value)
+            }
+
+            Message::StreamEncoderReconnectChanged(value) => {
+                self.set_stream_encoder_reconnect_input(value)
+            }
+
+            Message::StreamEncoderSave => {
+                if !self.stream_encoder_password_is_valid() {
+                    self.set_stream_encoder_error("Encoder password is required.");
+                    return Task::none();
+                }
+                let Some(cfg) = self.stream_encoder_config_from_dialog() else {
+                    return Task::none();
+                };
                 self.app_config = cfg.clone();
                 self.dialog = None;
                 if let Some(db) = self.db.clone() {
