@@ -274,6 +274,7 @@ impl App {
         self.queue_player_entries.insert(player_id, entry.clone());
         self.current_queue_player_id = player_id;
         self.current_queue_entry = Some(entry);
+        self.sync_streaming_metadata_for_current_track();
         self.update_track_end_at();
     }
 
@@ -491,6 +492,7 @@ impl App {
                 .cloned()
             {
                 self.current_queue_entry = Some(entry);
+                self.sync_streaming_metadata_for_current_track();
                 return;
             }
         }
@@ -500,6 +502,7 @@ impl App {
                 if let Some(entry) = self.queue_player_entries.get(&player_id).cloned() {
                     self.current_queue_player_id = player_id;
                     self.current_queue_entry = Some(entry);
+                    self.sync_streaming_metadata_for_current_track();
                     return;
                 }
             }
@@ -578,6 +581,7 @@ impl App {
             track_id: Some(track.id),
             artist_name: track.artist_name.clone(),
             title: track.title.clone(),
+            track_type_name: track.track_type_name.clone(),
             duration: track.duration,
             intro: track.intro,
             outro: track.outro,

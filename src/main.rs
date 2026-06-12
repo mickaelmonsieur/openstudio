@@ -13,10 +13,12 @@ mod app_queue;
 mod app_rest;
 mod app_search;
 mod app_stream_encoder;
+mod app_streaming;
 mod app_time;
 mod audio;
 mod db;
 mod rest;
+mod streaming;
 mod ui;
 
 use std::collections::HashMap;
@@ -95,6 +97,7 @@ struct App {
     instant_loops: Vec<bool>,
     rest_rx: Arc<Mutex<Option<std::sync::mpsc::Receiver<rest::RestCommand>>>>,
     rest_shutdown_tx: Option<std::sync::mpsc::Sender<()>>,
+    streaming_handle: Option<streaming::StreamingHandle>,
     app_config: db::AppConfig,
     timezone_options: Vec<String>,
     dialog: Option<Dialog>,
@@ -222,6 +225,7 @@ impl Default for App {
             instant_loops: vec![false; 10],
             rest_rx: Arc::new(Mutex::new(Some(rest_rx))),
             rest_shutdown_tx: Some(rest_shutdown_tx),
+            streaming_handle: None,
             is_locked: app_config.start_locked,
             app_config,
             timezone_options,
@@ -233,6 +237,7 @@ impl Default for App {
         app.ensure_configured_timezone_option();
         app.apply_audio_processing_config(&app.app_config.clone());
         app.apply_audio_device_config(&app.app_config.clone());
+        app.sync_streaming_encoder();
         app.load_instant_pages_from_db();
         let auto_mix_status = app.auto_mix_status.clone();
         app.log_auto_mix_status(&auto_mix_status);
@@ -407,6 +412,7 @@ enum Dialog {
         agc_preset: String,
     },
     StreamEncoder {
+        enabled: bool,
         bitrate: String,
         sample_rate: String,
         channels: String,
@@ -560,6 +566,7 @@ enum Message {
     AudioProcessingAgcPresetChanged(String),
     AudioProcessingSave,
     StreamEncoderOpen,
+    StreamEncoderEnabledChanged(bool),
     StreamEncoderBitrateChanged(String),
     StreamEncoderSampleRateChanged(String),
     StreamEncoderChannelsChanged(String),
@@ -599,6 +606,7 @@ impl App {
                 let closed = self.windows.remove(&window_id);
                 match closed {
                     Some(WindowKind::Main) => {
+                        self.stop_streaming_encoder();
                         self.shutdown_rest_server();
                         self.stop_queue_players();
                         iced::exit()
@@ -1750,6 +1758,15 @@ impl App {
                 Task::none()
             }
 
+            Message::StreamEncoderEnabledChanged(value) => {
+                self.update_stream_encoder_dialog(|dialog| {
+                    if let Dialog::StreamEncoder { enabled, error, .. } = dialog {
+                        *enabled = value;
+                        *error = None;
+                    }
+                })
+            }
+
             Message::StreamEncoderBitrateChanged(value) => {
                 self.set_stream_encoder_bitrate_input(value)
             }
@@ -1783,7 +1800,9 @@ impl App {
             }
 
             Message::StreamEncoderSave => {
-                if !self.stream_encoder_password_is_valid() {
+                if self.stream_encoder_enabled_in_dialog()
+                    && !self.stream_encoder_password_is_valid()
+                {
                     self.set_stream_encoder_error("Encoder password is required.");
                     return Task::none();
                 }
@@ -1791,6 +1810,7 @@ impl App {
                     return Task::none();
                 };
                 self.app_config = cfg.clone();
+                self.sync_streaming_encoder();
                 self.dialog = None;
                 if let Some(db) = self.db.clone() {
                     return Task::perform(
@@ -1953,6 +1973,7 @@ impl App {
 
             Message::ConfirmQuit => {
                 if let Some(Dialog::ConfirmClose { window_id }) = self.dialog {
+                    self.stop_streaming_encoder();
                     self.shutdown_rest_server();
                     return window::close(window_id);
                 }

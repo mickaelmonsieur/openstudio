@@ -272,6 +272,17 @@ jobs:
 
       - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: x86_64-pc-windows-gnu
+
+      - name: Install streaming native libraries
+        uses: msys2/setup-msys2@v2
+        with:
+          msystem: MINGW64
+          update: true
+          install: >-
+            mingw-w64-x86_64-lame
+            mingw-w64-x86_64-libshout
 
       - name: Cache Rust build
         uses: Swatinem/rust-cache@v2
@@ -288,29 +299,64 @@ jobs:
           sed -i "/^name = \"openstudio\"/{n;s/version = \".*\"/version = \"$VERSION\"/;}" Cargo.lock
 
       - name: Build release binary
-        run: cargo build --release --locked
+        shell: bash
+        env:
+          OPENSTUDIO_LAME_LIB_DIR: C:/msys64/mingw64/lib
+          OPENSTUDIO_SHOUT_LIB_DIR: C:/msys64/mingw64/lib
+        run: |
+          export PATH="/c/msys64/mingw64/bin:$PATH"
+          cargo build --release --locked --target x86_64-pc-windows-gnu
+
+      - name: Collect streaming DLLs
+        shell: bash
+        run: |
+          export PATH="/c/msys64/mingw64/bin:$PATH"
+          mkdir -p packaging/windows
+          cp /c/msys64/mingw64/bin/libmp3lame-0.dll packaging/windows/
+          cp /c/msys64/mingw64/bin/libshout-3.dll packaging/windows/
+          copy_deps() {
+            ldd "$1" \
+              | awk '/mingw64/ { print $3 }' \
+              | while read -r dll; do
+                  case "$(basename "$dll")" in
+                    libgcc_s_seh-1.dll|libstdc++-6.dll|libwinpthread-1.dll|libogg-0.dll|libvorbis-0.dll|libvorbisenc-2.dll|libspeex-1.dll|libtheora-0.dll|libssl-*.dll|libcrypto-*.dll|zlib1.dll|libbrotlicommon.dll|libbrotlidec.dll|libcurl-*.dll|libidn2-*.dll|libnghttp2-*.dll|libssh2-*.dll|libunistring-*.dll|libzstd.dll)
+                      cp "$dll" packaging/windows/
+                      ;;
+                  esac
+                done
+          }
+          copy_deps target/x86_64-pc-windows-gnu/release/openstudio.exe
+          copy_deps /c/msys64/mingw64/bin/libmp3lame-0.dll
+          copy_deps /c/msys64/mingw64/bin/libshout-3.dll
+          ls -la packaging/windows
 
       - name: Package NSIS installer
-        run: cargo packager --release --formats nsis
+        shell: bash
+        env:
+          OPENSTUDIO_LAME_LIB_DIR: C:/msys64/mingw64/lib
+          OPENSTUDIO_SHOUT_LIB_DIR: C:/msys64/mingw64/lib
+        run: |
+          export PATH="/c/msys64/mingw64/bin:$PATH"
+          cargo packager --release --formats nsis --target x86_64-pc-windows-gnu
 
       - name: Rename Windows artifact
         shell: bash
         run: |
           VERSION="$(sed -n 's/^version = "\(.*\)"/\1/p' Cargo.toml | head -n 1)"
-          mv target/release/*-setup.exe "target/release/openstudio_${VERSION}_windows_x64_setup.exe"
+          mv target/x86_64-pc-windows-gnu/release/*-setup.exe "target/x86_64-pc-windows-gnu/release/openstudio_${VERSION}_windows_x64_setup.exe"
 
       - name: Upload Windows artifact
         uses: actions/upload-artifact@v4
         with:
           name: openstudio-windows-x64
-          path: target/release/openstudio_*_windows_x64_setup.exe
+          path: target/x86_64-pc-windows-gnu/release/openstudio_*_windows_x64_setup.exe
           if-no-files-found: error
 
       - name: Publish to GitHub Release
         if: startsWith(github.ref, 'refs/tags/')
         uses: softprops/action-gh-release@v2
         with:
-          files: target/release/openstudio_*_windows_x64_setup.exe
+          files: target/x86_64-pc-windows-gnu/release/openstudio_*_windows_x64_setup.exe
 
   build-admin-windows:
     name: Build and package Windows admin app

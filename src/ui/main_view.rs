@@ -944,6 +944,7 @@ impl App {
                 .style(panel_style(rgb(31, 46, 55), accent_purple()))
             }
             Some(Dialog::StreamEncoder {
+                enabled,
                 bitrate,
                 sample_rate,
                 channels,
@@ -1022,6 +1023,14 @@ impl App {
                     Space::new(Length::Shrink, Length::Shrink).into()
                 };
                 let channel_options = vec![String::from("Mono"), String::from("Stéréo")];
+                let streaming_status = self.streaming_status();
+                let status_color = if streaming_status == "Connected" {
+                    rgb(100, 200, 120)
+                } else if streaming_status == "Disabled" {
+                    rgb(135, 155, 168)
+                } else {
+                    rgb(220, 160, 80)
+                };
                 let encoding_body: Element<_> = column![
                     row![
                         field_label("Encoder Type"),
@@ -1117,8 +1126,22 @@ impl App {
                                 .size(18)
                                 .style(text_color(rgb(226, 238, 245))),
                             Space::with_width(Length::Fill),
+                            checkbox("Activé", *enabled)
+                                .on_toggle(Message::StreamEncoderEnabledChanged)
+                                .size(14)
+                                .text_size(12),
                         ]
                         .spacing(10)
+                        .align_y(Alignment::Center),
+                        row![
+                            text("Status")
+                                .size(11)
+                                .style(text_color(rgb(160, 180, 195))),
+                            text(streaming_status)
+                                .size(12)
+                                .style(text_color(status_color)),
+                        ]
+                        .spacing(8)
                         .align_y(Alignment::Center),
                         self.audio_processing_fieldset("Encoding", encoding_body),
                         self.audio_processing_fieldset("Server", server_body),

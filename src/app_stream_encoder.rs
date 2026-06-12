@@ -8,6 +8,7 @@ pub(crate) const ENCODER_FIXED_SERVER_PORT: i32 = 80;
 impl App {
     pub(crate) fn open_stream_encoder_dialog(&mut self) {
         self.dialog = Some(Dialog::StreamEncoder {
+            enabled: self.app_config.encoder_enabled,
             bitrate: self.app_config.encoder_bitrate.clamp(8, 320).to_string(),
             sample_rate: self
                 .app_config
@@ -100,6 +101,13 @@ impl App {
             .any(|ch| !ch.is_control() && !ch.is_whitespace())
     }
 
+    pub(crate) fn stream_encoder_enabled_in_dialog(&self) -> bool {
+        matches!(
+            &self.dialog,
+            Some(Dialog::StreamEncoder { enabled: true, .. })
+        )
+    }
+
     pub(crate) fn set_stream_encoder_error(&mut self, message: impl Into<String>) {
         if let Some(Dialog::StreamEncoder { error, .. }) = &mut self.dialog {
             *error = Some(message.into());
@@ -108,6 +116,7 @@ impl App {
 
     pub(crate) fn stream_encoder_config_from_dialog(&self) -> Option<db::AppConfig> {
         let Some(Dialog::StreamEncoder {
+            enabled,
             bitrate,
             sample_rate,
             channels,
@@ -122,6 +131,7 @@ impl App {
         };
 
         let mut cfg = self.app_config.clone();
+        cfg.encoder_enabled = *enabled;
         cfg.encoder_bitrate = parse_i32_or_current(bitrate, cfg.encoder_bitrate).clamp(8, 320);
         cfg.encoder_sample_rate =
             parse_i32_or_current(sample_rate, cfg.encoder_sample_rate).clamp(8000, 48000);

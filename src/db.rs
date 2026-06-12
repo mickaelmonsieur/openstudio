@@ -34,6 +34,7 @@ pub struct AppConfig {
     pub audio_compressor_gain_db: f32,
     pub audio_compressor_release_ms: f32,
     pub audio_agc_preset: String,
+    pub encoder_enabled: bool,
     pub encoder_bitrate: i32,
     pub encoder_sample_rate: i32,
     pub encoder_channels: i32,
@@ -71,6 +72,7 @@ impl Default for AppConfig {
             audio_compressor_gain_db: 0.0,
             audio_compressor_release_ms: 1500.0,
             audio_agc_preset: String::from("Disabled"),
+            encoder_enabled: false,
             encoder_bitrate: 128,
             encoder_sample_rate: 44100,
             encoder_channels: 2,
@@ -116,6 +118,7 @@ pub struct SearchTrack {
     pub id: i32,
     pub artist_name: String,
     pub title: String,
+    pub track_type_name: String,
     pub path: String,
     pub duration: Duration,
     pub intro: Duration,
@@ -144,6 +147,7 @@ pub struct QueueEntry {
     pub track_id: Option<i32>,
     pub artist_name: String,
     pub title: String,
+    pub track_type_name: String,
     pub duration: Duration,
     pub intro: Duration,
     pub outro: Duration,
@@ -235,6 +239,9 @@ impl Database {
             ADD COLUMN IF NOT EXISTS timezone TEXT NOT NULL DEFAULT 'Europe/Paris';
 
             ALTER TABLE configurations
+            ADD COLUMN IF NOT EXISTS encoder_enabled BOOLEAN NOT NULL DEFAULT false;
+
+            ALTER TABLE configurations
             ADD COLUMN IF NOT EXISTS encoder_bitrate INTEGER NOT NULL DEFAULT 128;
 
             ALTER TABLE configurations
@@ -310,6 +317,7 @@ impl Database {
                 t.id,
                 COALESCE(a.name, '') AS artist_name,
                 t.title,
+                COALESCE(tt.name, '') AS track_type_name,
                 t.path,
                 t.duration::double precision AS duration,
                 t.intro::double precision AS intro,
@@ -320,6 +328,7 @@ impl Database {
                 to_char(t.created_at, 'FMMM/FMDD/YYYY HH24:MI:SS') AS created_at
             FROM tracks t
             LEFT JOIN artists a ON a.id = t.artist_id
+            LEFT JOIN track_types tt ON tt.id = t.track_type_id
             LEFT JOIN subcategories s ON s.id = t.subcategory_id
             WHERE t.active = TRUE
               AND ($1 = '' OR CONCAT_WS(' ', COALESCE(a.name, ''), t.title) ILIKE '%' || $1 || '%')
@@ -353,6 +362,7 @@ impl Database {
                 t.id,
                 COALESCE(a.name, '') AS artist_name,
                 t.title,
+                COALESCE(tt.name, '') AS track_type_name,
                 t.path,
                 t.duration::double precision AS duration,
                 t.intro::double precision AS intro,
@@ -363,6 +373,7 @@ impl Database {
                 to_char(t.created_at, 'FMMM/FMDD/YYYY HH24:MI:SS') AS created_at
             FROM tracks t
             LEFT JOIN artists a ON a.id = t.artist_id
+            LEFT JOIN track_types tt ON tt.id = t.track_type_id
             LEFT JOIN subcategories s ON s.id = t.subcategory_id
             WHERE t.active = TRUE AND t.id = $1
             ",
@@ -433,11 +444,13 @@ impl Database {
                 COALESCE(t.outro, 0)::double precision AS outro,
                 COALESCE(a.name, '') AS artist_name,
                 COALESCE(t.title, '') AS title,
+                COALESCE(tt.name, '') AS track_type_name,
                 COALESCE(t.duration, 0)::double precision AS duration,
                 to_char(q.scheduled_at AT TIME ZONE $1, 'HH24:MI:SS') AS scheduled_at
             FROM queue q
             LEFT JOIN tracks t ON t.id = q.track_id
             LEFT JOIN artists a ON a.id = t.artist_id
+            LEFT JOIN track_types tt ON tt.id = t.track_type_id
             WHERE q.played = FALSE
               AND (q.scheduled_at IS NULL OR q.scheduled_at >= NOW())
             ORDER BY q.scheduled_at NULLS LAST, q.priority, q.id
@@ -459,6 +472,7 @@ impl Database {
                     track_id: row.get("track_id"),
                     artist_name: row.get("artist_name"),
                     title: row.get("title"),
+                    track_type_name: row.get("track_type_name"),
                     duration: seconds_to_duration(duration),
                     intro: seconds_to_duration(intro),
                     outro: seconds_to_duration(outro),
@@ -706,6 +720,9 @@ impl Database {
             audio_agc_preset: row
                 .try_get("audio_agc_preset")
                 .unwrap_or(default_cfg.audio_agc_preset),
+            encoder_enabled: row
+                .try_get("encoder_enabled")
+                .unwrap_or(default_cfg.encoder_enabled),
             encoder_bitrate: row
                 .try_get("encoder_bitrate")
                 .unwrap_or(default_cfg.encoder_bitrate),
@@ -781,15 +798,16 @@ impl Database {
                 audio_compressor_gain_db = $21,
                 audio_compressor_release_ms = $22,
                 audio_agc_preset = $23,
-                encoder_bitrate = $24,
-                encoder_sample_rate = $25,
-                encoder_channels = $26,
-                encoder_type = $27,
-                encoder_server_host = $28,
-                encoder_server_port = $29,
-                encoder_password = $30,
-                encoder_mountpoint = $31,
-                encoder_reconnect_seconds = $32
+                encoder_enabled = $24,
+                encoder_bitrate = $25,
+                encoder_sample_rate = $26,
+                encoder_channels = $27,
+                encoder_type = $28,
+                encoder_server_host = $29,
+                encoder_server_port = $30,
+                encoder_password = $31,
+                encoder_mountpoint = $32,
+                encoder_reconnect_seconds = $33
             ",
             &[
                 &cfg.auto_mix_on_start,
@@ -815,6 +833,7 @@ impl Database {
                 &cfg.audio_compressor_gain_db,
                 &cfg.audio_compressor_release_ms,
                 &cfg.audio_agc_preset,
+                &cfg.encoder_enabled,
                 &cfg.encoder_bitrate,
                 &cfg.encoder_sample_rate,
                 &cfg.encoder_channels,
@@ -892,6 +911,7 @@ fn search_track_from_row(row: Row) -> SearchTrack {
         id: row.get("id"),
         artist_name: row.get("artist_name"),
         title: row.get("title"),
+        track_type_name: row.get("track_type_name"),
         path: row.get("path"),
         duration: seconds_to_duration(duration),
         intro: seconds_to_duration(intro),

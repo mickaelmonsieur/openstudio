@@ -386,6 +386,7 @@ CREATE TABLE configurations (
     audio_compressor_gain_db REAL NOT NULL DEFAULT 0.0,
     audio_compressor_release_ms REAL NOT NULL DEFAULT 1500.0,
     audio_agc_preset     TEXT    NOT NULL DEFAULT 'Disabled',
+    encoder_enabled      BOOLEAN NOT NULL DEFAULT false,
     encoder_bitrate      INTEGER NOT NULL DEFAULT 128,
     encoder_sample_rate  INTEGER NOT NULL DEFAULT 44100,
     encoder_channels     INTEGER NOT NULL DEFAULT 2,
