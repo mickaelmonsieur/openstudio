@@ -1,6 +1,7 @@
 use crate::{
-    audio, duration_ms, loaded_track_status, queue_track_status, rest, App, INSTANT_PLAYER_ID,
-    PREVIEW_PLAYER_ID, QUEUE_PLAYER_IDS,
+    app_constants::{INSTANT_PLAYER_ID, PREVIEW_PLAYER_ID, QUEUE_PLAYER_IDS},
+    app_helpers::{duration_ms, loaded_track_status, queue_track_status},
+    audio, rest, App,
 };
 
 impl App {

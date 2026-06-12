@@ -1,4 +1,6 @@
-use crate::{audio, App, Dialog, InstantPage, LoadedTrack, PickerTarget, INSTANT_PLAYER_ID};
+use crate::{
+    app_constants::INSTANT_PLAYER_ID, audio, App, Dialog, InstantPage, LoadedTrack, PickerTarget,
+};
 
 impl App {
     pub(crate) fn load_instant_pages_from_db(&mut self) {

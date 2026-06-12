@@ -3,7 +3,8 @@ use std::path::PathBuf;
 use iced::window;
 
 use crate::{
-    db, page_start_for_total, App, LoadedTrack, TrackPickerState, WindowKind, SEARCH_PAGE_SIZE,
+    app_constants::SEARCH_PAGE_SIZE, app_helpers::page_start_for_total, db, App, LoadedTrack,
+    TrackPickerState, WindowKind,
 };
 
 impl App {

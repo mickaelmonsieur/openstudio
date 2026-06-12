@@ -5,10 +5,14 @@
 
 mod app_audio_config;
 mod app_aux;
+mod app_constants;
+mod app_helpers;
 mod app_instant;
+mod app_paths;
 mod app_queue;
 mod app_rest;
 mod app_search;
+mod app_time;
 mod audio;
 mod db;
 mod rest;
@@ -19,116 +23,21 @@ use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 
 use crate::app_audio_config::find_compressor_preset;
+use crate::app_constants::{
+    ANY_CATEGORY, ANY_GENRE, ANY_SUBCATEGORY, METER_TICK_MS, PREVIEW_PLAYER_ID, QUEUE_PLAYER_IDS,
+    SEARCH_PAGE_SIZE,
+};
+use crate::app_helpers::{
+    audio_peak_to_meter, login_input_id, main_window_settings, pass_input_id,
+    picker_window_settings, smooth_meter,
+};
+use crate::app_paths::{
+    db_config_path, db_config_save_path, migrations_dir, pg_quote_ident, DEFAULT_PSQL_PATH,
+};
+use crate::app_time::{current_date, current_hour};
 use iced::keyboard::key::Named;
 use iced::keyboard::Key;
-use iced::{window, Size, Subscription, Task, Theme};
-
-fn user_db_config_path() -> Option<PathBuf> {
-    #[cfg(all(unix, not(target_os = "macos")))]
-    {
-        if let Ok(config_home) = std::env::var("XDG_CONFIG_HOME") {
-            if !config_home.is_empty() {
-                return Some(PathBuf::from(config_home).join("openstudio/database.json"));
-            }
-        }
-        if let Ok(home) = std::env::var("HOME") {
-            if !home.is_empty() {
-                return Some(PathBuf::from(home).join(".config/openstudio/database.json"));
-            }
-        }
-    }
-
-    None
-}
-
-fn db_config_path() -> PathBuf {
-    if let Some(candidate) = user_db_config_path() {
-        if candidate.exists() {
-            return candidate;
-        }
-    }
-
-    if let Ok(exe) = std::env::current_exe() {
-        let candidates = [
-            // macOS app bundle: Contents/Resources/database.json
-            exe.parent()
-                .and_then(|p| p.parent())
-                .map(|p| p.join("Resources/database.json")),
-            // Windows packaged: resources are next to the executable.
-            exe.parent().map(|p| p.join("database.json")),
-            exe.parent().map(|p| p.join("config/database.json")),
-            // Debian packaged: resources are installed under /usr/lib/openstudio.
-            Some(PathBuf::from("/usr/lib/openstudio/database.json")),
-        ];
-
-        for candidate in candidates.into_iter().flatten() {
-            if candidate.exists() {
-                return candidate;
-            }
-        }
-    }
-
-    // Dev: config/database.json relative to working directory
-    PathBuf::from("config/database.json")
-}
-
-fn db_config_save_path() -> PathBuf {
-    user_db_config_path().unwrap_or_else(db_config_path)
-}
-
-fn migrations_dir() -> PathBuf {
-    if let Ok(exe) = std::env::current_exe() {
-        // macOS app bundle: Contents/Resources/migrations/
-        if let Some(candidate) = exe
-            .parent()
-            .and_then(|p| p.parent())
-            .map(|p| p.join("Resources/migrations"))
-        {
-            if candidate.exists() {
-                return candidate;
-            }
-        }
-        // Windows packaged: migrations/ next to the exe
-        if let Some(candidate) = exe.parent().map(|p| p.join("migrations")) {
-            if candidate.exists() {
-                return candidate;
-            }
-        }
-        // Debian packaged: resources are installed under /usr/lib/openstudio.
-        let candidate = PathBuf::from("/usr/lib/openstudio/migrations");
-        if candidate.exists() {
-            return candidate;
-        }
-    }
-    // Dev: migrations/ relative to working directory
-    PathBuf::from("migrations")
-}
-
-fn pg_quote_ident(identifier: &str) -> String {
-    format!("\"{}\"", identifier.replace('"', "\"\""))
-}
-
-#[cfg(target_os = "windows")]
-const DEFAULT_PSQL_PATH: &str = r"C:\Program Files\PostgreSQL\18\bin\psql.exe";
-#[cfg(target_os = "macos")]
-const DEFAULT_PSQL_PATH: &str = "/Applications/Postgres.app/Contents/Versions/18/bin/psql";
-#[cfg(all(unix, not(target_os = "macos")))]
-const DEFAULT_PSQL_PATH: &str = "/usr/lib/postgresql/18/bin/psql";
-
-const ANY_CATEGORY: &str = "Any Category";
-const ANY_SUBCATEGORY: &str = "Any Subcategory";
-const ANY_GENRE: &str = "Any Genre";
-const SEARCH_PAGE_SIZE: usize = 50;
-const QUEUE_PLAYER_IDS: [audio::PlayerId; 2] = [audio::PlayerId::QueueA, audio::PlayerId::QueueB];
-const PREVIEW_PLAYER_ID: audio::PlayerId = audio::PlayerId::Preview;
-const INSTANT_PLAYER_ID: audio::PlayerId = audio::PlayerId::Instant;
-const AUX_PLAYER_IDS: [audio::PlayerId; 3] = [
-    audio::PlayerId::Aux1,
-    audio::PlayerId::Aux2,
-    audio::PlayerId::Aux3,
-];
-const METER_TICK_MS: u64 = 100;
-const METER_DECAY_PER_SECOND: f32 = 0.32;
+use iced::{window, Subscription, Task, Theme};
 
 fn main() -> iced::Result {
     iced::daemon(App::title, App::update, App::view)
@@ -136,194 +45,6 @@ fn main() -> iced::Result {
         .theme(App::theme)
         .font(iced_fonts::BOOTSTRAP_FONT_BYTES)
         .run_with(App::new)
-}
-
-fn main_window_settings() -> window::Settings {
-    window::Settings {
-        size: Size::new(1240.0, 820.0),
-        min_size: Some(Size::new(960.0, 640.0)),
-        position: window::Position::Centered,
-        exit_on_close_request: false,
-        ..window::Settings::default()
-    }
-}
-
-fn picker_window_settings() -> window::Settings {
-    window::Settings {
-        size: Size::new(980.0, 680.0),
-        min_size: Some(Size::new(780.0, 520.0)),
-        position: window::Position::Centered,
-        ..window::Settings::default()
-    }
-}
-
-fn audio_peak_to_meter(peak: f32) -> f32 {
-    if peak <= 0.000_001 {
-        return 0.0;
-    }
-
-    let db = 20.0 * peak.clamp(0.000_001, 1.0).log10();
-    ((db + 60.0) / 60.0).clamp(0.0, 1.0)
-}
-
-fn smooth_meter(current: f32, target: f32) -> f32 {
-    if target >= current {
-        target
-    } else {
-        let decay = METER_DECAY_PER_SECOND * METER_TICK_MS as f32 / 1000.0;
-        (current - decay).max(target).max(0.0)
-    }
-}
-
-fn auto_mix_trigger(entry: &db::QueueEntry) -> std::time::Duration {
-    if entry.cue_out > std::time::Duration::ZERO && entry.cue_out < entry.duration {
-        entry.cue_out
-    } else {
-        entry.duration
-    }
-}
-
-fn page_start_for_total(total: usize) -> usize {
-    if total == 0 {
-        0
-    } else {
-        ((total - 1) / SEARCH_PAGE_SIZE) * SEARCH_PAGE_SIZE
-    }
-}
-
-// ── Time helpers ─────────────────────────────────────────────────────────────
-
-#[cfg(unix)]
-fn system_locale_cstr() -> &'static std::ffi::CString {
-    static LOCALE: std::sync::OnceLock<std::ffi::CString> = std::sync::OnceLock::new();
-    LOCALE.get_or_init(|| {
-        #[cfg(target_os = "macos")]
-        if let Ok(out) = std::process::Command::new("defaults")
-            .args(["read", "NSGlobalDomain", "AppleLocale"])
-            .output()
-        {
-            if let Ok(s) = std::str::from_utf8(&out.stdout) {
-                let s = s.trim();
-                if !s.is_empty() {
-                    let locale = if s.contains('.') {
-                        s.to_string()
-                    } else {
-                        format!("{}.UTF-8", s)
-                    };
-                    if let Ok(cs) = std::ffi::CString::new(locale) {
-                        return cs;
-                    }
-                }
-            }
-        }
-        std::ffi::CString::new("").unwrap()
-    })
-}
-
-#[cfg(unix)]
-fn current_hour() -> String {
-    let Ok(now) = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH) else {
-        return String::from("--:--:--");
-    };
-    let timestamp = now.as_secs() as libc::time_t;
-    let mut local = std::mem::MaybeUninit::<libc::tm>::uninit();
-    let local = unsafe {
-        if libc::localtime_r(&timestamp, local.as_mut_ptr()).is_null() {
-            return String::from("--:--:--");
-        }
-        local.assume_init()
-    };
-    format!(
-        "{:02}:{:02}:{:02}",
-        local.tm_hour, local.tm_min, local.tm_sec
-    )
-}
-
-#[cfg(not(unix))]
-fn current_hour() -> String {
-    let Ok(now) = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH) else {
-        return String::from("--:--:--");
-    };
-    ui::styles::fmt_hms(std::time::Duration::from_secs(
-        now.as_secs() % (24 * 60 * 60),
-    ))
-}
-
-#[cfg(unix)]
-fn current_date() -> String {
-    let Ok(now) = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH) else {
-        return String::from("---");
-    };
-    let timestamp = now.as_secs() as libc::time_t;
-    let mut local = std::mem::MaybeUninit::<libc::tm>::uninit();
-    let local = unsafe {
-        if libc::localtime_r(&timestamp, local.as_mut_ptr()).is_null() {
-            return String::from("---");
-        }
-        local.assume_init()
-    };
-    unsafe {
-        libc::setlocale(libc::LC_TIME, system_locale_cstr().as_ptr());
-        let mut wday_buf = [0u8; 32];
-        libc::strftime(
-            wday_buf.as_mut_ptr() as *mut libc::c_char,
-            wday_buf.len(),
-            b"%A\0".as_ptr() as *const libc::c_char,
-            &local,
-        );
-        let wday_len = wday_buf.iter().position(|&b| b == 0).unwrap_or(0);
-        let mut month_buf = [0u8; 32];
-        libc::strftime(
-            month_buf.as_mut_ptr() as *mut libc::c_char,
-            month_buf.len(),
-            b"%B\0".as_ptr() as *const libc::c_char,
-            &local,
-        );
-        let month_len = month_buf.iter().position(|&b| b == 0).unwrap_or(0);
-        let wday = String::from_utf8_lossy(&wday_buf[..wday_len]).to_uppercase();
-        let month = String::from_utf8_lossy(&month_buf[..month_len]).to_uppercase();
-        format!(
-            "{} {} {} {}",
-            wday,
-            local.tm_mday,
-            month,
-            local.tm_year + 1900
-        )
-    }
-}
-
-#[cfg(not(unix))]
-fn current_date() -> String {
-    String::from("---")
-}
-
-fn login_input_id() -> iced::widget::text_input::Id {
-    iced::widget::text_input::Id::new("login_field")
-}
-fn pass_input_id() -> iced::widget::text_input::Id {
-    iced::widget::text_input::Id::new("pass_field")
-}
-
-fn duration_ms(duration: std::time::Duration) -> u64 {
-    duration.as_millis().min(u128::from(u64::MAX)) as u64
-}
-
-fn queue_track_status(entry: &db::QueueEntry) -> rest::TrackStatus {
-    rest::TrackStatus {
-        track_id: entry.track_id,
-        artist: entry.artist_name.clone(),
-        title: entry.title.clone(),
-        duration_ms: duration_ms(entry.duration),
-    }
-}
-
-fn loaded_track_status(track: &LoadedTrack) -> rest::TrackStatus {
-    rest::TrackStatus {
-        track_id: Some(track.id),
-        artist: track.artist.clone(),
-        title: track.title.clone(),
-        duration_ms: duration_ms(track.duration),
-    }
 }
 
 // ── State ─────────────────────────────────────────────────────────────────────

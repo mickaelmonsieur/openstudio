@@ -3,8 +3,8 @@ use super::styles::{
 };
 use crate::app_audio_config::COMPRESSOR_PRESETS;
 use crate::{
-    audio, login_input_id, pass_input_id, App, ConfigField, DbField, DeviceTarget, Dialog,
-    LoginField, Message, WindowKind,
+    app_helpers::{login_input_id, pass_input_id},
+    audio, App, ConfigField, DbField, DeviceTarget, Dialog, LoginField, Message, WindowKind,
 };
 use iced::widget::{
     button, checkbox, column, container, mouse_area, pick_list, responsive, row, stack, text,

@@ -1,4 +1,4 @@
-use crate::{audio, App, AUX_PLAYER_IDS};
+use crate::{app_constants::AUX_PLAYER_IDS, audio, App};
 
 impl App {
     pub(crate) fn aux_player_id(index: usize) -> Option<audio::PlayerId> {
