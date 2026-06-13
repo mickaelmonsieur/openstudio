@@ -505,6 +505,7 @@ impl App {
                 device_instant,
                 device_aux,
                 device_preview,
+                encoder_input_device,
             }) => {
                 let general_fieldset_label = container(
                     text("General")
@@ -624,6 +625,9 @@ impl App {
                 let device_options: Vec<String> = std::iter::once(String::from("(Default)"))
                     .chain(self.audio_devices.iter().cloned())
                     .collect();
+                let input_device_options: Vec<String> = std::iter::once(String::from("(Default)"))
+                    .chain(self.audio_input_devices.iter().cloned())
+                    .collect();
                 let mk_device_row = |label: &'static str,
                                      stored: &str,
                                      target: DeviceTarget,
@@ -684,6 +688,12 @@ impl App {
                         device_preview,
                         DeviceTarget::Preview,
                         device_options
+                    ),
+                    mk_device_row(
+                        "Stream Input",
+                        encoder_input_device,
+                        DeviceTarget::StreamInput,
+                        input_device_options
                     ),
                 ]
                 .spacing(10)
@@ -960,7 +970,7 @@ impl App {
                     |s: &'static str| text(s).size(11).style(text_color(rgb(160, 180, 195)));
                 let field_label = |s: &'static str| {
                     container(label(s))
-                        .width(Length::Fixed(128.0))
+                        .width(Length::Fixed(96.0))
                         .align_x(Alignment::End)
                 };
                 let disabled_text = |s: String, width: f32| -> Element<'_, Message> {
@@ -1025,7 +1035,8 @@ impl App {
                 let channel_options = vec![String::from("Mono"), String::from("Stéréo")];
                 let streaming_status = self.streaming_status();
                 let diagnostics = self.streaming_diagnostics();
-                let status_color = if streaming_status == "Connected" {
+                let timing = self.streaming_timing();
+                let status_color = if streaming_status.starts_with("Connected - streaming") {
                     rgb(100, 200, 120)
                 } else if streaming_status == "Disabled" {
                     rgb(135, 155, 168)
@@ -1035,7 +1046,7 @@ impl App {
                 let encoding_body: Element<_> = column![
                     row![
                         field_label("Encoder Type"),
-                        disabled_text(encoder_type.clone(), 132.0),
+                        disabled_text(encoder_type.clone(), 278.0),
                     ]
                     .spacing(10)
                     .align_y(Alignment::Center),
@@ -1126,17 +1137,55 @@ impl App {
                     .width(Length::Fill)
                     .into()
                 };
+                let session_cell = |label: &'static str, value: String| -> Element<'_, Message> {
+                    column![
+                        text(label).size(10).style(text_color(rgb(160, 180, 195))),
+                        text(value).size(12).style(text_color(rgb(226, 238, 245))),
+                    ]
+                    .spacing(2)
+                    .width(Length::Fill)
+                    .into()
+                };
+                let session_body: Element<_> = column![
+                    row![
+                        session_cell("Launched", timing.launched_at),
+                        session_cell("Uptime", timing.uptime),
+                    ]
+                    .spacing(12),
+                    row![session_cell("Last reconnect", timing.last_reconnect_at),].spacing(12),
+                ]
+                .spacing(8)
+                .into();
+                let streaming_kbps = self.streaming_kbps();
                 let diagnostics_body: Element<_> = column![
                     row![
-                        diagnostic_cell("Clip", diagnostics.clip_warnings),
-                        diagnostic_cell("In drop", diagnostics.input_drops),
-                        diagnostic_cell("Out drop", diagnostics.output_drops),
+                        diagnostic_cell("Kbps", streaming_kbps),
+                        diagnostic_cell("Input queue ms", diagnostics.queue_ms),
+                        diagnostic_cell("Frames", diagnostics.captured_frames),
                     ]
                     .spacing(12),
                     row![
-                        diagnostic_cell("Underrun", diagnostics.source_underruns),
-                        diagnostic_cell("Frames", diagnostics.mixed_frames),
+                        diagnostic_cell("In drop", diagnostics.input_drops),
+                        diagnostic_cell("Timeout", diagnostics.input_timeouts),
+                        diagnostic_cell("Input Hz", diagnostics.sample_rate),
+                    ]
+                    .spacing(12),
+                    row![
+                        diagnostic_cell("Input ch", diagnostics.channels),
                         Space::with_width(Length::Fill),
+                        Space::with_width(Length::Fill),
+                    ]
+                    .spacing(12),
+                    row![
+                        diagnostic_cell("In peak", diagnostics.input_peak_per_mille),
+                        diagnostic_cell("Proc peak", diagnostics.processed_peak_per_mille),
+                        diagnostic_cell("Resamp ms", diagnostics.resampler_pending_ms),
+                    ]
+                    .spacing(12),
+                    row![
+                        diagnostic_cell("MP3 queue ms", diagnostics.encoded_queue_ms),
+                        diagnostic_cell("Silent ms", diagnostics.input_silence_ms),
+                        diagnostic_cell("Restarts", diagnostics.input_restarts),
                     ]
                     .spacing(12),
                 ]
@@ -1171,9 +1220,16 @@ impl App {
                         ]
                         .spacing(8)
                         .align_y(Alignment::Center),
-                        self.audio_processing_fieldset("Encoding", encoding_body),
-                        self.audio_processing_fieldset("Server", server_body),
-                        self.audio_processing_fieldset("Diagnostics", diagnostics_body),
+                        row![
+                            self.audio_processing_fieldset("Encoding", encoding_body),
+                            self.audio_processing_fieldset("Server", server_body),
+                        ]
+                        .spacing(10),
+                        row![
+                            self.audio_processing_fieldset("Session", session_body),
+                            self.audio_processing_fieldset("Diagnostics", diagnostics_body),
+                        ]
+                        .spacing(10),
                         row![
                             Space::with_width(Length::Fill),
                             self.dialog_button("Cancel", Message::DialogCancel, rgb(62, 83, 97)),
@@ -1182,10 +1238,10 @@ impl App {
                         .spacing(8)
                         .align_y(Alignment::Center),
                     ]
-                    .spacing(14),
+                    .spacing(10),
                 )
-                .width(Length::Fixed(620.0))
-                .padding(16)
+                .width(Length::Fixed(860.0))
+                .padding(12)
                 .style(panel_style(rgb(31, 46, 55), accent_purple()))
             }
             Some(Dialog::Login {

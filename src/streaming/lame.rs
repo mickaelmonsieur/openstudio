@@ -1,8 +1,7 @@
 use std::ffi::c_void;
 use std::os::raw::{c_int, c_uchar};
 
-use crate::audio::BroadcastFrame;
-
+use super::input::AudioFrame;
 use super::StreamingConfig;
 
 type LameGlobalFlags = c_void;
@@ -13,8 +12,13 @@ extern "C" {
     fn lame_set_in_samplerate(gfp: *mut LameGlobalFlags, sample_rate: c_int) -> c_int;
     fn lame_set_out_samplerate(gfp: *mut LameGlobalFlags, sample_rate: c_int) -> c_int;
     fn lame_set_num_channels(gfp: *mut LameGlobalFlags, channels: c_int) -> c_int;
+    fn lame_set_mode(gfp: *mut LameGlobalFlags, mode: c_int) -> c_int;
     fn lame_set_brate(gfp: *mut LameGlobalFlags, bitrate: c_int) -> c_int;
     fn lame_set_quality(gfp: *mut LameGlobalFlags, quality: c_int) -> c_int;
+    fn lame_set_VBR(gfp: *mut LameGlobalFlags, vbr_mode: c_int) -> c_int;
+    fn lame_set_bWriteVbrTag(gfp: *mut LameGlobalFlags, value: c_int) -> c_int;
+    fn lame_set_findReplayGain(gfp: *mut LameGlobalFlags, value: c_int) -> c_int;
+    fn lame_set_disable_reservoir(gfp: *mut LameGlobalFlags, value: c_int) -> c_int;
     fn lame_init_params(gfp: *mut LameGlobalFlags) -> c_int;
     fn lame_encode_buffer_interleaved_ieee_float(
         gfp: *mut LameGlobalFlags,
@@ -39,12 +43,18 @@ impl LameMp3Encoder {
         }
 
         let channels = config.channels.clamp(1, 2) as usize;
+        let mode = if channels == 1 { 3 } else { 1 };
         let result = unsafe {
             lame_set_in_samplerate(gfp, config.sample_rate)
                 | lame_set_out_samplerate(gfp, config.sample_rate)
                 | lame_set_num_channels(gfp, channels as c_int)
+                | lame_set_mode(gfp, mode)
                 | lame_set_brate(gfp, config.bitrate_kbps)
                 | lame_set_quality(gfp, 2)
+                | lame_set_VBR(gfp, 0)
+                | lame_set_bWriteVbrTag(gfp, 0)
+                | lame_set_findReplayGain(gfp, 0)
+                | lame_set_disable_reservoir(gfp, 1)
                 | lame_init_params(gfp)
         };
         if result < 0 {
@@ -57,7 +67,7 @@ impl LameMp3Encoder {
         Ok(Self { gfp, channels })
     }
 
-    pub fn encode(&mut self, frame: &BroadcastFrame) -> Result<Vec<u8>, String> {
+    pub fn encode(&mut self, frame: &AudioFrame) -> Result<Vec<u8>, String> {
         let pcm = convert_channels(&frame.samples, frame.channels, self.channels);
         let frames = pcm.len() / self.channels.max(1);
         if frames == 0 {

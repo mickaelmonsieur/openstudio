@@ -4,6 +4,8 @@ use crate::{db, App, Dialog, Message};
 
 pub(crate) const ENCODER_FIXED_SERVER_HOST: &str = "openstudio.entrypoint.belstream.net";
 pub(crate) const ENCODER_FIXED_SERVER_PORT: i32 = 80;
+pub(crate) const ENCODER_TYPE_MP3: &str = "mp3";
+pub(crate) const ENCODER_TYPE_MP3_LABEL: &str = "MPEG-1/2 Audio Layer III (LAME)";
 
 impl App {
     pub(crate) fn open_stream_encoder_dialog(&mut self) {
@@ -16,7 +18,7 @@ impl App {
                 .clamp(8000, 48000)
                 .to_string(),
             channels: channels_label(self.app_config.encoder_channels).into(),
-            encoder_type: self.app_config.encoder_type.clone(),
+            encoder_type: ENCODER_TYPE_MP3_LABEL.into(),
             server_host: ENCODER_FIXED_SERVER_HOST.into(),
             server_port: ENCODER_FIXED_SERVER_PORT.to_string(),
             password: self.app_config.encoder_password.clone(),
@@ -120,7 +122,6 @@ impl App {
             bitrate,
             sample_rate,
             channels,
-            encoder_type,
             password,
             mountpoint,
             reconnect_seconds,
@@ -136,11 +137,7 @@ impl App {
         cfg.encoder_sample_rate =
             parse_i32_or_current(sample_rate, cfg.encoder_sample_rate).clamp(8000, 48000);
         cfg.encoder_channels = channels_value(channels);
-        cfg.encoder_type = if encoder_type.trim().is_empty() {
-            String::from("LAME MP3")
-        } else {
-            encoder_type.trim().to_string()
-        };
+        cfg.encoder_type = String::from(ENCODER_TYPE_MP3);
         cfg.encoder_server_host = ENCODER_FIXED_SERVER_HOST.into();
         cfg.encoder_server_port = ENCODER_FIXED_SERVER_PORT.clamp(1, 65535);
         cfg.encoder_password = password.chars().filter(|ch| !ch.is_control()).collect();

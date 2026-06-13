@@ -16,10 +16,6 @@ use symphonia::core::meta::MetadataOptions;
 use symphonia::core::probe::Hint;
 use symphonia::core::units::Time;
 
-mod broadcast;
-
-pub use broadcast::{BroadcastBus, BroadcastDiagnostics, BroadcastFrame};
-
 const EQ_BAND_FREQS: [f32; 10] = [
     32.0, 63.0, 125.0, 250.0, 500.0, 1000.0, 2000.0, 4000.0, 8000.0, 16000.0,
 ];
@@ -83,27 +79,19 @@ pub struct PlayerSnapshot {
 pub struct AudioManager {
     players: HashMap<PlayerId, AudioPlayer>,
     processing: Arc<AudioProcessingSettings>,
-    broadcast: Arc<BroadcastBus>,
 }
 
 impl AudioManager {
     pub fn new() -> Self {
         let processing = Arc::new(AudioProcessingSettings::default());
-        let broadcast = Arc::new(BroadcastBus::new());
         let players = PlayerId::ALL
             .into_iter()
-            .map(|id| {
-                (
-                    id,
-                    AudioPlayer::new(id, Arc::clone(&processing), Arc::clone(&broadcast)),
-                )
-            })
+            .map(|id| (id, AudioPlayer::new(id, Arc::clone(&processing))))
             .collect();
 
         Self {
             players,
             processing,
-            broadcast,
         }
     }
 
@@ -211,15 +199,6 @@ impl AudioManager {
 
     pub fn agc_preset(&self) -> AgcPreset {
         self.processing.agc_preset()
-    }
-
-    #[allow(dead_code)]
-    pub fn take_broadcast_output(&self) -> Option<mpsc::Receiver<BroadcastFrame>> {
-        self.broadcast.take_output()
-    }
-
-    pub fn broadcast_diagnostics(&self) -> BroadcastDiagnostics {
-        self.broadcast.diagnostics()
     }
 }
 
@@ -486,6 +465,13 @@ pub fn list_output_devices() -> Vec<String> {
         .unwrap_or_default()
 }
 
+pub fn list_input_devices() -> Vec<String> {
+    let host = cpal::default_host();
+    host.input_devices()
+        .map(|devices| devices.filter_map(|d| d.name().ok()).collect())
+        .unwrap_or_default()
+}
+
 fn get_output_device(
     host: &cpal::Host,
     name: Option<&str>,
@@ -507,7 +493,6 @@ pub struct AudioPlayer {
     cue_in: Duration,
     device_name: Option<String>,
     processing: Arc<AudioProcessingSettings>,
-    broadcast: Arc<BroadcastBus>,
     duration: Option<Duration>,
     levels: Arc<AudioLevels>,
     stop_tx: Option<Sender<()>>,
@@ -521,18 +506,13 @@ pub struct AudioPlayer {
 }
 
 impl AudioPlayer {
-    fn new(
-        id: PlayerId,
-        processing: Arc<AudioProcessingSettings>,
-        broadcast: Arc<BroadcastBus>,
-    ) -> Self {
+    fn new(id: PlayerId, processing: Arc<AudioProcessingSettings>) -> Self {
         Self {
             id,
             loaded_path: None,
             cue_in: Duration::ZERO,
             device_name: None,
             processing,
-            broadcast,
             duration: None,
             levels: Arc::new(AudioLevels::default()),
             stop_tx: None,
@@ -586,13 +566,11 @@ impl AudioPlayer {
         self.preload_rx = None;
 
         let (stop_tx, seek_tx, pause_tx, fade_tx, position_ms, done_rx) = play(
-            self.id,
             path,
             preloaded,
             self.cue_in,
             Arc::clone(&self.levels),
             Arc::clone(&self.processing),
-            Arc::clone(&self.broadcast),
             self.id != PlayerId::Preview,
             self.device_name.clone(),
         );
@@ -1275,13 +1253,11 @@ fn do_preload(
 /// - `stop_tx`  : envoyer `()` arrête et remet à zéro
 /// - `pause_tx` : envoyer `true` pour pause, `false` pour reprendre
 fn play(
-    player_id: PlayerId,
     path: PathBuf,
     preloaded: Option<Preloaded>,
     cue_in: Duration,
     levels: Arc<AudioLevels>,
     processing: Arc<AudioProcessingSettings>,
-    broadcast: Arc<BroadcastBus>,
     processing_enabled: bool,
     device_name: Option<String>,
 ) -> (
@@ -1302,7 +1278,6 @@ fn play(
     std::thread::spawn(move || {
         if let Err(e) = run(
             path,
-            player_id,
             preloaded,
             cue_in,
             stop_rx,
@@ -1312,7 +1287,6 @@ fn play(
             position_ms_thread,
             levels,
             processing,
-            broadcast,
             processing_enabled,
             device_name,
         ) {
@@ -1325,7 +1299,6 @@ fn play(
 
 fn run(
     path: PathBuf,
-    player_id: PlayerId,
     preloaded: Option<Preloaded>,
     cue_in: Duration,
     stop_rx: mpsc::Receiver<()>,
@@ -1335,7 +1308,6 @@ fn run(
     position_ms: Arc<AtomicU64>,
     levels: Arc<AudioLevels>,
     processing: Arc<AudioProcessingSettings>,
-    broadcast: Arc<BroadcastBus>,
     processing_enabled: bool,
     device_name: Option<String>,
 ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
@@ -1400,7 +1372,6 @@ fn run(
 
     let levels_cb = Arc::clone(&levels);
     let processing_cb = Arc::clone(&processing);
-    let broadcast_cb = Arc::clone(&broadcast);
     let buffered_samples_cb = Arc::clone(&buffered_samples);
     let playback_generation_cb = Arc::clone(&playback_generation);
     let fade_finished_cb = Arc::clone(&fade_finished);
@@ -1440,9 +1411,6 @@ fn run(
                 eq_processor.process(data, &processing_cb);
                 compressor.process(data, out_channels, &processing_cb);
                 apply_master_volume(data, &processing_cb);
-            }
-            if processing_enabled {
-                broadcast_cb.push_player_buffer(player_id, data, out_channels, output_sample_rate);
             }
             update_levels(&levels_cb, data, out_channels);
         },

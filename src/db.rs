@@ -39,6 +39,7 @@ pub struct AppConfig {
     pub encoder_sample_rate: i32,
     pub encoder_channels: i32,
     pub encoder_type: String,
+    pub encoder_input_device: String,
     pub encoder_server_host: String,
     pub encoder_server_port: i32,
     pub encoder_password: String,
@@ -76,7 +77,8 @@ impl Default for AppConfig {
             encoder_bitrate: 128,
             encoder_sample_rate: 44100,
             encoder_channels: 2,
-            encoder_type: String::from("LAME MP3"),
+            encoder_type: String::from("mp3"),
+            encoder_input_device: String::new(),
             encoder_server_host: String::from("openstudio.entrypoint.belstream.net"),
             encoder_server_port: 80,
             encoder_password: String::new(),
@@ -251,7 +253,10 @@ impl Database {
             ADD COLUMN IF NOT EXISTS encoder_channels INTEGER NOT NULL DEFAULT 2;
 
             ALTER TABLE configurations
-            ADD COLUMN IF NOT EXISTS encoder_type TEXT NOT NULL DEFAULT 'LAME MP3';
+            ADD COLUMN IF NOT EXISTS encoder_type TEXT NOT NULL DEFAULT 'mp3';
+
+            ALTER TABLE configurations
+            ADD COLUMN IF NOT EXISTS encoder_input_device TEXT NOT NULL DEFAULT '';
 
             ALTER TABLE configurations
             ADD COLUMN IF NOT EXISTS encoder_server_host TEXT NOT NULL DEFAULT 'openstudio.entrypoint.belstream.net';
@@ -483,6 +488,20 @@ impl Database {
                 }
             })
             .collect())
+    }
+
+    pub fn station_name(&self) -> Result<Option<String>, DbError> {
+        let mut client = self.client.lock().map_err(|_| DbError::LockPoisoned)?;
+        let row = client.query_opt(
+            "
+            SELECT name
+            FROM stations
+            ORDER BY id
+            LIMIT 1
+            ",
+            &[],
+        )?;
+        Ok(row.map(|row| row.get("name")))
     }
 
     pub fn instant_pages(&self) -> Result<Vec<InstantPage>, DbError> {
@@ -735,6 +754,9 @@ impl Database {
             encoder_type: row
                 .try_get("encoder_type")
                 .unwrap_or(default_cfg.encoder_type),
+            encoder_input_device: row
+                .try_get("encoder_input_device")
+                .unwrap_or(default_cfg.encoder_input_device),
             encoder_server_host: row
                 .try_get("encoder_server_host")
                 .unwrap_or(default_cfg.encoder_server_host),
@@ -803,11 +825,12 @@ impl Database {
                 encoder_sample_rate = $26,
                 encoder_channels = $27,
                 encoder_type = $28,
-                encoder_server_host = $29,
-                encoder_server_port = $30,
-                encoder_password = $31,
-                encoder_mountpoint = $32,
-                encoder_reconnect_seconds = $33
+                encoder_input_device = $29,
+                encoder_server_host = $30,
+                encoder_server_port = $31,
+                encoder_password = $32,
+                encoder_mountpoint = $33,
+                encoder_reconnect_seconds = $34
             ",
             &[
                 &cfg.auto_mix_on_start,
@@ -838,6 +861,7 @@ impl Database {
                 &cfg.encoder_sample_rate,
                 &cfg.encoder_channels,
                 &cfg.encoder_type,
+                &cfg.encoder_input_device,
                 &cfg.encoder_server_host,
                 &cfg.encoder_server_port,
                 &cfg.encoder_password,

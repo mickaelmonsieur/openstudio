@@ -67,6 +67,7 @@ struct App {
     track_end_at: Option<std::time::SystemTime>,
     current_queue_player_id: audio::PlayerId,
     audio_devices: Vec<String>,
+    audio_input_devices: Vec<String>,
     selected_queue_index: Option<usize>,
     autodj_enabled: bool,
     deck_soft_stopping: bool,
@@ -98,6 +99,7 @@ struct App {
     rest_rx: Arc<Mutex<Option<std::sync::mpsc::Receiver<rest::RestCommand>>>>,
     rest_shutdown_tx: Option<std::sync::mpsc::Sender<()>>,
     streaming_handle: Option<streaming::StreamingHandle>,
+    station_name: String,
     app_config: db::AppConfig,
     timezone_options: Vec<String>,
     dialog: Option<Dialog>,
@@ -119,6 +121,7 @@ impl Default for App {
         let mut search_total_rows = 0;
         let mut queue_entries = Vec::new();
         let mut app_config = db::AppConfig::default();
+        let mut station_name = String::from("OpenStudio");
         let mut timezone_options = Vec::new();
         let (rest_tx, rest_rx) = std::sync::mpsc::channel();
         let rest_shutdown_tx = rest::start_server(rest_tx);
@@ -143,6 +146,12 @@ impl Default for App {
                 match db.queue_entries(&app_config.timezone) {
                     Ok(entries) => queue_entries = entries,
                     Err(error) => warnings.push(format!("queue: {error}")),
+                }
+
+                match db.station_name() {
+                    Ok(Some(name)) if !name.trim().is_empty() => station_name = name,
+                    Ok(_) => {}
+                    Err(error) => warnings.push(format!("station: {error}")),
                 }
 
                 match db.timezones() {
@@ -195,6 +204,7 @@ impl Default for App {
             track_end_at: None,
             current_queue_player_id: audio::PlayerId::QueueA,
             audio_devices: audio::list_output_devices(),
+            audio_input_devices: audio::list_input_devices(),
             selected_queue_index: None,
             autodj_enabled: app_config.auto_mix_on_start,
             deck_soft_stopping: false,
@@ -226,6 +236,7 @@ impl Default for App {
             rest_rx: Arc::new(Mutex::new(Some(rest_rx))),
             rest_shutdown_tx: Some(rest_shutdown_tx),
             streaming_handle: None,
+            station_name,
             is_locked: app_config.start_locked,
             app_config,
             timezone_options,
@@ -384,6 +395,7 @@ enum Dialog {
         device_instant: String,
         device_aux: String,
         device_preview: String,
+        encoder_input_device: String,
     },
     EditDbConfig {
         host: String,
@@ -464,6 +476,7 @@ enum DeviceTarget {
     Instant,
     Aux,
     Preview,
+    StreamInput,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -1531,6 +1544,8 @@ impl App {
                     });
                     return iced::widget::text_input::focus(login_input_id());
                 }
+                self.audio_devices = audio::list_output_devices();
+                self.audio_input_devices = audio::list_input_devices();
                 self.dialog = Some(Dialog::EditConfig {
                     auto_mix_on_start: self.app_config.auto_mix_on_start,
                     auto_play_on_start: self.app_config.auto_play_on_start,
@@ -1543,6 +1558,7 @@ impl App {
                     device_instant: self.app_config.device_instant.clone(),
                     device_aux: self.app_config.device_aux.clone(),
                     device_preview: self.app_config.device_preview.clone(),
+                    encoder_input_device: self.app_config.encoder_input_device.clone(),
                 });
                 Task::none()
             }
@@ -1886,6 +1902,7 @@ impl App {
                     device_instant,
                     device_aux,
                     device_preview,
+                    encoder_input_device,
                     ..
                 }) = &mut self.dialog
                 {
@@ -1894,6 +1911,7 @@ impl App {
                         DeviceTarget::Instant => *device_instant = name,
                         DeviceTarget::Aux => *device_aux = name,
                         DeviceTarget::Preview => *device_preview = name,
+                        DeviceTarget::StreamInput => *encoder_input_device = name,
                     }
                 }
                 Task::none()
@@ -1912,6 +1930,7 @@ impl App {
                     device_instant,
                     device_aux,
                     device_preview,
+                    encoder_input_device,
                 }) = &self.dialog
                 {
                     let mut cfg = self.app_config.clone();
@@ -1934,8 +1953,10 @@ impl App {
                     cfg.device_instant = device_instant.clone();
                     cfg.device_aux = device_aux.clone();
                     cfg.device_preview = device_preview.clone();
+                    cfg.encoder_input_device = encoder_input_device.clone();
                     self.apply_audio_device_config(&cfg);
                     self.app_config = cfg.clone();
+                    self.sync_streaming_encoder();
                     self.ensure_configured_timezone_option();
                     self.reload_queue_entries_from_db();
                     self.dialog = None;
