@@ -10,6 +10,8 @@ use rubato::{
     SincInterpolationParameters, SincInterpolationType, WindowFunction,
 };
 
+mod encoder;
+mod fdk_aac;
 mod input;
 #[cfg(openstudio_has_lame)]
 mod lame;
@@ -21,9 +23,12 @@ pub use input::InputDiagnostics;
 const STREAM_INPUT_PREBUFFER_MS: u64 = 8_000;
 const STREAM_INPUT_TIMEOUT_MS: u64 = 250;
 const STREAM_ENCODED_QUEUE_CAPACITY: usize = 2048;
-const MP3_FRAME_SAMPLES: usize = 1152;
 const INPUT_SILENCE_RESTART_MS: u64 = 3_000;
 const SILENCE_PEAK_PER_MILLE: u64 = 1;
+
+pub fn fdk_aac_available() -> bool {
+    fdk_aac::is_available()
+}
 
 pub struct StreamingHandle {
     stop_tx: mpsc::Sender<()>,
@@ -72,6 +77,7 @@ pub struct StreamingConfig {
     pub bitrate_kbps: i32,
     pub sample_rate: i32,
     pub channels: i32,
+    pub encoder_type: String,
     pub input_device: String,
     pub host: String,
     pub port: i32,
@@ -299,6 +305,7 @@ impl From<&db::AppConfig> for StreamingConfig {
             bitrate_kbps: cfg.encoder_bitrate.clamp(8, 320),
             sample_rate: cfg.encoder_sample_rate.clamp(8_000, 48_000),
             channels: cfg.encoder_channels.clamp(1, 2),
+            encoder_type: cfg.encoder_type.clone(),
             input_device: cfg.encoder_input_device_id.clone(),
             host: cfg.encoder_server_host.clone(),
             port: cfg.encoder_server_port.clamp(1, 65_535),
@@ -359,7 +366,7 @@ fn run_lame_shout(
         let stop_flag = Arc::new(AtomicBool::new(false));
         let (encoded_tx, encoded_rx) = mpsc::sync_channel(STREAM_ENCODED_QUEUE_CAPACITY);
         let (error_tx, error_rx) = mpsc::channel::<String>();
-        let (ready_tx, ready_rx) = mpsc::channel::<()>();
+        let (ready_tx, ready_rx) = mpsc::channel::<EncoderReady>();
 
         let encoder_thread = {
             let config = current_config.clone();
@@ -381,23 +388,26 @@ fn run_lame_shout(
                 should_reconnect = false;
                 break;
             }
-            if network_thread.is_none() && ready_rx.try_recv().is_ok() {
-                if let Some(encoded_rx) = encoded_rx.take() {
-                    let config = current_config.clone();
-                    let state = Arc::clone(&state);
-                    let stop_flag = Arc::clone(&stop_flag);
-                    let metadata_title = Arc::clone(&metadata_title);
-                    let error_tx = error_tx.clone();
-                    network_thread = Some(thread::spawn(move || {
-                        run_network_worker(
-                            config,
-                            encoded_rx,
-                            state,
-                            metadata_title,
-                            stop_flag,
-                            error_tx,
-                        )
-                    }));
+            if network_thread.is_none() {
+                if let Ok(ready) = ready_rx.try_recv() {
+                    if let Some(encoded_rx) = encoded_rx.take() {
+                        let config = current_config.clone();
+                        let state = Arc::clone(&state);
+                        let stop_flag = Arc::clone(&stop_flag);
+                        let metadata_title = Arc::clone(&metadata_title);
+                        let error_tx = error_tx.clone();
+                        network_thread = Some(thread::spawn(move || {
+                            run_network_worker(
+                                config,
+                                encoded_rx,
+                                state,
+                                metadata_title,
+                                stop_flag,
+                                error_tx,
+                                ready.format,
+                            )
+                        }));
+                    }
                 }
             }
             match error_rx.recv_timeout(Duration::from_millis(100)) {
@@ -434,13 +444,17 @@ struct EncodedPacket {
     frames: usize,
 }
 
+struct EncoderReady {
+    format: encoder::EncodedAudioFormat,
+}
+
 fn run_encoder_worker(
     config: StreamingConfig,
     state: Arc<StreamingState>,
     encoded_tx: SyncSender<EncodedPacket>,
     stop_flag: Arc<AtomicBool>,
     error_tx: mpsc::Sender<String>,
-    ready_tx: mpsc::Sender<()>,
+    ready_tx: mpsc::Sender<EncoderReady>,
 ) {
     let mut input = match input::StreamInput::open(input_device_name(&config).as_deref()) {
         Ok(input) => input,
@@ -452,16 +466,22 @@ fn run_encoder_worker(
     if !prebuffer_input(&input, &state, &stop_flag) {
         return;
     }
-    let mut encoder = match lame::LameMp3Encoder::new(&config) {
+    let mut encoder = match encoder::new_encoder(&config) {
         Ok(encoder) => encoder,
         Err(error) => {
             let _ = error_tx.send(format!("Encoder error: {error}"));
             return;
         }
     };
-    let _ = ready_tx.send(());
+    let format = encoder.format();
+    let frame_samples = encoder.frame_samples();
+    let _ = ready_tx.send(EncoderReady { format });
     let mut converter = PcmConverter::new(config.channels.clamp(1, 2) as usize, config.sample_rate);
-    let mut chunker = PcmChunker::new(config.channels.clamp(1, 2) as usize, config.sample_rate);
+    let mut chunker = PcmChunker::new(
+        config.channels.clamp(1, 2) as usize,
+        config.sample_rate,
+        frame_samples,
+    );
     let mut saw_input_audio = false;
     let mut input_silence_ms = 0_u64;
     while !stop_flag.load(Ordering::Relaxed) {
@@ -501,6 +521,7 @@ fn run_encoder_worker(
                         chunker = PcmChunker::new(
                             config.channels.clamp(1, 2) as usize,
                             config.sample_rate,
+                            frame_samples,
                         );
                         state.note_input_restart();
                         input_silence_ms = 0;
@@ -532,7 +553,7 @@ fn run_encoder_worker(
             let encoded = match encoder.encode(&frame) {
                 Ok(encoded) => encoded,
                 Err(error) => {
-                    let _ = error_tx.send(format!("MP3 encode error: {error}"));
+                    let _ = error_tx.send(format!("Encode error: {error}"));
                     return;
                 }
             };
@@ -561,9 +582,10 @@ fn run_network_worker(
     metadata_title: Arc<Mutex<Option<String>>>,
     stop_flag: Arc<AtomicBool>,
     error_tx: mpsc::Sender<String>,
+    format: encoder::EncodedAudioFormat,
 ) {
     state.set_status(format!("Connecting to {}", config.mountpoint));
-    let mut client = match shout::IcecastClient::connect(&config) {
+    let mut client = match shout::IcecastClient::connect(&config, format) {
         Ok(client) => client,
         Err(error) => {
             let _ = error_tx.send(format!("Icecast connection error: {error}"));
@@ -594,21 +616,25 @@ fn run_network_worker(
 struct PcmChunker {
     channels: usize,
     sample_rate: u32,
+    frame_samples: usize,
     samples: Vec<f32>,
 }
 
 impl PcmChunker {
-    fn new(channels: usize, sample_rate: i32) -> Self {
+    fn new(channels: usize, sample_rate: i32, frame_samples: usize) -> Self {
+        let channels = channels.max(1);
+        let frame_samples = frame_samples.max(1);
         Self {
-            channels: channels.max(1),
+            channels,
             sample_rate: sample_rate.clamp(8_000, 48_000) as u32,
-            samples: Vec::with_capacity(MP3_FRAME_SAMPLES * channels.max(1) * 4),
+            frame_samples,
+            samples: Vec::with_capacity(frame_samples * channels * 4),
         }
     }
 
     fn push(&mut self, frame: input::AudioFrame) -> Vec<input::AudioFrame> {
         self.samples.extend(frame.samples);
-        let chunk_samples = MP3_FRAME_SAMPLES * self.channels;
+        let chunk_samples = self.frame_samples * self.channels;
         let mut chunks = Vec::new();
         while self.samples.len() >= chunk_samples {
             let samples = self.samples.drain(..chunk_samples).collect::<Vec<_>>();
@@ -826,6 +852,7 @@ fn config_snapshot(config: &Arc<Mutex<StreamingConfig>>) -> StreamingConfig {
             bitrate_kbps: 128,
             sample_rate: 44_100,
             channels: 2,
+            encoder_type: String::from("mp3"),
             input_device: String::new(),
             host: String::from("openstudio.entrypoint.belstream.net"),
             port: 80,

@@ -1,6 +1,7 @@
 use std::ffi::c_void;
 use std::os::raw::{c_int, c_uchar};
 
+use super::encoder::{convert_channels, EncodedAudioFormat, StreamingEncoder};
 use super::input::AudioFrame;
 use super::StreamingConfig;
 
@@ -35,6 +36,8 @@ pub struct LameMp3Encoder {
     channels: usize,
 }
 
+unsafe impl Send for LameMp3Encoder {}
+
 impl LameMp3Encoder {
     pub fn new(config: &StreamingConfig) -> Result<Self, String> {
         let gfp = unsafe { lame_init() };
@@ -67,7 +70,7 @@ impl LameMp3Encoder {
         Ok(Self { gfp, channels })
     }
 
-    pub fn encode(&mut self, frame: &AudioFrame) -> Result<Vec<u8>, String> {
+    fn encode_mp3(&mut self, frame: &AudioFrame) -> Result<Vec<u8>, String> {
         let pcm = convert_channels(&frame.samples, frame.channels, self.channels);
         let frames = pcm.len() / self.channels.max(1);
         if frames == 0 {
@@ -93,6 +96,20 @@ impl LameMp3Encoder {
     }
 }
 
+impl StreamingEncoder for LameMp3Encoder {
+    fn format(&self) -> EncodedAudioFormat {
+        EncodedAudioFormat::Mp3
+    }
+
+    fn frame_samples(&self) -> usize {
+        1152
+    }
+
+    fn encode(&mut self, frame: &AudioFrame) -> Result<Vec<u8>, String> {
+        self.encode_mp3(frame)
+    }
+}
+
 impl Drop for LameMp3Encoder {
     fn drop(&mut self) {
         let mut buffer = vec![0u8; 7200];
@@ -100,33 +117,5 @@ impl Drop for LameMp3Encoder {
             let _ = lame_encode_flush(self.gfp, buffer.as_mut_ptr(), buffer.len() as c_int);
             let _ = lame_close(self.gfp);
         }
-    }
-}
-
-fn convert_channels(samples: &[f32], from_channels: usize, to_channels: usize) -> Vec<f32> {
-    match (from_channels, to_channels) {
-        (2, 2) => samples.to_vec(),
-        (2, 1) => samples
-            .chunks_exact(2)
-            .map(|frame| (frame[0] + frame[1]) * 0.5)
-            .collect(),
-        (1, 2) => samples
-            .iter()
-            .flat_map(|&sample| [sample, sample])
-            .collect(),
-        (1, 1) => samples.to_vec(),
-        (_, 1) => samples
-            .chunks(from_channels.max(1))
-            .map(|frame| frame.iter().copied().sum::<f32>() / frame.len().max(1) as f32)
-            .collect(),
-        (_, 2) => samples
-            .chunks(from_channels.max(1))
-            .flat_map(|frame| {
-                let left = frame.first().copied().unwrap_or_default();
-                let right = frame.get(1).copied().unwrap_or(left);
-                [left, right]
-            })
-            .collect(),
-        _ => Vec::new(),
     }
 }

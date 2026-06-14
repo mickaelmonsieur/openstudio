@@ -582,6 +582,7 @@ enum Message {
     StreamEncoderEnabledChanged(bool),
     StreamEncoderBitrateChanged(String),
     StreamEncoderSampleRateChanged(String),
+    StreamEncoderTypeChanged(String),
     StreamEncoderChannelsChanged(String),
     StreamEncoderPasswordChanged(String),
     StreamEncoderMountpointChanged(String),
@@ -1808,6 +1809,8 @@ impl App {
             Message::StreamEncoderSampleRateChanged(value) => {
                 self.set_stream_encoder_sample_rate_input(value)
             }
+
+            Message::StreamEncoderTypeChanged(value) => self.set_stream_encoder_type_input(value),
 
             Message::StreamEncoderChannelsChanged(value) => {
                 self.set_stream_encoder_channels_input(value)

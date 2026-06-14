@@ -2,13 +2,14 @@ use super::styles::{
     accent_purple, block_style, panel_style, rgb, search_pick_list_style, text_color,
 };
 use crate::app_audio_config::COMPRESSOR_PRESETS;
+use crate::app_stream_encoder::{encoder_type_options, ENCODER_TYPE_AAC_LC, ENCODER_TYPE_MP3};
 use crate::{
     app_helpers::{login_input_id, pass_input_id},
     audio, App, ConfigField, DbField, DeviceTarget, Dialog, LoginField, Message, WindowKind,
 };
 use iced::widget::{
-    button, checkbox, column, container, mouse_area, pick_list, responsive, row, stack, text,
-    text_input, vertical_slider, Space,
+    button, checkbox, column, container, mouse_area, pick_list, radio, responsive, row, stack,
+    text, text_input, vertical_slider, Space,
 };
 use iced::{window, Alignment, Background, Border, Color, Element, Length};
 use iced_fonts::{Bootstrap, BOOTSTRAP_FONT};
@@ -970,28 +971,6 @@ impl App {
                         .width(Length::Fixed(96.0))
                         .align_x(Alignment::End)
                 };
-                let disabled_text = |s: String, width: f32| -> Element<'_, Message> {
-                    container(
-                        row![
-                            text(s).size(12).style(text_color(rgb(135, 155, 168))),
-                            Space::with_width(Length::Fill),
-                            text("▾").size(10).style(text_color(rgb(105, 122, 134))),
-                        ]
-                        .align_y(Alignment::Center),
-                    )
-                    .width(Length::Fixed(width))
-                    .padding([5, 8])
-                    .style(|_| container::Style {
-                        background: Some(Background::Color(rgb(36, 47, 55))),
-                        border: Border {
-                            color: rgb(54, 70, 82),
-                            width: 1.0,
-                            radius: 2.0.into(),
-                        },
-                        ..Default::default()
-                    })
-                    .into()
-                };
                 let read_only_field = |s: String, width: f32| -> Element<'_, Message> {
                     container(text(s).size(12).style(text_color(rgb(135, 155, 168))))
                         .width(Length::Fixed(width))
@@ -1030,6 +1009,15 @@ impl App {
                     Space::new(Length::Shrink, Length::Shrink).into()
                 };
                 let channel_options = vec![String::from("Mono"), String::from("Stéréo")];
+                let encoder_options = encoder_type_options();
+                let aac_available = encoder_options
+                    .iter()
+                    .any(|option| option.value == ENCODER_TYPE_AAC_LC && option.available);
+                let selected_encoder_type = if encoder_type == ENCODER_TYPE_AAC_LC {
+                    ENCODER_TYPE_AAC_LC
+                } else {
+                    ENCODER_TYPE_MP3
+                };
                 let streaming_status = self.streaming_status();
                 let diagnostics = self.streaming_diagnostics();
                 let timing = self.streaming_timing();
@@ -1040,13 +1028,54 @@ impl App {
                 } else {
                     rgb(220, 160, 80)
                 };
+                let aac_encoder_row: Element<'_, Message> = if aac_available {
+                    radio(
+                        "Advanced Audio Coding - Low Complexity (AAC-LC / FDK)",
+                        ENCODER_TYPE_AAC_LC,
+                        Some(selected_encoder_type),
+                        |value| Message::StreamEncoderTypeChanged(value.to_string()),
+                    )
+                    .text_size(12)
+                    .size(14)
+                    .into()
+                } else {
+                    row![
+                        Space::with_width(Length::Fixed(22.0)),
+                        column![
+                            text("Advanced Audio Coding - Low Complexity")
+                                .size(12)
+                                .style(text_color(rgb(105, 122, 134))),
+                            text("AAC-LC / FDK - libfdk-aac non trouvée")
+                                .size(10)
+                                .style(text_color(rgb(105, 122, 134))),
+                        ]
+                        .spacing(2)
+                        .width(Length::Fill),
+                    ]
+                    .spacing(6)
+                    .align_y(Alignment::Start)
+                    .width(Length::Fill)
+                    .into()
+                };
                 let encoding_body: Element<_> = column![
                     row![
                         field_label("Encoder Type"),
-                        disabled_text(encoder_type.clone(), 278.0),
+                        column![
+                            radio(
+                                "MPEG-1/2 Audio Layer III (LAME)",
+                                ENCODER_TYPE_MP3,
+                                Some(selected_encoder_type),
+                                |value| Message::StreamEncoderTypeChanged(value.to_string()),
+                            )
+                            .text_size(12)
+                            .size(14),
+                            aac_encoder_row,
+                        ]
+                        .spacing(6)
+                        .width(Length::Fill),
                     ]
                     .spacing(10)
-                    .align_y(Alignment::Center),
+                    .align_y(Alignment::Start),
                     row![
                         field_label("Bitrate"),
                         input_field(bitrate, 64.0, Message::StreamEncoderBitrateChanged),
@@ -1180,7 +1209,7 @@ impl App {
                     ]
                     .spacing(12),
                     row![
-                        diagnostic_cell("MP3 queue ms", diagnostics.encoded_queue_ms),
+                        diagnostic_cell("Encoded queue ms", diagnostics.encoded_queue_ms),
                         diagnostic_cell("Silent ms", diagnostics.input_silence_ms),
                         diagnostic_cell("Restarts", diagnostics.input_restarts),
                     ]
