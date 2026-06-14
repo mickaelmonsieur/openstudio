@@ -2187,6 +2187,9 @@ fn config_for(
     device: &cpal::Device,
     sample_rate: u32,
 ) -> Result<SupportedStreamConfig, Box<dyn std::error::Error + Send + Sync>> {
+    let mut supported_configs_error = None;
+    let mut sample_rate_supported = false;
+
     match device.supported_output_configs() {
         Ok(configs) => {
             for cfg in configs {
@@ -2197,16 +2200,21 @@ fn config_for(
             }
         }
         Err(err) => {
-            eprintln!("Warning: supported output configs unavailable: {err}");
+            supported_configs_error = Some(err.to_string());
         }
     }
 
-    eprintln!(
-        "Warning: {} Hz is not supported, falling back to the default config",
-        sample_rate
-    );
-
     if let Ok(config) = device.default_output_config() {
+        if config.sample_rate().0 == sample_rate {
+            sample_rate_supported = true;
+        }
+        if !sample_rate_supported && supported_configs_error.is_none() {
+            eprintln!(
+                "Warning: {} Hz is not reported as supported, using device default {} Hz",
+                sample_rate,
+                config.sample_rate().0
+            );
+        }
         return Ok(config);
     }
 
@@ -2217,5 +2225,8 @@ fn config_for(
         }
     }
 
+    if let Some(error) = supported_configs_error {
+        eprintln!("Warning: supported output configs unavailable: {error}");
+    }
     Err("No usable audio output config available".into())
 }
