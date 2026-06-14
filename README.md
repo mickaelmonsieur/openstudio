@@ -48,6 +48,10 @@ We encourage you to start building a FLAC music database today and to convert yo
 
 If your library contains other formats, convert them to FLAC before importing them into OpenStudio. Depending on your platform, you can use tools such as [fre:ac](https://www.freac.org/downloads-mainmenu-33) or [FFmpeg](https://ffmpeg.org/) for more technical workflows.
 
+## Streaming Encoder
+
+The Icecast streaming encoder supports MP3 by default. AAC-LC requires an external `libfdk-aac` installation because the library is loaded dynamically and is not bundled with OpenStudio. See [docs/stream-encoder.md](docs/stream-encoder.md) for platform-specific installation instructions.
+
 ## Installation
 
 Install the components in this order, regardless of your operating system:
