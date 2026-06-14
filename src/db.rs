@@ -17,10 +17,10 @@ pub struct AppConfig {
     pub fade_out_duration_ms: i32,
     pub stop_fade_duration_ms: i32,
     pub timezone: String,
-    pub device_deck: String,
-    pub device_instant: String,
-    pub device_aux: String,
-    pub device_preview: String,
+    pub device_deck_id: String,
+    pub device_instant_id: String,
+    pub device_aux_id: String,
+    pub device_preview_id: String,
     pub start_locked: bool,
     pub audio_processing_bypassed: bool,
     pub audio_master_volume_percent: f32,
@@ -39,7 +39,7 @@ pub struct AppConfig {
     pub encoder_sample_rate: i32,
     pub encoder_channels: i32,
     pub encoder_type: String,
-    pub encoder_input_device: String,
+    pub encoder_input_device_id: String,
     pub encoder_server_host: String,
     pub encoder_server_port: i32,
     pub encoder_password: String,
@@ -56,10 +56,10 @@ impl Default for AppConfig {
             fade_out_duration_ms: 2500,
             stop_fade_duration_ms: 1000,
             timezone: String::from("Europe/Paris"),
-            device_deck: String::new(),
-            device_instant: String::new(),
-            device_aux: String::new(),
-            device_preview: String::new(),
+            device_deck_id: String::new(),
+            device_instant_id: String::new(),
+            device_aux_id: String::new(),
+            device_preview_id: String::new(),
             start_locked: false,
             audio_processing_bypassed: false,
             audio_master_volume_percent: 100.0,
@@ -78,7 +78,7 @@ impl Default for AppConfig {
             encoder_sample_rate: 44100,
             encoder_channels: 2,
             encoder_type: String::from("mp3"),
-            encoder_input_device: String::new(),
+            encoder_input_device_id: String::new(),
             encoder_server_host: String::from("openstudio.entrypoint.belstream.net"),
             encoder_server_port: 80,
             encoder_password: String::new(),
@@ -241,6 +241,18 @@ impl Database {
             ADD COLUMN IF NOT EXISTS timezone TEXT NOT NULL DEFAULT 'Europe/Paris';
 
             ALTER TABLE configurations
+            ADD COLUMN IF NOT EXISTS device_deck_id TEXT NOT NULL DEFAULT '';
+
+            ALTER TABLE configurations
+            ADD COLUMN IF NOT EXISTS device_instant_id TEXT NOT NULL DEFAULT '';
+
+            ALTER TABLE configurations
+            ADD COLUMN IF NOT EXISTS device_aux_id TEXT NOT NULL DEFAULT '';
+
+            ALTER TABLE configurations
+            ADD COLUMN IF NOT EXISTS device_preview_id TEXT NOT NULL DEFAULT '';
+
+            ALTER TABLE configurations
             ADD COLUMN IF NOT EXISTS encoder_enabled BOOLEAN NOT NULL DEFAULT false;
 
             ALTER TABLE configurations
@@ -256,7 +268,7 @@ impl Database {
             ADD COLUMN IF NOT EXISTS encoder_type TEXT NOT NULL DEFAULT 'mp3';
 
             ALTER TABLE configurations
-            ADD COLUMN IF NOT EXISTS encoder_input_device TEXT NOT NULL DEFAULT '';
+            ADD COLUMN IF NOT EXISTS encoder_input_device_id TEXT NOT NULL DEFAULT '';
 
             ALTER TABLE configurations
             ADD COLUMN IF NOT EXISTS encoder_server_host TEXT NOT NULL DEFAULT 'openstudio.entrypoint.belstream.net';
@@ -700,10 +712,10 @@ impl Database {
             fade_out_duration_ms: row.get("fade_out_duration_ms"),
             stop_fade_duration_ms: row.get("stop_fade_duration_ms"),
             timezone: row.get("timezone"),
-            device_deck: row.get("device_deck"),
-            device_instant: row.get("device_instant"),
-            device_aux: row.get("device_aux"),
-            device_preview: row.get("device_preview"),
+            device_deck_id: row.get("device_deck_id"),
+            device_instant_id: row.get("device_instant_id"),
+            device_aux_id: row.get("device_aux_id"),
+            device_preview_id: row.get("device_preview_id"),
             start_locked: row.get("start_locked"),
             audio_processing_bypassed: row
                 .try_get("audio_processing_bypassed")
@@ -754,9 +766,9 @@ impl Database {
             encoder_type: row
                 .try_get("encoder_type")
                 .unwrap_or(default_cfg.encoder_type),
-            encoder_input_device: row
-                .try_get("encoder_input_device")
-                .unwrap_or(default_cfg.encoder_input_device),
+            encoder_input_device_id: row
+                .try_get("encoder_input_device_id")
+                .unwrap_or(default_cfg.encoder_input_device_id),
             encoder_server_host: row
                 .try_get("encoder_server_host")
                 .unwrap_or(default_cfg.encoder_server_host),
@@ -803,10 +815,10 @@ impl Database {
                 fade_out_duration_ms = $4,
                 stop_fade_duration_ms = $5,
                 timezone = $6,
-                device_deck = $7,
-                device_instant = $8,
-                device_aux = $9,
-                device_preview = $10,
+                device_deck_id = $7,
+                device_instant_id = $8,
+                device_aux_id = $9,
+                device_preview_id = $10,
                 start_locked = $11,
                 audio_processing_bypassed = $12,
                 audio_master_volume_percent = $13,
@@ -825,7 +837,7 @@ impl Database {
                 encoder_sample_rate = $26,
                 encoder_channels = $27,
                 encoder_type = $28,
-                encoder_input_device = $29,
+                encoder_input_device_id = $29,
                 encoder_server_host = $30,
                 encoder_server_port = $31,
                 encoder_password = $32,
@@ -839,10 +851,10 @@ impl Database {
                 &cfg.fade_out_duration_ms,
                 &cfg.stop_fade_duration_ms,
                 &cfg.timezone,
-                &cfg.device_deck,
-                &cfg.device_instant,
-                &cfg.device_aux,
-                &cfg.device_preview,
+                &cfg.device_deck_id,
+                &cfg.device_instant_id,
+                &cfg.device_aux_id,
+                &cfg.device_preview_id,
                 &cfg.start_locked,
                 &cfg.audio_processing_bypassed,
                 &cfg.audio_master_volume_percent,
@@ -861,7 +873,7 @@ impl Database {
                 &cfg.encoder_sample_rate,
                 &cfg.encoder_channels,
                 &cfg.encoder_type,
-                &cfg.encoder_input_device,
+                &cfg.encoder_input_device_id,
                 &cfg.encoder_server_host,
                 &cfg.encoder_server_port,
                 &cfg.encoder_password,

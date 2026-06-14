@@ -6,6 +6,8 @@ use std::time::Duration;
 use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
 use cpal::{SampleFormat, SizedSample, Stream};
 
+use crate::audio;
+
 pub const STREAM_INPUT_QUEUE_CAPACITY: usize = 4096;
 
 #[derive(Debug, Clone)]
@@ -137,10 +139,16 @@ struct QueuedAudioFrame {
     frames: usize,
 }
 
-fn get_input_device(host: &cpal::Host, name: Option<&str>) -> Result<cpal::Device, String> {
-    if let Some(name) = name.filter(|name| !name.is_empty()) {
+fn get_input_device(host: &cpal::Host, selector: Option<&str>) -> Result<cpal::Device, String> {
+    if let Some(name) = selector
+        .and_then(|selector| {
+            audio::device_name_from_selector(selector, audio::DeviceDirection::Input)
+        })
+        .filter(|name| !name.is_empty())
+    {
         if let Ok(mut devices) = host.input_devices() {
-            if let Some(device) = devices.find(|device| device.name().ok().as_deref() == Some(name))
+            if let Some(device) =
+                devices.find(|device| device.name().ok().as_deref() == Some(&name))
             {
                 return Ok(device);
             }

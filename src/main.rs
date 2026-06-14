@@ -66,8 +66,8 @@ struct App {
     current_queue_entry: Option<db::QueueEntry>,
     track_end_at: Option<std::time::SystemTime>,
     current_queue_player_id: audio::PlayerId,
-    audio_devices: Vec<String>,
-    audio_input_devices: Vec<String>,
+    audio_devices: Vec<audio::AudioDeviceInfo>,
+    audio_input_devices: Vec<audio::AudioDeviceInfo>,
     selected_queue_index: Option<usize>,
     autodj_enabled: bool,
     deck_soft_stopping: bool,
@@ -391,11 +391,11 @@ enum Dialog {
         fade_out_duration_ms: String,
         stop_fade_duration_ms: String,
         timezone: String,
-        device_deck: String,
-        device_instant: String,
-        device_aux: String,
-        device_preview: String,
-        encoder_input_device: String,
+        device_deck_id: String,
+        device_instant_id: String,
+        device_aux_id: String,
+        device_preview_id: String,
+        encoder_input_device_id: String,
     },
     EditDbConfig {
         host: String,
@@ -1546,6 +1546,24 @@ impl App {
                 }
                 self.audio_devices = audio::list_output_devices();
                 self.audio_input_devices = audio::list_input_devices();
+                let device_deck_id = audio::normalize_device_id(
+                    &self.app_config.device_deck_id,
+                    &self.audio_devices,
+                );
+                let device_instant_id = audio::normalize_device_id(
+                    &self.app_config.device_instant_id,
+                    &self.audio_devices,
+                );
+                let device_aux_id =
+                    audio::normalize_device_id(&self.app_config.device_aux_id, &self.audio_devices);
+                let device_preview_id = audio::normalize_device_id(
+                    &self.app_config.device_preview_id,
+                    &self.audio_devices,
+                );
+                let encoder_input_device_id = audio::normalize_device_id(
+                    &self.app_config.encoder_input_device_id,
+                    &self.audio_input_devices,
+                );
                 self.dialog = Some(Dialog::EditConfig {
                     auto_mix_on_start: self.app_config.auto_mix_on_start,
                     auto_play_on_start: self.app_config.auto_play_on_start,
@@ -1554,11 +1572,11 @@ impl App {
                     fade_out_duration_ms: self.app_config.fade_out_duration_ms.to_string(),
                     stop_fade_duration_ms: self.app_config.stop_fade_duration_ms.to_string(),
                     timezone: self.app_config.timezone.clone(),
-                    device_deck: self.app_config.device_deck.clone(),
-                    device_instant: self.app_config.device_instant.clone(),
-                    device_aux: self.app_config.device_aux.clone(),
-                    device_preview: self.app_config.device_preview.clone(),
-                    encoder_input_device: self.app_config.encoder_input_device.clone(),
+                    device_deck_id,
+                    device_instant_id,
+                    device_aux_id,
+                    device_preview_id,
+                    encoder_input_device_id,
                 });
                 Task::none()
             }
@@ -1898,20 +1916,20 @@ impl App {
 
             Message::ConfigDeviceChanged(target, name) => {
                 if let Some(Dialog::EditConfig {
-                    device_deck,
-                    device_instant,
-                    device_aux,
-                    device_preview,
-                    encoder_input_device,
+                    device_deck_id,
+                    device_instant_id,
+                    device_aux_id,
+                    device_preview_id,
+                    encoder_input_device_id,
                     ..
                 }) = &mut self.dialog
                 {
                     match target {
-                        DeviceTarget::Deck => *device_deck = name,
-                        DeviceTarget::Instant => *device_instant = name,
-                        DeviceTarget::Aux => *device_aux = name,
-                        DeviceTarget::Preview => *device_preview = name,
-                        DeviceTarget::StreamInput => *encoder_input_device = name,
+                        DeviceTarget::Deck => *device_deck_id = name,
+                        DeviceTarget::Instant => *device_instant_id = name,
+                        DeviceTarget::Aux => *device_aux_id = name,
+                        DeviceTarget::Preview => *device_preview_id = name,
+                        DeviceTarget::StreamInput => *encoder_input_device_id = name,
                     }
                 }
                 Task::none()
@@ -1926,11 +1944,11 @@ impl App {
                     fade_out_duration_ms,
                     stop_fade_duration_ms,
                     timezone,
-                    device_deck,
-                    device_instant,
-                    device_aux,
-                    device_preview,
-                    encoder_input_device,
+                    device_deck_id,
+                    device_instant_id,
+                    device_aux_id,
+                    device_preview_id,
+                    encoder_input_device_id,
                 }) = &self.dialog
                 {
                     let mut cfg = self.app_config.clone();
@@ -1949,11 +1967,11 @@ impl App {
                         .unwrap_or(1000)
                         .max(0);
                     cfg.timezone = timezone.clone();
-                    cfg.device_deck = device_deck.clone();
-                    cfg.device_instant = device_instant.clone();
-                    cfg.device_aux = device_aux.clone();
-                    cfg.device_preview = device_preview.clone();
-                    cfg.encoder_input_device = encoder_input_device.clone();
+                    cfg.device_deck_id = device_deck_id.clone();
+                    cfg.device_instant_id = device_instant_id.clone();
+                    cfg.device_aux_id = device_aux_id.clone();
+                    cfg.device_preview_id = device_preview_id.clone();
+                    cfg.encoder_input_device_id = encoder_input_device_id.clone();
                     self.apply_audio_device_config(&cfg);
                     self.app_config = cfg.clone();
                     self.sync_streaming_encoder();

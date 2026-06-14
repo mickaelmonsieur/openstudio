@@ -82,11 +82,11 @@ impl App {
         for player_id in [audio::PlayerId::QueueA, audio::PlayerId::QueueB] {
             self.audio
                 .player_mut(player_id)
-                .set_device(to_opt(&cfg.device_deck));
+                .set_device(to_opt(&cfg.device_deck_id));
         }
         self.audio
             .player_mut(audio::PlayerId::Instant)
-            .set_device(to_opt(&cfg.device_instant));
+            .set_device(to_opt(&cfg.device_instant_id));
         for player_id in [
             audio::PlayerId::Aux1,
             audio::PlayerId::Aux2,
@@ -94,11 +94,11 @@ impl App {
         ] {
             self.audio
                 .player_mut(player_id)
-                .set_device(to_opt(&cfg.device_aux));
+                .set_device(to_opt(&cfg.device_aux_id));
         }
         self.audio
             .player_mut(audio::PlayerId::Preview)
-            .set_device(to_opt(&cfg.device_preview));
+            .set_device(to_opt(&cfg.device_preview_id));
     }
 
     pub(crate) fn apply_audio_processing_config(&mut self, cfg: &db::AppConfig) {

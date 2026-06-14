@@ -299,7 +299,7 @@ impl From<&db::AppConfig> for StreamingConfig {
             bitrate_kbps: cfg.encoder_bitrate.clamp(8, 320),
             sample_rate: cfg.encoder_sample_rate.clamp(8_000, 48_000),
             channels: cfg.encoder_channels.clamp(1, 2),
-            input_device: cfg.encoder_input_device.clone(),
+            input_device: cfg.encoder_input_device_id.clone(),
             host: cfg.encoder_server_host.clone(),
             port: cfg.encoder_server_port.clamp(1, 65_535),
             password: cfg.encoder_password.clone(),

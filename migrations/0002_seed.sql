@@ -498,7 +498,7 @@ INSERT INTO configurations (
     encoder_sample_rate,
     encoder_channels,
     encoder_type,
-    encoder_input_device,
+    encoder_input_device_id,
     encoder_server_host,
     encoder_server_port,
     encoder_password,

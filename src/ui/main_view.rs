@@ -501,11 +501,11 @@ impl App {
                 fade_out_duration_ms,
                 stop_fade_duration_ms,
                 timezone,
-                device_deck,
-                device_instant,
-                device_aux,
-                device_preview,
-                encoder_input_device,
+                device_deck_id,
+                device_instant_id,
+                device_aux_id,
+                device_preview_id,
+                encoder_input_device_id,
             }) => {
                 let general_fieldset_label = container(
                     text("General")
@@ -622,33 +622,30 @@ impl App {
                             ..Default::default()
                         });
 
-                let device_options: Vec<String> = std::iter::once(String::from("(Default)"))
-                    .chain(self.audio_devices.iter().cloned())
-                    .collect();
-                let input_device_options: Vec<String> = std::iter::once(String::from("(Default)"))
-                    .chain(self.audio_input_devices.iter().cloned())
-                    .collect();
+                let device_options: Vec<audio::AudioDeviceInfo> =
+                    std::iter::once(audio::AudioDeviceInfo::default_option())
+                        .chain(self.audio_devices.iter().cloned())
+                        .collect();
+                let input_device_options: Vec<audio::AudioDeviceInfo> =
+                    std::iter::once(audio::AudioDeviceInfo::default_option())
+                        .chain(self.audio_input_devices.iter().cloned())
+                        .collect();
                 let mk_device_row = |label: &'static str,
                                      stored: &str,
                                      target: DeviceTarget,
-                                     opts: Vec<String>|
+                                     opts: Vec<audio::AudioDeviceInfo>|
                  -> Element<'_, Message> {
-                    let selected: String = if stored.is_empty() {
-                        String::from("(Default)")
-                    } else {
-                        stored.to_string()
-                    };
+                    let selected = audio::selected_device_option(stored, &opts);
                     row![
                         text(label).size(11).style(text_color(rgb(160, 180, 195))),
                         Space::with_width(Length::Fill),
-                        pick_list(opts, Some(selected), move |name: String| {
-                            let v = if name == "(Default)" {
-                                String::new()
-                            } else {
-                                name
-                            };
-                            Message::ConfigDeviceChanged(target, v)
-                        })
+                        pick_list(
+                            opts,
+                            Some(selected),
+                            move |device: audio::AudioDeviceInfo| {
+                                Message::ConfigDeviceChanged(target, device.id)
+                            }
+                        )
                         .text_size(12)
                         .padding(6)
                         .width(Length::Fixed(220.0))
@@ -667,31 +664,31 @@ impl App {
                 let audio_fieldset_body = column![
                     mk_device_row(
                         "Deck",
-                        device_deck,
+                        device_deck_id,
                         DeviceTarget::Deck,
                         device_options.clone()
                     ),
                     mk_device_row(
                         "Instant Player",
-                        device_instant,
+                        device_instant_id,
                         DeviceTarget::Instant,
                         device_options.clone()
                     ),
                     mk_device_row(
                         "Aux Player",
-                        device_aux,
+                        device_aux_id,
                         DeviceTarget::Aux,
                         device_options.clone()
                     ),
                     mk_device_row(
                         "Preview",
-                        device_preview,
+                        device_preview_id,
                         DeviceTarget::Preview,
                         device_options
                     ),
                     mk_device_row(
                         "Stream Input",
-                        encoder_input_device,
+                        encoder_input_device_id,
                         DeviceTarget::StreamInput,
                         input_device_options
                     ),

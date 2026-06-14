@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, AtomicI32, AtomicU32, AtomicU64, AtomicUsize, Ordering};
 use std::sync::mpsc::{self, Sender, SyncSender, TrySendError};
@@ -6,7 +6,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
-use cpal::{SampleRate, SupportedStreamConfig};
+use cpal::{SampleFormat, SampleRate, SupportedBufferSize, SupportedStreamConfig};
 use symphonia::core::audio::{AudioBufferRef, SampleBuffer};
 use symphonia::core::codecs::DecoderOptions;
 use symphonia::core::errors::Error as SymphoniaError;
@@ -15,6 +15,10 @@ use symphonia::core::io::MediaSourceStream;
 use symphonia::core::meta::MetadataOptions;
 use symphonia::core::probe::Hint;
 use symphonia::core::units::Time;
+
+const DEVICE_ID_NAME_PREFIX: &str = "name:";
+#[cfg(target_os = "macos")]
+const DEVICE_ID_COREAUDIO_PREFIX: &str = "coreaudio:";
 
 const EQ_BAND_FREQS: [f32; 10] = [
     32.0, 63.0, 125.0, 250.0, 500.0, 1000.0, 2000.0, 4000.0, 8000.0, 16000.0,
@@ -458,27 +462,437 @@ impl Default for AudioProcessingSettings {
     }
 }
 
-pub fn list_output_devices() -> Vec<String> {
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct AudioDeviceInfo {
+    pub id: String,
+    pub name: String,
+}
+
+impl AudioDeviceInfo {
+    pub fn default_option() -> Self {
+        Self {
+            id: String::new(),
+            name: String::from("(Default)"),
+        }
+    }
+
+    fn name_fallback(name: String) -> Self {
+        Self {
+            id: format!("{DEVICE_ID_NAME_PREFIX}{name}"),
+            name,
+        }
+    }
+}
+
+impl std::fmt::Display for AudioDeviceInfo {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(&self.name)
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum DeviceDirection {
+    Input,
+    Output,
+}
+
+pub fn list_output_devices() -> Vec<AudioDeviceInfo> {
     let host = cpal::default_host();
-    host.output_devices()
-        .map(|devices| devices.filter_map(|d| d.name().ok()).collect())
+    let mut devices = Vec::new();
+    #[cfg(target_os = "macos")]
+    devices.extend(macos_coreaudio_device_infos(DeviceDirection::Output));
+
+    devices.extend(
+        host.output_devices()
+            .map(|devices| {
+                devices
+                    .filter_map(|d| d.name().ok())
+                    .map(AudioDeviceInfo::name_fallback)
+                    .collect::<Vec<_>>()
+            })
+            .unwrap_or_default(),
+    );
+    dedup_device_infos(devices)
+}
+
+pub fn list_input_devices() -> Vec<AudioDeviceInfo> {
+    let host = cpal::default_host();
+    let mut devices = Vec::new();
+    #[cfg(target_os = "macos")]
+    devices.extend(macos_coreaudio_device_infos(DeviceDirection::Input));
+
+    devices.extend(
+        host.input_devices()
+            .map(|devices| {
+                devices
+                    .filter_map(|d| d.name().ok())
+                    .map(AudioDeviceInfo::name_fallback)
+                    .collect::<Vec<_>>()
+            })
+            .unwrap_or_default(),
+    );
+    dedup_device_infos(devices)
+}
+
+pub fn normalize_device_id(stored: &str, devices: &[AudioDeviceInfo]) -> String {
+    let stored = stored.trim();
+    if stored.is_empty() {
+        return String::new();
+    }
+
+    if devices.iter().any(|device| device.id == stored) {
+        return stored.to_string();
+    }
+
+    devices
+        .iter()
+        .find(|device| device.name == stored)
+        .map(|device| device.id.clone())
         .unwrap_or_default()
 }
 
-pub fn list_input_devices() -> Vec<String> {
-    let host = cpal::default_host();
-    host.input_devices()
-        .map(|devices| devices.filter_map(|d| d.name().ok()).collect())
-        .unwrap_or_default()
+pub fn selected_device_option(stored: &str, devices: &[AudioDeviceInfo]) -> AudioDeviceInfo {
+    let id = normalize_device_id(stored, devices);
+    if id.is_empty() {
+        return AudioDeviceInfo::default_option();
+    }
+
+    devices
+        .iter()
+        .find(|device| device.id == id)
+        .cloned()
+        .unwrap_or_else(AudioDeviceInfo::default_option)
+}
+
+pub fn device_name_from_selector(selector: &str, direction: DeviceDirection) -> Option<String> {
+    let selector = selector.trim();
+    if selector.is_empty() {
+        return None;
+    }
+
+    if let Some(name) = selector.strip_prefix(DEVICE_ID_NAME_PREFIX) {
+        return Some(name.to_string());
+    }
+
+    #[cfg(target_os = "macos")]
+    if let Some(uid) = selector.strip_prefix(DEVICE_ID_COREAUDIO_PREFIX) {
+        return macos_coreaudio_devices(direction)
+            .into_iter()
+            .find(|device| device.uid.as_deref() == Some(uid))
+            .map(|device| device.name);
+    }
+
+    Some(selector.to_string())
+}
+
+fn dedup_device_infos(devices: Vec<AudioDeviceInfo>) -> Vec<AudioDeviceInfo> {
+    let mut seen_ids = HashSet::new();
+    let mut seen_names = HashSet::new();
+    devices
+        .into_iter()
+        .filter_map(|device| {
+            let id = device.id.trim();
+            let name = device.name.trim();
+            if id.is_empty() || name.is_empty() {
+                return None;
+            }
+            let name_key = name.to_lowercase();
+            if !seen_ids.insert(id.to_string()) || !seen_names.insert(name_key) {
+                None
+            } else {
+                Some(AudioDeviceInfo {
+                    id: id.to_string(),
+                    name: name.to_string(),
+                })
+            }
+        })
+        .collect()
+}
+
+#[cfg(target_os = "macos")]
+#[derive(Debug, Clone)]
+struct MacosCoreAudioDevice {
+    name: String,
+    uid: Option<String>,
+    input_channels: u32,
+    output_channels: u32,
+    nominal_sample_rate: Option<u32>,
+}
+
+#[cfg(target_os = "macos")]
+fn macos_coreaudio_device_infos(direction: DeviceDirection) -> Vec<AudioDeviceInfo> {
+    macos_coreaudio_devices(direction)
+        .into_iter()
+        .filter_map(|device| {
+            let channels = match direction {
+                DeviceDirection::Input => device.input_channels,
+                DeviceDirection::Output => device.output_channels,
+            };
+            if channels == 0 {
+                return None;
+            }
+            let id = device
+                .uid
+                .map(|uid| format!("{DEVICE_ID_COREAUDIO_PREFIX}{uid}"))
+                .unwrap_or_else(|| format!("{DEVICE_ID_NAME_PREFIX}{}", device.name));
+            Some(AudioDeviceInfo {
+                id,
+                name: device.name,
+            })
+        })
+        .collect()
+}
+
+#[cfg(target_os = "macos")]
+fn macos_coreaudio_devices(_direction: DeviceDirection) -> Vec<MacosCoreAudioDevice> {
+    use std::ffi::CStr;
+    use std::mem;
+    use std::ptr::null;
+    use std::slice;
+
+    use core_foundation_sys::string::{
+        kCFStringEncodingUTF8, CFStringGetCString, CFStringGetCStringPtr, CFStringRef,
+    };
+    use coreaudio_sys::{
+        kAudioDevicePropertyDeviceNameCFString, kAudioDevicePropertyNominalSampleRate,
+        kAudioDevicePropertyScopeInput, kAudioDevicePropertyScopeOutput,
+        kAudioDevicePropertyStreamConfiguration, kAudioHardwareNoError,
+        kAudioHardwarePropertyDevices, kAudioObjectPropertyElementMaster,
+        kAudioObjectPropertyScopeGlobal, kAudioObjectSystemObject, AudioBuffer, AudioBufferList,
+        AudioDeviceID, AudioObjectGetPropertyData, AudioObjectGetPropertyDataSize,
+        AudioObjectPropertyAddress,
+    };
+
+    const K_AUDIO_DEVICE_PROPERTY_DEVICE_UID: u32 = 0x7569_6420; // 'uid '
+
+    fn property_size(object_id: u32, address: &AudioObjectPropertyAddress) -> Option<u32> {
+        let data_size = 0u32;
+        let status = unsafe {
+            AudioObjectGetPropertyDataSize(
+                object_id,
+                address as *const _,
+                0,
+                null(),
+                &data_size as *const _ as *mut _,
+            )
+        };
+        (status == kAudioHardwareNoError as i32).then_some(data_size)
+    }
+
+    fn cfstring_property(device_id: AudioDeviceID, selector: u32, scope: u32) -> Option<String> {
+        let address = AudioObjectPropertyAddress {
+            mSelector: selector,
+            mScope: scope,
+            mElement: kAudioObjectPropertyElementMaster,
+        };
+        let value: CFStringRef = null();
+        let data_size = mem::size_of::<CFStringRef>() as u32;
+        let status = unsafe {
+            AudioObjectGetPropertyData(
+                device_id,
+                &address as *const _,
+                0,
+                null(),
+                &data_size as *const _ as *mut _,
+                &value as *const _ as *mut _,
+            )
+        };
+        if status != kAudioHardwareNoError as i32 || value.is_null() {
+            return None;
+        }
+
+        let c_string = unsafe { CFStringGetCStringPtr(value, kCFStringEncodingUTF8) };
+        if !c_string.is_null() {
+            return unsafe { CStr::from_ptr(c_string) }
+                .to_str()
+                .ok()
+                .map(str::to_string);
+        }
+
+        let mut buf: [i8; 512] = [0; 512];
+        let ok = unsafe {
+            CFStringGetCString(
+                value,
+                buf.as_mut_ptr(),
+                buf.len() as _,
+                kCFStringEncodingUTF8,
+            )
+        };
+        if ok == 0 {
+            None
+        } else {
+            unsafe { CStr::from_ptr(buf.as_ptr()) }
+                .to_str()
+                .ok()
+                .map(str::to_string)
+        }
+    }
+
+    fn device_name(device_id: AudioDeviceID) -> Option<String> {
+        cfstring_property(
+            device_id,
+            kAudioDevicePropertyDeviceNameCFString,
+            kAudioDevicePropertyScopeOutput,
+        )
+    }
+
+    fn device_uid(device_id: AudioDeviceID) -> Option<String> {
+        cfstring_property(
+            device_id,
+            K_AUDIO_DEVICE_PROPERTY_DEVICE_UID,
+            kAudioObjectPropertyScopeGlobal,
+        )
+    }
+
+    fn channel_count(device_id: AudioDeviceID, scope: u32) -> u32 {
+        let address = AudioObjectPropertyAddress {
+            mSelector: kAudioDevicePropertyStreamConfiguration,
+            mScope: scope,
+            mElement: kAudioObjectPropertyElementMaster,
+        };
+        let Some(mut data_size) = property_size(device_id, &address) else {
+            return 0;
+        };
+        if data_size == 0 {
+            return 0;
+        }
+
+        let mut bytes = vec![0u8; data_size as usize];
+        let status = unsafe {
+            AudioObjectGetPropertyData(
+                device_id,
+                &address as *const _,
+                0,
+                null(),
+                &mut data_size as *mut _,
+                bytes.as_mut_ptr() as *mut _,
+            )
+        };
+        if status != kAudioHardwareNoError as i32 {
+            return 0;
+        }
+
+        let list = bytes.as_ptr() as *const AudioBufferList;
+        if list.is_null() {
+            return 0;
+        }
+
+        unsafe {
+            let buffers =
+                slice::from_raw_parts((*list).mBuffers.as_ptr(), (*list).mNumberBuffers as usize);
+            buffers
+                .iter()
+                .map(|buffer: &AudioBuffer| buffer.mNumberChannels)
+                .sum()
+        }
+    }
+
+    fn nominal_sample_rate(device_id: AudioDeviceID) -> Option<u32> {
+        let address = AudioObjectPropertyAddress {
+            mSelector: kAudioDevicePropertyNominalSampleRate,
+            mScope: kAudioDevicePropertyScopeOutput,
+            mElement: kAudioObjectPropertyElementMaster,
+        };
+        let mut sample_rate = 0.0f64;
+        let mut data_size = mem::size_of::<f64>() as u32;
+        let status = unsafe {
+            AudioObjectGetPropertyData(
+                device_id,
+                &address as *const _,
+                0,
+                null(),
+                &mut data_size as *mut _,
+                &mut sample_rate as *mut _ as *mut _,
+            )
+        };
+        if status == kAudioHardwareNoError as i32 && sample_rate.is_finite() && sample_rate > 0.0 {
+            Some(sample_rate.round() as u32)
+        } else {
+            None
+        }
+    }
+
+    let address = AudioObjectPropertyAddress {
+        mSelector: kAudioHardwarePropertyDevices,
+        mScope: kAudioObjectPropertyScopeGlobal,
+        mElement: kAudioObjectPropertyElementMaster,
+    };
+    let Some(mut data_size) = property_size(kAudioObjectSystemObject, &address) else {
+        return Vec::new();
+    };
+    if data_size == 0 {
+        return Vec::new();
+    }
+
+    let device_count = data_size as usize / mem::size_of::<AudioDeviceID>();
+    let mut device_ids = vec![0 as AudioDeviceID; device_count];
+    let status = unsafe {
+        AudioObjectGetPropertyData(
+            kAudioObjectSystemObject,
+            &address as *const _,
+            0,
+            null(),
+            &mut data_size as *mut _,
+            device_ids.as_mut_ptr() as *mut _,
+        )
+    };
+    if status != kAudioHardwareNoError as i32 {
+        return Vec::new();
+    }
+
+    device_ids
+        .into_iter()
+        .filter_map(|device_id| {
+            let name = device_name(device_id)?;
+            Some(MacosCoreAudioDevice {
+                name,
+                uid: device_uid(device_id),
+                input_channels: channel_count(device_id, kAudioDevicePropertyScopeInput),
+                output_channels: channel_count(device_id, kAudioDevicePropertyScopeOutput),
+                nominal_sample_rate: nominal_sample_rate(device_id),
+            })
+        })
+        .collect()
+}
+
+#[cfg(target_os = "macos")]
+fn macos_coreaudio_output_config_for_name(
+    name: &str,
+    sample_rate: u32,
+) -> Option<SupportedStreamConfig> {
+    macos_coreaudio_devices(DeviceDirection::Output)
+        .into_iter()
+        .find(|device| device.name == name && device.output_channels > 0)
+        .map(|device| {
+            let sample_rate = if sample_rate > 0 {
+                sample_rate
+            } else {
+                device.nominal_sample_rate.unwrap_or(44_100)
+            };
+            SupportedStreamConfig::new(
+                device.output_channels.min(u16::MAX as u32) as u16,
+                SampleRate(sample_rate),
+                SupportedBufferSize::Unknown,
+                SampleFormat::F32,
+            )
+        })
 }
 
 fn get_output_device(
     host: &cpal::Host,
-    name: Option<&str>,
+    selector: Option<&str>,
 ) -> Result<cpal::Device, Box<dyn std::error::Error + Send + Sync>> {
-    if let Some(name) = name.filter(|n| !n.is_empty()) {
+    if let Some(name) = selector
+        .and_then(|selector| device_name_from_selector(selector, DeviceDirection::Output))
+        .filter(|n| !n.is_empty())
+    {
         if let Ok(mut devices) = host.output_devices() {
-            if let Some(device) = devices.find(|d| d.name().ok().as_deref() == Some(name)) {
+            if let Some(device) = devices.find(|d| d.name().ok().as_deref() == Some(&name)) {
+                return Ok(device);
+            }
+        }
+        if let Ok(mut devices) = host.devices() {
+            if let Some(device) = devices.find(|d| d.name().ok().as_deref() == Some(&name)) {
                 return Ok(device);
             }
         }
@@ -1773,14 +2187,35 @@ fn config_for(
     device: &cpal::Device,
     sample_rate: u32,
 ) -> Result<SupportedStreamConfig, Box<dyn std::error::Error + Send + Sync>> {
-    for cfg in device.supported_output_configs()? {
-        if cfg.min_sample_rate().0 <= sample_rate && sample_rate <= cfg.max_sample_rate().0 {
-            return Ok(cfg.with_sample_rate(SampleRate(sample_rate)));
+    match device.supported_output_configs() {
+        Ok(configs) => {
+            for cfg in configs {
+                if cfg.min_sample_rate().0 <= sample_rate && sample_rate <= cfg.max_sample_rate().0
+                {
+                    return Ok(cfg.with_sample_rate(SampleRate(sample_rate)));
+                }
+            }
+        }
+        Err(err) => {
+            eprintln!("Warning: supported output configs unavailable: {err}");
         }
     }
+
     eprintln!(
         "Warning: {} Hz is not supported, falling back to the default config",
         sample_rate
     );
-    Ok(device.default_output_config()?)
+
+    if let Ok(config) = device.default_output_config() {
+        return Ok(config);
+    }
+
+    #[cfg(target_os = "macos")]
+    if let Ok(name) = device.name() {
+        if let Some(config) = macos_coreaudio_output_config_for_name(&name, sample_rate) {
+            return Ok(config);
+        }
+    }
+
+    Err("No usable audio output config available".into())
 }
